@@ -1,0 +1,40 @@
+# Table Rock Toolbox - Consolidated Backend Requirements
+# Generated from individual tool dependencies
+
+# Core FastAPI dependencies
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Data processing
+pandas>=2.1.0
+openpyxl>=3.1.0
+
+# PDF extraction (extract and revenue tools)
+pymupdf>=1.23.0
+pdfplumber>=0.10.0
+
+# PDF generation (proration tool)
+reportlab>=4.0.0
+
+# HTTP requests (proration tool - RRC data download)
+requests>=2.31.0
+
+# HTML parsing (proration tool)
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# OCR support (revenue tool - optional)
+pytesseract>=0.3.10
+pdf2image>=1.16.0
+pillow>=10.0.0
+
+# Testing dependencies (dev only)
+pytest>=7.4.0
+pytest-asyncio>=0.23.0
+httpx>=0.26.0
+
+# Linting (dev only)
+ruff>=0.1.0
