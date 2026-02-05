@@ -7,9 +7,10 @@ import {
   DollarSign,
   Settings,
   HelpCircle,
-  User,
+  LogOut,
   ChevronRight,
 } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext'
 
 const toolNavItems = [
   { name: 'Dashboard', path: '/', icon: LayoutDashboard },
@@ -26,6 +27,7 @@ const accountNavItems = [
 
 export default function Sidebar() {
   const location = useLocation()
+  const { user, signOut } = useAuth()
 
   const getLinkClassName = (path: string) => {
     const isActive = path === '/'
@@ -87,19 +89,36 @@ export default function Sidebar() {
 
       {/* User Section */}
       <div className="p-4 border-t border-tre-teal/20">
-        <div className="flex items-center gap-3 px-4 py-3">
-          <div className="w-10 h-10 bg-tre-brown-medium rounded-full flex items-center justify-center">
-            <User className="w-5 h-5 text-tre-tan" />
-          </div>
+        <div className="flex items-center gap-3 px-4 py-2">
+          {user?.photoURL ? (
+            <img
+              src={user.photoURL}
+              alt={user.displayName || 'User'}
+              className="w-10 h-10 rounded-full"
+            />
+          ) : (
+            <div className="w-10 h-10 bg-tre-brown-medium rounded-full flex items-center justify-center">
+              <span className="text-tre-tan font-medium">
+                {user?.displayName?.charAt(0) || user?.email?.charAt(0) || '?'}
+              </span>
+            </div>
+          )}
           <div className="flex-1 min-w-0">
             <p className="text-white font-oswald font-medium text-sm truncate">
-              User Name
+              {user?.displayName || 'User'}
             </p>
             <p className="text-tre-tan/60 text-xs truncate">
-              user@tablerockenergy.com
+              {user?.email || ''}
             </p>
           </div>
         </div>
+        <button
+          onClick={signOut}
+          className="w-full flex items-center gap-3 px-4 py-2 mt-2 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+          <span className="text-sm">Sign Out</span>
+        </button>
       </div>
     </aside>
   )
