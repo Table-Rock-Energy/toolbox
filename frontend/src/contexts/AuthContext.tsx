@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import {
   type User,
   signInWithPopup,
+  signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged
 } from 'firebase/auth';
@@ -13,6 +14,7 @@ interface AuthContextType {
   isAuthorized: boolean;
   authError: string | null;
   signInWithGoogle: () => Promise<void>;
+  signInWithEmail: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   getIdToken: () => Promise<string | null>;
 }
@@ -73,6 +75,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const signInWithEmail = async (email: string, password: string) => {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error: unknown) {
+      console.error('Error signing in with email:', error);
+      // Provide user-friendly error messages
+      const firebaseError = error as { code?: string };
+      if (firebaseError.code === 'auth/user-not-found') {
+        throw new Error('No account found with this email address.');
+      } else if (firebaseError.code === 'auth/wrong-password') {
+        throw new Error('Incorrect password.');
+      } else if (firebaseError.code === 'auth/invalid-email') {
+        throw new Error('Invalid email address.');
+      } else if (firebaseError.code === 'auth/invalid-credential') {
+        throw new Error('Invalid email or password.');
+      } else if (firebaseError.code === 'auth/too-many-requests') {
+        throw new Error('Too many failed attempts. Please try again later.');
+      }
+      throw new Error('Login failed. Please try again.');
+    }
+  };
+
   const signOut = async () => {
     try {
       await firebaseSignOut(auth);
@@ -98,6 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAuthorized,
     authError,
     signInWithGoogle,
+    signInWithEmail,
     signOut,
     getIdToken,
   };
