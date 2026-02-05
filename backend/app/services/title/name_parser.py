@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from app.models.title import EntityType
-from app.utils.patterns import NAME_SUFFIXES
+from app.utils.patterns import LEGAL_DESCRIPTION_PATTERN, NAME_SUFFIXES
 
 
 @dataclass
@@ -180,3 +180,45 @@ def clean_name(name: str) -> str:
     cleaned = cleaned.rstrip(",-").strip()
 
     return cleaned
+
+
+def is_valid_name(name: str) -> bool:
+    """
+    Check if a string is a valid name (not a legal description or junk data).
+
+    Args:
+        name: String to validate
+
+    Returns:
+        True if it looks like a valid name
+    """
+    if not name or not name.strip():
+        return False
+
+    cleaned = name.strip()
+
+    # Check if it looks like a legal description (e.g., "2-6N-4W")
+    if LEGAL_DESCRIPTION_PATTERN.match(cleaned):
+        return False
+
+    # Check if it's just numbers/dashes
+    if re.match(r"^[\d\s\-]+$", cleaned):
+        return False
+
+    # Check if it starts with common non-name indicators
+    non_name_prefixes = [
+        "apparent successors",
+        "unknown heirs",
+        "and assigns",
+        "successors and",
+    ]
+    cleaned_lower = cleaned.lower()
+    for prefix in non_name_prefixes:
+        if cleaned_lower.startswith(prefix):
+            return False
+
+    # Must have at least one letter
+    if not re.search(r"[a-zA-Z]", cleaned):
+        return False
+
+    return True

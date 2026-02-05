@@ -42,7 +42,9 @@ ANNOTATION_PATTERNS = [
     # Relationship annotations - daugh., son, step daughter (but not "son of")
     (re.compile(r",?\s*-?\s*\b(daugh(?:ter)?\.?)\b", re.IGNORECASE), "relationship"),
     (re.compile(r",?\s*\b(son)\b(?!\s+of)", re.IGNORECASE), "relationship"),
-    (re.compile(r",?\s*\b(step\s*(?:daughter|son|mother|father))\b", re.IGNORECASE), "relationship"),
+    (re.compile(r",?\s*\b(step\s*(?:daughter|son|mother|father)?)\b", re.IGNORECASE), "relationship"),
+    # Just "step" alone at end of name (e.g., "John Smith, step")
+    (re.compile(r",\s*(step)\s*$", re.IGNORECASE), "relationship"),
     # Established/created dates for trusts - Established June 15, 2006
     (re.compile(r"\bEstablished\s+([A-Z][a-z]+\s+\d{1,2},?\s+\d{4})", re.IGNORECASE), "established"),
     # BENEFICIARY marker

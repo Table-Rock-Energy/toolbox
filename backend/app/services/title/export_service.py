@@ -178,3 +178,156 @@ def generate_filename(base_name: str, extension: str) -> str:
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"{base_name}_{timestamp}.{extension}"
+
+
+# CRM contact import column names for mineral format
+MINERAL_EXPORT_COLUMNS = [
+    "Contact Id",
+    "Full Name",
+    "First Name",
+    "Last Name",
+    "Middle Name",
+    "County",
+    "Suffix",
+    "Age",
+    "Relative Names",
+    "Primary Address 1",
+    "Primary Address 2",
+    "Primary Address City",
+    "Primary Address State",
+    "Primary Address Zip",
+    "Primary Address Country",
+    "Secondary Address 1",
+    "Secondary Address 2",
+    "Secondary Address City",
+    "Secondary Address State",
+    "Secondary Address Zip",
+    "Secondary Address Country",
+    "Owner Type",
+    "Global Owner",
+    "Primary Email",
+    "Email 2",
+    "Email 3",
+    "Primary Home Phone",
+    "Home Phone 2",
+    "Home Phone 3",
+    "Primary Mobile Phone",
+    "Mobile Phone 2",
+    "Mobile Phone 3",
+    "Primary Work Phone",
+    "Work Phone 2",
+    "Work Phone 3",
+    "Company Name",
+    "Job Title",
+    "Industry Type",
+    "LinkedIn Profile",
+    "Facebook Profile",
+    "Twitter Profile",
+    "Lead Source",
+    "Stage",
+    "Territory",
+    "Campaign Name",
+    "Status",
+    "Website",
+    "Contact Owner",
+    "Notes/Comments",
+    "Tags",
+    "Mineral Holders Link",
+    "Mineral Holders Property Count (2025)",
+    "Mineral Holders Property Count (2024)",
+    "Link to Summary",
+    "Link to OneDrive Folder",
+]
+
+
+def entries_to_mineral_dataframe(entries: list[OwnerEntry]) -> pd.DataFrame:
+    """
+    Convert owner entries to a pandas DataFrame in CRM mineral format.
+
+    Args:
+        entries: List of owner entries
+
+    Returns:
+        DataFrame with CRM contact import column format
+    """
+    rows = []
+    for entry in entries:
+        row = {col: "" for col in MINERAL_EXPORT_COLUMNS}
+
+        # Map our extracted data to CRM fields
+        row["Full Name"] = entry.full_name
+        row["First Name"] = entry.first_name or ""
+        row["Last Name"] = entry.last_name or ""
+        row["Primary Address 1"] = entry.address or ""
+        row["Primary Address City"] = entry.city or ""
+        row["Primary Address State"] = entry.state or ""
+        row["Primary Address Zip"] = entry.zip_code or ""
+        row["Owner Type"] = entry.entity_type.value
+        row["Notes/Comments"] = entry.notes or ""
+        row["Territory"] = entry.legal_description
+
+        # Set company name for non-individual entities
+        if entry.entity_type.value != "INDIVIDUAL":
+            row["Company Name"] = entry.full_name
+
+        rows.append(row)
+
+    return pd.DataFrame(rows, columns=MINERAL_EXPORT_COLUMNS)
+
+
+def to_mineral_excel(
+    entries: list[OwnerEntry], filters: Optional[FilterOptions] = None
+) -> bytes:
+    """
+    Export owner entries to Excel format in CRM mineral format.
+
+    Args:
+        entries: List of owner entries
+        filters: Optional filter options
+
+    Returns:
+        Excel file contents as bytes
+    """
+    # Apply filters
+    filtered_entries = apply_filters(entries, filters)
+
+    # Convert to DataFrame
+    df = entries_to_mineral_dataframe(filtered_entries)
+
+    # Write to Excel
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Contacts")
+
+        # Auto-adjust column widths
+        worksheet = writer.sheets["Contacts"]
+        for i, col in enumerate(df.columns):
+            # Get column letter (handles AA, AB, etc.)
+            col_letter = _get_column_letter(i + 1)
+            max_length = max(
+                df[col].astype(str).map(len).max() if len(df) > 0 else 0,
+                len(col),
+            )
+            # Limit max width and add padding
+            adjusted_width = min(max_length + 2, 50)
+            worksheet.column_dimensions[col_letter].width = adjusted_width
+
+    output.seek(0)
+    return output.getvalue()
+
+
+def _get_column_letter(col_idx: int) -> str:
+    """
+    Convert a column index (1-based) to Excel column letter.
+
+    Args:
+        col_idx: Column index (1-based)
+
+    Returns:
+        Excel column letter (A, B, ..., Z, AA, AB, ...)
+    """
+    result = ""
+    while col_idx > 0:
+        col_idx, remainder = divmod(col_idx - 1, 26)
+        result = chr(65 + remainder) + result
+    return result

@@ -23,6 +23,9 @@ reportlab>=4.0.0
 # HTTP requests (proration tool - RRC data download)
 requests>=2.31.0
 
+# Google Cloud Storage (persistent file storage)
+google-cloud-storage>=2.14.0
+
 # HTML parsing (proration tool)
 beautifulsoup4>=4.12.0
 lxml>=4.9.0

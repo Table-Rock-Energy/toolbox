@@ -97,6 +97,9 @@ class ExportRequest(BaseModel):
     filename: Optional[str] = Field(
         "title_export", description="Base filename for export (without extension)"
     )
+    format_type: Optional[str] = Field(
+        "standard", description="Export format type: 'standard' or 'mineral'"
+    )
 
 
 # Column definitions for CSV/Excel export

@@ -5,12 +5,16 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pandas as pd
 import requests
 import urllib3
+
+from app.core.config import settings
+from app.services.storage_service import rrc_storage, storage_service
 
 # Suppress SSL warnings since RRC website has outdated SSL configuration
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -19,11 +23,6 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
-
-# Data directory for storing RRC CSVs
-DATA_DIR = Path(__file__).parent.parent.parent.parent / "data"
-OIL_DATA_FILE = DATA_DIR / "oil_proration.csv"
-GAS_DATA_FILE = DATA_DIR / "gas_proration.csv"
 
 # RRC URLs
 OIL_SEARCH_URL = "https://webapps2.rrc.texas.gov/EWA/oilProQueryAction.do"
@@ -58,7 +57,6 @@ def create_rrc_session() -> requests.Session:
                 ctx.minimum_version = ssl.TLSVersion.TLSv1_2
 
             # RRC website uses AES256-GCM-SHA384 cipher - add it plus other compatible ciphers
-            # This includes both ECDHE and non-ECDHE variants for maximum compatibility
             try:
                 ctx.set_ciphers(
                     "AES256-GCM-SHA384:AES128-GCM-SHA256:AES256-SHA256:AES128-SHA256:"
@@ -98,6 +96,8 @@ class RRCDataService:
         self._gas_lookup: dict[tuple[str, str], dict] | None = None
         self._combined_lookup: dict[tuple[str, str], dict] | None = None
         self._last_loaded: datetime | None = None
+        self._oil_df: pd.DataFrame | None = None
+        self._gas_df: pd.DataFrame | None = None
 
     def download_oil_data(self) -> tuple[bool, str, int]:
         """
@@ -119,7 +119,7 @@ class RRCDataService:
             }
             response = session.post(OIL_SEARCH_URL, data=search_data, timeout=60)
             response.raise_for_status()
-            logger.info(f"Search response: status={response.status_code}, content-type={response.headers.get('content-type', 'unknown')}")
+            logger.info(f"Search response: status={response.status_code}")
 
             # Now download CSV
             csv_data = {
@@ -128,29 +128,22 @@ class RRCDataService:
             response = session.post(OIL_SEARCH_URL, data=csv_data, timeout=300)
             response.raise_for_status()
 
-            # Log response details for debugging
-            content_type = response.headers.get('content-type', 'unknown')
-            content_length = len(response.content)
-            logger.info(f"CSV response: status={response.status_code}, content-type={content_type}, length={content_length}")
-
             # Check if we got CSV or HTML
             content_start = response.content[:500].decode('utf-8', errors='ignore')
-            logger.info(f"Response starts with: {content_start[:200]}")
-
             if '<html' in content_start.lower() or '<!doctype' in content_start.lower():
                 return False, "RRC returned HTML instead of CSV - session may have expired", 0
 
-            # Save to file
-            DATA_DIR.mkdir(parents=True, exist_ok=True)
-            OIL_DATA_FILE.write_bytes(response.content)
+            # Save to storage (GCS or local)
+            rrc_storage.save_oil_data(response.content)
 
             # Count rows
-            df = pd.read_csv(OIL_DATA_FILE, skiprows=2, low_memory=False)
+            df = pd.read_csv(BytesIO(response.content), skiprows=2, low_memory=False)
             row_count = len(df)
 
             logger.info(f"Downloaded oil proration data: {row_count:,} rows")
             self._oil_lookup = None  # Clear cache
             self._combined_lookup = None
+            self._oil_df = None
 
             return True, f"Downloaded {row_count:,} oil proration records", row_count
 
@@ -178,7 +171,7 @@ class RRCDataService:
             }
             response = session.post(GAS_SEARCH_URL, data=search_data, timeout=60)
             response.raise_for_status()
-            logger.info(f"Search response: status={response.status_code}, content-type={response.headers.get('content-type', 'unknown')}")
+            logger.info(f"Search response: status={response.status_code}")
 
             # Download CSV
             csv_data = {
@@ -187,29 +180,22 @@ class RRCDataService:
             response = session.post(GAS_SEARCH_URL, data=csv_data, timeout=300)
             response.raise_for_status()
 
-            # Log response details for debugging
-            content_type = response.headers.get('content-type', 'unknown')
-            content_length = len(response.content)
-            logger.info(f"CSV response: status={response.status_code}, content-type={content_type}, length={content_length}")
-
             # Check if we got CSV or HTML
             content_start = response.content[:500].decode('utf-8', errors='ignore')
-            logger.info(f"Response starts with: {content_start[:200]}")
-
             if '<html' in content_start.lower() or '<!doctype' in content_start.lower():
                 return False, "RRC returned HTML instead of CSV - session may have expired", 0
 
-            # Save to file
-            DATA_DIR.mkdir(parents=True, exist_ok=True)
-            GAS_DATA_FILE.write_bytes(response.content)
+            # Save to storage (GCS or local)
+            rrc_storage.save_gas_data(response.content)
 
             # Count rows
-            df = pd.read_csv(GAS_DATA_FILE, skiprows=2, low_memory=False)
+            df = pd.read_csv(BytesIO(response.content), skiprows=2, low_memory=False)
             row_count = len(df)
 
             logger.info(f"Downloaded gas proration data: {row_count:,} rows")
             self._gas_lookup = None  # Clear cache
             self._combined_lookup = None
+            self._gas_df = None
 
             return True, f"Downloaded {row_count:,} gas proration records", row_count
 
@@ -244,37 +230,53 @@ class RRCDataService:
             return False, f"Both failed. Oil: {oil_msg}, Gas: {gas_msg}", stats
 
     def get_data_status(self) -> dict:
-        """Get status of locally stored RRC data."""
-        status = {
-            "oil_available": OIL_DATA_FILE.exists(),
-            "gas_available": GAS_DATA_FILE.exists(),
-            "oil_rows": 0,
-            "gas_rows": 0,
-            "oil_modified": None,
-            "gas_modified": None,
-        }
+        """Get status of stored RRC data."""
+        base_status = rrc_storage.get_status()
 
-        if OIL_DATA_FILE.exists():
-            status["oil_modified"] = datetime.fromtimestamp(
-                OIL_DATA_FILE.stat().st_mtime
-            ).isoformat()
-            try:
-                df = pd.read_csv(OIL_DATA_FILE, skiprows=2, low_memory=False)
-                status["oil_rows"] = len(df)
-            except Exception:
-                pass
+        # Add row counts if we have the data loaded
+        if base_status["oil_available"]:
+            oil_data = self._get_oil_df()
+            if oil_data is not None:
+                base_status["oil_rows"] = len(oil_data)
 
-        if GAS_DATA_FILE.exists():
-            status["gas_modified"] = datetime.fromtimestamp(
-                GAS_DATA_FILE.stat().st_mtime
-            ).isoformat()
-            try:
-                df = pd.read_csv(GAS_DATA_FILE, skiprows=2, low_memory=False)
-                status["gas_rows"] = len(df)
-            except Exception:
-                pass
+        if base_status["gas_available"]:
+            gas_data = self._get_gas_df()
+            if gas_data is not None:
+                base_status["gas_rows"] = len(gas_data)
 
-        return status
+        return base_status
+
+    def _get_oil_df(self) -> pd.DataFrame | None:
+        """Get oil data as DataFrame, loading from storage if needed."""
+        if self._oil_df is not None:
+            return self._oil_df
+
+        content = rrc_storage.get_oil_data()
+        if content is None:
+            return None
+
+        try:
+            self._oil_df = pd.read_csv(BytesIO(content), skiprows=2, low_memory=False)
+            return self._oil_df
+        except Exception as e:
+            logger.error(f"Error loading oil data: {e}")
+            return None
+
+    def _get_gas_df(self) -> pd.DataFrame | None:
+        """Get gas data as DataFrame, loading from storage if needed."""
+        if self._gas_df is not None:
+            return self._gas_df
+
+        content = rrc_storage.get_gas_data()
+        if content is None:
+            return None
+
+        try:
+            self._gas_df = pd.read_csv(BytesIO(content), skiprows=2, low_memory=False)
+            return self._gas_df
+        except Exception as e:
+            logger.error(f"Error loading gas data: {e}")
+            return None
 
     def _load_lookup(self) -> dict[tuple[str, str], dict]:
         """Load and cache the combined lookup table."""
@@ -290,10 +292,10 @@ class RRCDataService:
             return d
 
         # Load oil data - SUM acres when multiple rows exist for same lease
-        if OIL_DATA_FILE.exists():
+        oil_df = self._get_oil_df()
+        if oil_df is not None:
             try:
-                df = pd.read_csv(OIL_DATA_FILE, skiprows=2, low_memory=False)
-                for _, row in df.iterrows():
+                for _, row in oil_df.iterrows():
                     key = (clean_district(row["District"]), str(row["Lease No."]).strip())
                     try:
                         acres = float(row["Acres"]) if pd.notna(row["Acres"]) else 0.0
@@ -315,20 +317,19 @@ class RRCDataService:
                         pass
                 logger.info(f"Loaded {len(lookup):,} oil proration records")
             except Exception as e:
-                logger.error(f"Error loading oil data: {e}")
+                logger.error(f"Error processing oil data: {e}")
 
         # Load gas data - SUM acres when multiple rows exist for same lease
-        if GAS_DATA_FILE.exists():
+        gas_df = self._get_gas_df()
+        if gas_df is not None:
             try:
-                df = pd.read_csv(GAS_DATA_FILE, skiprows=2, low_memory=False)
                 gas_added = 0
-                for _, row in df.iterrows():
+                for _, row in gas_df.iterrows():
                     key = (clean_district(row["District"]), str(row["Lease No."]).strip())
                     try:
                         acres = float(row["Acres"]) if pd.notna(row["Acres"]) else 0.0
                         if key in lookup:
                             # Sum acres for multiple rows with same lease number
-                            # (could be oil + gas or multiple gas entries)
                             existing_acres = lookup[key].get("acres") or 0.0
                             lookup[key]["acres"] = existing_acres + acres
                             lookup[key]["row_count"] = lookup[key].get("row_count", 1) + 1
@@ -349,7 +350,7 @@ class RRCDataService:
                         pass
                 logger.info(f"Added {gas_added:,} gas proration records")
             except Exception as e:
-                logger.error(f"Error loading gas data: {e}")
+                logger.error(f"Error processing gas data: {e}")
 
         self._combined_lookup = lookup
         logger.info(f"Combined lookup table: {len(lookup):,} total entries")

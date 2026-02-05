@@ -18,7 +18,7 @@ from app.models.title import (
 )
 from app.services.title.csv_processor import process_csv
 from app.services.title.excel_processor import process_excel
-from app.services.title.export_service import generate_filename, to_csv, to_excel
+from app.services.title.export_service import generate_filename, to_csv, to_excel, to_mineral_excel
 
 logger = logging.getLogger(__name__)
 
@@ -180,6 +180,10 @@ async def export_excel(request: ExportRequest) -> Response:
     Args:
         request: Export request with entries and filter options
 
+    Supports format_type parameter:
+        - 'standard': Default title export format
+        - 'mineral': CRM-compatible mineral format
+
     Returns:
         Excel file download
     """
@@ -187,8 +191,15 @@ async def export_excel(request: ExportRequest) -> Response:
         raise HTTPException(status_code=400, detail="No entries provided for export")
 
     try:
-        excel_bytes = to_excel(request.entries, request.filters)
-        filename = generate_filename(request.filename or "title_export", "xlsx")
+        # Check if mineral format is requested
+        if request.format_type == "mineral":
+            excel_bytes = to_mineral_excel(request.entries, request.filters)
+            filename = generate_filename(
+                (request.filename or "title_export") + "_mineral", "xlsx"
+            )
+        else:
+            excel_bytes = to_excel(request.entries, request.filters)
+            filename = generate_filename(request.filename or "title_export", "xlsx")
 
         return Response(
             content=excel_bytes,

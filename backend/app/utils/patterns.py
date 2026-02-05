@@ -219,7 +219,13 @@ FD_PATTERN = re.compile(
 )
 
 NOTE_PATTERN = re.compile(
-    r"\bNote\s*(?:\(?\d+\)?)?:?\s*([^\n]+)",
+    r"\bNote\s*(?:\(?\d+\)?)?:?\s*([^\n\)]+)",  # Don't capture lone closing parens
+    re.IGNORECASE,
+)
+
+# Pattern to detect legal description format (e.g., "2-6N-4W", "Section 1-2N-3E")
+LEGAL_DESCRIPTION_PATTERN = re.compile(
+    r"^(?:Section\s+)?(\d+)-?(\d+[NS])-?(\d+[EW])$",
     re.IGNORECASE,
 )
 
