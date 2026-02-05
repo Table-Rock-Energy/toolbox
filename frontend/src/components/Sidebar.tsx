@@ -1,4 +1,5 @@
-import { NavLink, useLocation } from 'react-router-dom'
+import { useState } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   FileSearch,
@@ -6,9 +7,9 @@ import {
   Calculator,
   DollarSign,
   Settings,
-  HelpCircle,
   LogOut,
   ChevronRight,
+  User,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -20,14 +21,11 @@ const toolNavItems = [
   { name: 'Revenue', path: '/revenue', icon: DollarSign },
 ]
 
-const accountNavItems = [
-  { name: 'Settings', path: '/settings', icon: Settings },
-  { name: 'Help', path: '/help', icon: HelpCircle },
-]
-
 export default function Sidebar() {
   const location = useLocation()
+  const navigate = useNavigate()
   const { user, signOut } = useAuth()
+  const [isUserMenuVisible, setIsUserMenuVisible] = useState(false)
 
   const getLinkClassName = (path: string) => {
     const isActive = path === '/'
@@ -41,6 +39,10 @@ export default function Sidebar() {
     }`
   }
 
+  const handleSignOut = async () => {
+    await signOut()
+  }
+
   return (
     <aside className="w-64 bg-tre-navy flex flex-col h-full">
       {/* Logo Section */}
@@ -49,7 +51,7 @@ export default function Sidebar() {
           <img
             src="/logo-circle.png"
             alt="Table Rock Energy"
-            className="w-10 h-10 rounded-lg"
+            className="w-20 h-20"
           />
           <div>
             <h1 className="text-white font-oswald font-semibold text-lg tracking-wide">
@@ -81,17 +83,40 @@ export default function Sidebar() {
         <p className="text-tre-tan/60 text-xs uppercase tracking-wider mb-3 px-4">
           Account
         </p>
-        {accountNavItems.map((item) => (
-          <NavLink key={item.path} to={item.path} className={getLinkClassName(item.path)}>
-            <item.icon className="w-5 h-5" />
-            <span className="font-oswald font-light tracking-wide">{item.name}</span>
-          </NavLink>
-        ))}
+        <NavLink to="/settings" className={getLinkClassName('/settings')}>
+          <Settings className="w-5 h-5" />
+          <span className="font-oswald font-light tracking-wide">Settings</span>
+        </NavLink>
       </div>
 
-      {/* User Section */}
-      <div className="p-4 border-t border-tre-teal/20">
-        <div className="flex items-center gap-3 px-4 py-2">
+      {/* User Section with Hover Flyout */}
+      <div
+        className="p-4 border-t border-tre-teal/20 relative"
+        onMouseEnter={() => setIsUserMenuVisible(true)}
+        onMouseLeave={() => setIsUserMenuVisible(false)}
+      >
+        {/* Flyout Menu */}
+        {isUserMenuVisible && (
+          <div className="absolute bottom-full left-4 right-4 mb-2 bg-tre-navy border border-tre-teal/30 rounded-lg shadow-xl overflow-hidden z-50">
+            <button
+              onClick={() => navigate('/settings')}
+              className="w-full flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-tre-teal/10 hover:text-tre-teal transition-colors"
+            >
+              <User className="w-4 h-4" />
+              <span className="text-sm">Profile Settings</span>
+            </button>
+            <button
+              onClick={handleSignOut}
+              className="w-full flex items-center gap-3 px-4 py-3 text-gray-300 hover:text-red-400 hover:bg-red-400/10 transition-colors border-t border-tre-teal/20"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="text-sm">Sign Out</span>
+            </button>
+          </div>
+        )}
+
+        {/* User Info */}
+        <div className="flex items-center gap-3 px-4 py-2 rounded-lg cursor-pointer hover:bg-tre-navy/50 transition-colors">
           {user?.photoURL ? (
             <img
               src={user.photoURL}
@@ -114,13 +139,6 @@ export default function Sidebar() {
             </p>
           </div>
         </div>
-        <button
-          onClick={signOut}
-          className="w-full flex items-center gap-3 px-4 py-2 mt-2 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
-        >
-          <LogOut className="w-4 h-4" />
-          <span className="text-sm">Sign Out</span>
-        </button>
       </div>
     </aside>
   )

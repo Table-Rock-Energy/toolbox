@@ -44,7 +44,7 @@ export default function Login() {
         <img
           src="/logo.png"
           alt="Table Rock Energy"
-          className="h-24 mx-auto mb-4"
+          className="w-[300px] mx-auto mb-4"
         />
         <p className="text-tre-tan text-sm">
           Energy Industry Data Processing Suite

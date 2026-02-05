@@ -6,74 +6,55 @@ import {
   DollarSign,
   ArrowRight,
   Activity,
-  Clock,
-  CheckCircle,
 } from 'lucide-react'
-import { StatusBadge } from '../components'
 
 const tools = [
   {
     name: 'Extract',
-    description: 'Extract data from PDFs and documents using AI',
+    description: 'Extract party and stakeholder data from OCC Exhibit A PDFs',
     icon: FileSearch,
     path: '/extract',
     color: 'bg-blue-500',
+    usageCount: 0,
   },
   {
     name: 'Title',
-    description: 'Manage and search mineral title information',
+    description: 'Consolidate owner and contact info from Oklahoma title opinions',
     icon: FileText,
     path: '/title',
     color: 'bg-green-500',
+    usageCount: 0,
   },
   {
     name: 'Proration',
-    description: 'Calculate interest prorations and allocations',
+    description: 'Calculate interest prorations and NRA allocations with RRC data',
     icon: Calculator,
     path: '/proration',
     color: 'bg-purple-500',
+    usageCount: 0,
   },
   {
     name: 'Revenue',
-    description: 'Analyze revenue statements and distributions',
+    description: 'Extract revenue statements from EnergyLink and Energy Transfer PDFs',
     icon: DollarSign,
     path: '/revenue',
     color: 'bg-amber-500',
+    usageCount: 0,
   },
 ]
 
-const recentActivity = [
-  {
-    id: 1,
-    type: 'Extract',
-    description: 'Processed lease document',
-    status: 'success' as const,
-    time: '2 hours ago',
-  },
-  {
-    id: 2,
-    type: 'Proration',
-    description: 'Calculated interest allocation',
-    status: 'success' as const,
-    time: '5 hours ago',
-  },
-  {
-    id: 3,
-    type: 'Revenue',
-    description: 'Processing statement upload',
-    status: 'processing' as const,
-    time: '1 day ago',
-  },
-  {
-    id: 4,
-    type: 'Title',
-    description: 'Title search completed',
-    status: 'success' as const,
-    time: '2 days ago',
-  },
-]
+// This would come from the backend in a real implementation
+const recentActivity: {
+  id: number
+  tool: string
+  fileName: string
+  user: string
+  timestamp: string
+}[] = []
 
 export default function Dashboard() {
+  const totalJobs = tools.reduce((sum, tool) => sum + tool.usageCount, 0)
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -86,7 +67,7 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {/* Stats */}
+      {/* Stats - Total Jobs */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center gap-3">
@@ -94,41 +75,8 @@ export default function Dashboard() {
               <Activity className="w-5 h-5 text-tre-teal" />
             </div>
             <div>
-              <p className="text-2xl font-oswald font-semibold text-tre-navy">127</p>
+              <p className="text-2xl font-oswald font-semibold text-tre-navy">{totalJobs}</p>
               <p className="text-sm text-gray-500">Total Jobs</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <CheckCircle className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-oswald font-semibold text-tre-navy">118</p>
-              <p className="text-sm text-gray-500">Completed</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <Clock className="w-5 h-5 text-yellow-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-oswald font-semibold text-tre-navy">9</p>
-              <p className="text-sm text-gray-500">In Progress</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-tre-brown-light/20 rounded-lg">
-              <FileText className="w-5 h-5 text-tre-brown-medium" />
-            </div>
-            <div>
-              <p className="text-2xl font-oswald font-semibold text-tre-navy">1,240</p>
-              <p className="text-sm text-gray-500">Documents</p>
             </div>
           </div>
         </div>
@@ -146,8 +94,14 @@ export default function Dashboard() {
               to={tool.path}
               className="group bg-white rounded-xl border border-gray-200 p-5 hover:border-tre-teal hover:shadow-lg transition-all duration-200"
             >
-              <div className={`w-12 h-12 ${tool.color} rounded-xl flex items-center justify-center mb-4`}>
-                <tool.icon className="w-6 h-6 text-white" />
+              <div className="flex items-start justify-between mb-4">
+                <div className={`w-12 h-12 ${tool.color} rounded-xl flex items-center justify-center`}>
+                  <tool.icon className="w-6 h-6 text-white" />
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-oswald font-semibold text-tre-navy">{tool.usageCount}</p>
+                  <p className="text-xs text-gray-400">times used</p>
+                </div>
               </div>
               <h3 className="font-oswald font-semibold text-tre-navy text-lg mb-1 group-hover:text-tre-teal transition-colors">
                 {tool.name}
@@ -169,24 +123,39 @@ export default function Dashboard() {
         <h2 className="text-xl font-oswald font-semibold text-tre-navy mb-4">
           Recent Activity
         </h2>
-        <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
-          {recentActivity.map((item) => (
-            <div key={item.id} className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors">
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-tre-navy/5 rounded-lg flex items-center justify-center">
-                  <span className="text-xs font-medium text-tre-navy">{item.type.charAt(0)}</span>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">{item.description}</p>
-                  <p className="text-sm text-gray-500">{item.type}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-4">
-                <StatusBadge status={item.status} size="sm" />
-                <span className="text-sm text-gray-400">{item.time}</span>
-              </div>
+        <div className="bg-white rounded-xl border border-gray-200">
+          {recentActivity.length === 0 ? (
+            <div className="p-8 text-center text-gray-500">
+              <Activity className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+              <p className="font-medium">No activity yet</p>
+              <p className="text-sm mt-1">Tool usage will appear here</p>
             </div>
-          ))}
+          ) : (
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Tool</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">File</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Date & Time</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {recentActivity.map((item) => (
+                  <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-tre-teal/10 text-tre-teal">
+                        {item.tool}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{item.fileName}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{item.user}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{item.timestamp}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>

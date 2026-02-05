@@ -7,7 +7,6 @@ import Title from './pages/Title'
 import Proration from './pages/Proration'
 import Revenue from './pages/Revenue'
 import Settings from './pages/Settings'
-import Help from './pages/Help'
 import Login from './pages/Login'
 
 // Protected route wrapper
@@ -47,7 +46,6 @@ function AppRoutes() {
         <Route path="proration" element={<Proration />} />
         <Route path="revenue" element={<Revenue />} />
         <Route path="settings" element={<Settings />} />
-        <Route path="help" element={<Help />} />
       </Route>
     </Routes>
   )
