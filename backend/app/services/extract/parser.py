@@ -146,7 +146,7 @@ def _parse_single_entry(raw_text: str) -> Optional[PartyEntry]:
     entity_type = _detect_entity_type(text_without_number)
 
     # Parse address
-    address_parts = {"street": None, "city": None, "state": None, "zip": None}
+    address_parts = {"street": None, "street2": None, "city": None, "state": None, "zip": None}
     if address_text and not is_address_unknown:
         address_parts = parse_address(address_text)
 
@@ -163,6 +163,7 @@ def _parse_single_entry(raw_text: str) -> Optional[PartyEntry]:
         primary_name=primary_name,
         entity_type=entity_type,
         mailing_address=address_parts["street"],
+        mailing_address_2=address_parts["street2"],
         city=address_parts["city"],
         state=address_parts["state"],
         zip_code=address_parts["zip"],

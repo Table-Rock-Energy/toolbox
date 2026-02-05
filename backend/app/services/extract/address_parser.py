@@ -22,17 +22,20 @@ def parse_address(address_text: str) -> dict[str, Optional[str]]:
     - Standard formats: "123 Main St, City, ST 12345"
     - Multi-line addresses
     - PO Box addresses
-    - Apartment/suite/unit numbers
+    - Apartment/suite/unit numbers (split to street2)
     - ZIP and ZIP+4 formats
 
     Args:
         address_text: Raw address text (may be multi-line)
 
     Returns:
-        Dictionary with keys: street, city, state, zip
+        Dictionary with keys: street, street2, city, state, zip
+        - street: Primary street address (number and street name)
+        - street2: Secondary address line (apt, suite, unit, etc.)
     """
     result: dict[str, Optional[str]] = {
         "street": None,
+        "street2": None,
         "city": None,
         "state": None,
         "zip": None,
@@ -189,6 +192,7 @@ def _parse_without_zip(text: str) -> dict[str, Optional[str]]:
     """Parse address when no ZIP code is found."""
     result: dict[str, Optional[str]] = {
         "street": None,
+        "street2": None,
         "city": None,
         "state": None,
         "zip": None,
@@ -229,6 +233,46 @@ def _parse_without_zip(text: str) -> dict[str, Optional[str]]:
     return result
 
 
+def _split_apt_unit(street: str) -> tuple[str, Optional[str]]:
+    """
+    Split apartment/suite/unit from street address.
+
+    Args:
+        street: Full street address that may contain apt/suite/unit
+
+    Returns:
+        Tuple of (primary_street, secondary_line)
+    """
+    if not street:
+        return street, None
+
+    # Pattern to match apt/suite/unit designations
+    # Matches: Apt 101, Apt. 101, Suite 200, Ste. 200, Ste 200, Unit 5, Unit 5A, #101, etc.
+    apt_pattern = re.compile(
+        r"[,\s]+(?P<apt>(?:Apt\.?|Apartment|Suite|Ste\.?|Unit|#)\s*[A-Za-z0-9-]+)\s*$",
+        re.IGNORECASE,
+    )
+
+    match = apt_pattern.search(street)
+    if match:
+        apt_part = match.group("apt").strip()
+        street_part = street[: match.start()].strip().rstrip(",").strip()
+        return street_part, apt_part
+
+    # Also check for apt/unit in the middle with comma separation
+    # e.g., "123 Main St, Apt 5, Some City" - this case the apt would be captured
+    # before city extraction, but let's also handle inline patterns like "123 Main St Apt 5"
+    inline_pattern = re.compile(
+        r"^(?P<street>.+?)\s+(?P<apt>(?:Apt\.?|Apartment|Suite|Ste\.?|Unit|#)\s*[A-Za-z0-9-]+)$",
+        re.IGNORECASE,
+    )
+    match = inline_pattern.match(street)
+    if match:
+        return match.group("street").strip(), match.group("apt").strip()
+
+    return street, None
+
+
 def _clean_result(result: dict[str, Optional[str]]) -> dict[str, Optional[str]]:
     """Clean up parsed address components."""
     for key in result:
@@ -238,6 +282,12 @@ def _clean_result(result: dict[str, Optional[str]]) -> dict[str, Optional[str]]:
             # Remove multiple spaces
             value = re.sub(r"\s+", " ", value)
             result[key] = value if value else None
+
+    # Split apt/suite/unit from street address into street2
+    if result["street"] and not result["street2"]:
+        street, street2 = _split_apt_unit(result["street"])
+        result["street"] = street
+        result["street2"] = street2
 
     # Validate state
     if result["state"]:

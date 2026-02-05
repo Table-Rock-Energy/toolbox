@@ -22,7 +22,10 @@ def get_firestore_client() -> AsyncClient:
     """Get or create Firestore async client."""
     global _db
     if _db is None:
-        _db = firestore.AsyncClient(project=settings.gcs_project_id)
+        _db = firestore.AsyncClient(
+            project=settings.gcs_project_id,
+            database="tablerocktools",
+        )
     return _db
 
 

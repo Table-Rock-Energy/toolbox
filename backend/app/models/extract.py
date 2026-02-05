@@ -28,7 +28,10 @@ class PartyEntry(BaseModel):
         default=EntityType.INDIVIDUAL, description="Type of entity"
     )
     mailing_address: Optional[str] = Field(
-        None, description="Street address only"
+        None, description="Primary street address (number and street name)"
+    )
+    mailing_address_2: Optional[str] = Field(
+        None, description="Secondary address line (apt, suite, unit, etc.)"
     )
     city: Optional[str] = Field(None, description="City name")
     state: Optional[str] = Field(None, description="2-letter state abbreviation")

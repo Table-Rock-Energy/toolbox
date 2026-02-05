@@ -159,6 +159,7 @@ def _entries_to_dataframe(entries: list[PartyEntry]) -> pd.DataFrame:
             # Map our extracted data to CRM fields
             row["Full Name"] = name
             row["Primary Address 1"] = entry.mailing_address or ""
+            row["Primary Address 2"] = entry.mailing_address_2 or ""
             row["Primary Address City"] = entry.city or ""
             row["Primary Address State"] = entry.state or ""
             row["Primary Address Zip"] = entry.zip_code or ""

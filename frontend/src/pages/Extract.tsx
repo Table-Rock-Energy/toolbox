@@ -8,6 +8,7 @@ interface PartyEntry {
   primary_name: string
   entity_type: string
   mailing_address?: string
+  mailing_address_2?: string
   city?: string
   state?: string
   zip_code?: string
@@ -561,6 +562,17 @@ export default function Extract() {
                   value={editingEntry.mailing_address || ''}
                   onChange={(e) => setEditingEntry({ ...editingEntry, mailing_address: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                  placeholder="Street address"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Address 2</label>
+                <input
+                  type="text"
+                  value={editingEntry.mailing_address_2 || ''}
+                  onChange={(e) => setEditingEntry({ ...editingEntry, mailing_address_2: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                  placeholder="Apt, Suite, Unit, etc."
                 />
               </div>
               <div className="grid grid-cols-3 gap-4">
