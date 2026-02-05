@@ -105,7 +105,8 @@ async def shutdown_event() -> None:
 STATIC_DIR = Path(__file__).parent.parent / "static"
 if STATIC_DIR.exists():
     # Mount static assets (JS, CSS, images)
-    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+    if (STATIC_DIR / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
 
     # Serve index.html for all non-API routes (SPA routing)
     @app.get("/{full_path:path}")
@@ -117,6 +118,11 @@ if STATIC_DIR.exists():
                 status_code=404,
                 content={"detail": "API route not found"},
             )
+
+        # Check if the requested path is a static file (logo, favicon, etc.)
+        static_file = STATIC_DIR / full_path
+        if static_file.exists() and static_file.is_file():
+            return FileResponse(static_file)
 
         # Serve index.html for all other routes (SPA handles routing)
         index_path = STATIC_DIR / "index.html"
