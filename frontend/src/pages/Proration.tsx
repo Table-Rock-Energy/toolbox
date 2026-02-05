@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw } from 'lucide-react'
+import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw, Filter, Settings } from 'lucide-react'
 import { FileUpload } from '../components'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -80,6 +80,14 @@ export default function Proration() {
   const [isDownloadingRRC, setIsDownloadingRRC] = useState(false)
   const [rrcMessage, setRrcMessage] = useState<string | null>(null)
 
+  // Processing Options State
+  const [showProcessingOptions, setShowProcessingOptions] = useState(false)
+  const [newRecordOnly, setNewRecordOnly] = useState(false)
+  const [deduplicateByPropertyId, setDeduplicateByPropertyId] = useState(false)
+  const [minAppraisalValue, setMinAppraisalValue] = useState<number>(0)
+  const [wellTypeOverride, setWellTypeOverride] = useState<string>('auto')
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+
   // Check RRC data status on mount
   useEffect(() => {
     checkRRCStatus()
@@ -127,19 +135,32 @@ export default function Proration() {
     if (files.length === 0) return
 
     const file = files[0]
+    setSelectedFile(file)
+    setShowProcessingOptions(true)
+    setError(null)
+  }
+
+  const processFile = async () => {
+    if (!selectedFile) return
+
     setIsProcessing(true)
+    setShowProcessingOptions(false)
     setError(null)
 
     const newJob: ProrationJob = {
       id: String(Date.now()),
-      documentName: file.name,
+      documentName: selectedFile.name,
       user: user?.displayName || user?.email || 'Unknown',
       timestamp: new Date().toLocaleString(),
     }
 
     try {
       const formData = new FormData()
-      formData.append('file', file)
+      formData.append('file', selectedFile)
+      formData.append('new_record_only', String(newRecordOnly))
+      formData.append('deduplicate_by_property_id', String(deduplicateByPropertyId))
+      formData.append('min_appraisal_value', String(minAppraisalValue))
+      formData.append('well_type_override', wellTypeOverride)
 
       const response = await fetch(`${API_BASE}/proration/upload`, {
         method: 'POST',
@@ -156,6 +177,7 @@ export default function Proration() {
 
       setJobs((prev) => [newJob, ...prev])
       setActiveJob(newJob)
+      setSelectedFile(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to process file')
       newJob.result = {
@@ -166,6 +188,11 @@ export default function Proration() {
     } finally {
       setIsProcessing(false)
     }
+  }
+
+  const cancelProcessing = () => {
+    setShowProcessingOptions(false)
+    setSelectedFile(null)
   }
 
   const handleExport = async (format: 'excel' | 'pdf') => {
@@ -337,24 +364,110 @@ export default function Proration() {
         <div className="space-y-6">
           {/* Upload Section */}
           <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <FileUpload
-              onFilesSelected={handleFilesSelected}
-              accept=".csv"
-              label="Upload Mineral Holders CSV"
-              description="Drop your CSV file from mineralholders.com"
-            />
-            {isProcessing && (
-              <div className="mt-4 flex items-center gap-2 text-tre-teal">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
-                <span className="text-sm">Processing...</span>
-              </div>
-            )}
-            {!hasRRCData && !isProcessing && (
-              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-xs text-yellow-700">
-                  <AlertTriangle className="w-3 h-3 inline mr-1" />
-                  Download RRC data first for accurate NRA calculations
-                </p>
+            {!showProcessingOptions ? (
+              <>
+                <FileUpload
+                  onFilesSelected={handleFilesSelected}
+                  accept=".csv"
+                  label="Upload Mineral Holders CSV"
+                  description="Drop your CSV file from mineralholders.com"
+                />
+                {isProcessing && (
+                  <div className="mt-4 flex items-center gap-2 text-tre-teal">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
+                    <span className="text-sm">Processing...</span>
+                  </div>
+                )}
+                {!hasRRCData && !isProcessing && (
+                  <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-xs text-yellow-700">
+                      <AlertTriangle className="w-3 h-3 inline mr-1" />
+                      Download RRC data first for accurate NRA calculations
+                    </p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-gray-700">
+                  <Settings className="w-4 h-4" />
+                  <span className="font-medium">Processing Options</span>
+                </div>
+
+                <div className="p-3 bg-gray-50 rounded-lg text-sm">
+                  <span className="text-gray-600">File:</span>{' '}
+                  <span className="font-medium text-gray-900">{selectedFile?.name}</span>
+                </div>
+
+                {/* Filter Options */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <Filter className="w-4 h-4" />
+                    <span>Filters</span>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={newRecordOnly}
+                      onChange={(e) => setNewRecordOnly(e.target.checked)}
+                      className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                    />
+                    <span>New Records Only (Y)</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={deduplicateByPropertyId}
+                      onChange={(e) => setDeduplicateByPropertyId(e.target.checked)}
+                      className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                    />
+                    <span>Deduplicate by Property ID</span>
+                  </label>
+
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm">Min Appraisal Value:</label>
+                    <input
+                      type="number"
+                      value={minAppraisalValue}
+                      onChange={(e) => setMinAppraisalValue(Number(e.target.value))}
+                      min={0}
+                      className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-tre-teal focus:border-tre-teal"
+                    />
+                  </div>
+                </div>
+
+                {/* Well Type Override */}
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-600">Well Type Override:</label>
+                  <select
+                    value={wellTypeOverride}
+                    onChange={(e) => setWellTypeOverride(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+                  >
+                    <option value="auto">Auto-detect from RRC data</option>
+                    <option value="oil">Oil</option>
+                    <option value="gas">Gas</option>
+                    <option value="both">Both</option>
+                  </select>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-2 pt-2">
+                  <button
+                    onClick={cancelProcessing}
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={processFile}
+                    className="flex-1 px-4 py-2 bg-tre-navy text-white rounded-lg text-sm hover:bg-tre-navy/90 transition-colors"
+                  >
+                    Process CSV
+                  </button>
+                </div>
               </div>
             )}
           </div>

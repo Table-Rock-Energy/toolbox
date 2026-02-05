@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Copy } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Copy, Filter, RotateCcw } from 'lucide-react'
 import { FileUpload } from '../components'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -54,10 +54,14 @@ export default function Title() {
   // Filter state
   const [hideNoAddress, setHideNoAddress] = useState(false)
   const [hideDuplicates, setHideDuplicates] = useState(false)
+  const [showIndividualsOnly, setShowIndividualsOnly] = useState(false)
   const [selectedSection, setSelectedSection] = useState<string>('')
 
+  // Row selection state
+  const [excludedIndices, setExcludedIndices] = useState<Set<number>>(new Set())
+
   // Apply filters to entries
-  const getFilteredEntries = (): OwnerEntry[] => {
+  const filteredEntries = useMemo(() => {
     if (!activeJob?.result?.entries) return []
     let filtered = [...activeJob.result.entries]
 
@@ -75,12 +79,62 @@ export default function Title() {
       })
     }
 
+    if (showIndividualsOnly) {
+      filtered = filtered.filter(e => e.entity_type === 'INDIVIDUAL')
+    }
+
     if (selectedSection) {
       filtered = filtered.filter(e => e.legal_description === selectedSection)
     }
 
     return filtered
+  }, [activeJob?.result?.entries, hideNoAddress, hideDuplicates, showIndividualsOnly, selectedSection])
+
+  // Get entries to export (filtered + not excluded)
+  const entriesToExport = useMemo(() => {
+    return filteredEntries.filter((_, i) => !excludedIndices.has(i))
+  }, [filteredEntries, excludedIndices])
+
+  // Selection helpers
+  const isAllSelected = filteredEntries.length > 0 &&
+    filteredEntries.every((_, i) => !excludedIndices.has(i))
+  const isSomeSelected = filteredEntries.some((_, i) => !excludedIndices.has(i)) && !isAllSelected
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      // Exclude all
+      setExcludedIndices(new Set(filteredEntries.map((_, i) => i)))
+    } else {
+      // Include all
+      setExcludedIndices(new Set())
+    }
   }
+
+  const toggleEntry = (index: number) => {
+    const newExcluded = new Set(excludedIndices)
+    if (newExcluded.has(index)) {
+      newExcluded.delete(index)
+    } else {
+      newExcluded.add(index)
+    }
+    setExcludedIndices(newExcluded)
+  }
+
+  const getEntryStatus = (entry: OwnerEntry): { label: string; color: string } => {
+    if (entry.duplicate_flag && !entry.has_address) {
+      return { label: 'Dup + No Addr', color: 'text-purple-600 bg-purple-100' }
+    }
+    if (entry.duplicate_flag) {
+      return { label: 'Duplicate', color: 'text-yellow-700 bg-yellow-100' }
+    }
+    if (!entry.has_address) {
+      return { label: 'No Address', color: 'text-red-600 bg-red-100' }
+    }
+    return { label: 'OK', color: 'text-green-600 bg-green-100' }
+  }
+
+  // Keep the old function for backward compatibility (used in handleExport)
+  const getFilteredEntries = () => filteredEntries
 
   const handleFilesSelected = async (files: File[]) => {
     if (files.length === 0) return
@@ -128,8 +182,10 @@ export default function Title() {
   }
 
   const handleExport = async (format: 'csv' | 'excel' | 'mineral') => {
-    const filteredEntries = getFilteredEntries()
-    if (filteredEntries.length === 0) return
+    if (entriesToExport.length === 0) {
+      setError('No entries selected for export')
+      return
+    }
 
     try {
       // For mineral format, use the same endpoint but with different filename convention
@@ -143,7 +199,7 @@ export default function Title() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          entries: filteredEntries,
+          entries: entriesToExport,
           filters: {
             hide_no_address: hideNoAddress,
             hide_duplicates: hideDuplicates,
@@ -175,6 +231,15 @@ export default function Title() {
   const handleSelectJob = (job: TitleJob) => {
     setActiveJob(job)
     setError(null)
+    setExcludedIndices(new Set())
+  }
+
+  const resetFilters = () => {
+    setHideNoAddress(false)
+    setHideDuplicates(false)
+    setShowIndividualsOnly(false)
+    setSelectedSection('')
+    setExcludedIndices(new Set())
   }
 
   const formatAddress = (entry: OwnerEntry): string => {
@@ -312,18 +377,24 @@ export default function Title() {
               </div>
 
               {/* Stats */}
-              <div className="grid grid-cols-4 gap-4 p-6 border-b border-gray-100">
+              <div className="grid grid-cols-5 gap-4 p-6 border-b border-gray-100">
                 <div className="text-center">
                   <p className="text-2xl font-oswald font-semibold text-tre-navy">
                     {activeJob.result.total_count}
                   </p>
-                  <p className="text-sm text-gray-500">Total Entries</p>
+                  <p className="text-sm text-gray-500">Total</p>
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-oswald font-semibold text-tre-teal">
-                    {getFilteredEntries().length}
+                    {filteredEntries.length}
                   </p>
                   <p className="text-sm text-gray-500">Filtered</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-oswald font-semibold text-green-600">
+                    {entriesToExport.length}
+                  </p>
+                  <p className="text-sm text-gray-500">Selected</p>
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-oswald font-semibold text-yellow-600">
@@ -342,6 +413,19 @@ export default function Title() {
               {/* Filters */}
               <div className="px-6 py-3 border-b border-gray-100 bg-gray-50">
                 <div className="flex flex-wrap items-center gap-4">
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <Filter className="w-4 h-4" />
+                    <span className="text-sm font-medium">Filters:</span>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={showIndividualsOnly}
+                      onChange={(e) => setShowIndividualsOnly(e.target.checked)}
+                      className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                    />
+                    Individuals Only
+                  </label>
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
@@ -349,7 +433,7 @@ export default function Title() {
                       onChange={(e) => setHideNoAddress(e.target.checked)}
                       className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
                     />
-                    Hide no address
+                    Hide No Address
                   </label>
                   <label className="flex items-center gap-2 text-sm">
                     <input
@@ -358,7 +442,7 @@ export default function Title() {
                       onChange={(e) => setHideDuplicates(e.target.checked)}
                       className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
                     />
-                    Hide duplicates
+                    Hide Duplicates
                   </label>
                   {activeJob.result.sections && activeJob.result.sections.length > 1 && (
                     <div className="flex items-center gap-2">
@@ -375,18 +459,17 @@ export default function Title() {
                       </select>
                     </div>
                   )}
-                  {(hideNoAddress || hideDuplicates || selectedSection) && (
-                    <button
-                      onClick={() => {
-                        setHideNoAddress(false)
-                        setHideDuplicates(false)
-                        setSelectedSection('')
-                      }}
-                      className="text-sm text-tre-teal hover:underline"
-                    >
-                      Reset Filters
-                    </button>
-                  )}
+                  <button
+                    onClick={resetFilters}
+                    className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Reset
+                  </button>
+                </div>
+                <div className="mt-2 text-xs text-gray-500">
+                  Showing {filteredEntries.length} of {activeJob.result.total_count} entries
+                  ({entriesToExport.length} selected for export)
                 </div>
               </div>
 
@@ -400,38 +483,73 @@ export default function Title() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-gray-200">
+                        <th className="text-left py-2 px-3 font-medium text-gray-600 w-10">
+                          <input
+                            type="checkbox"
+                            checked={isAllSelected}
+                            ref={(el) => {
+                              if (el) el.indeterminate = isSomeSelected
+                            }}
+                            onChange={toggleSelectAll}
+                            className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                          />
+                        </th>
                         <th className="text-left py-2 px-3 font-medium text-gray-600">Name</th>
                         <th className="text-left py-2 px-3 font-medium text-gray-600">Type</th>
                         <th className="text-left py-2 px-3 font-medium text-gray-600">Address</th>
                         <th className="text-left py-2 px-3 font-medium text-gray-600">Legal Desc</th>
-                        <th className="text-left py-2 px-3 font-medium text-gray-600">Notes</th>
+                        <th className="text-left py-2 px-3 font-medium text-gray-600">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {getFilteredEntries().slice(0, 15).map((entry, i) => (
-                        <tr key={i} className={entry.duplicate_flag ? 'bg-yellow-50' : !entry.has_address ? 'bg-red-50' : ''}>
-                          <td className="py-2 px-3 text-gray-900">{entry.full_name}</td>
-                          <td className="py-2 px-3 text-gray-600 text-xs">{entry.entity_type}</td>
-                          <td className="py-2 px-3 text-gray-600">
-                            {entry.has_address
-                              ? formatAddress(entry)
-                              : <span className="text-red-500 text-xs">No address</span>
-                            }
-                          </td>
-                          <td className="py-2 px-3 text-gray-600 text-xs">{entry.legal_description}</td>
-                          <td className="py-2 px-3 text-gray-500 text-xs max-w-[200px] truncate" title={entry.notes || ''}>
-                            {entry.notes || '-'}
-                          </td>
-                        </tr>
-                      ))}
+                      {filteredEntries.slice(0, 20).map((entry, i) => {
+                        const isExcluded = excludedIndices.has(i)
+                        const status = getEntryStatus(entry)
+                        return (
+                          <tr
+                            key={i}
+                            className={`
+                              ${entry.duplicate_flag && !entry.has_address ? 'bg-purple-50' :
+                                entry.duplicate_flag ? 'bg-yellow-50' :
+                                !entry.has_address ? 'bg-red-50' : ''}
+                              ${isExcluded ? 'opacity-50' : ''}
+                            `}
+                          >
+                            <td className="py-2 px-3">
+                              <input
+                                type="checkbox"
+                                checked={!isExcluded}
+                                onChange={() => toggleEntry(i)}
+                                className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                              />
+                            </td>
+                            <td className={`py-2 px-3 text-gray-900 ${isExcluded ? 'line-through' : ''}`} title={entry.full_name}>
+                              {entry.full_name.length > 30 ? entry.full_name.substring(0, 30) + '...' : entry.full_name}
+                            </td>
+                            <td className="py-2 px-3 text-gray-600 text-xs">{entry.entity_type}</td>
+                            <td className="py-2 px-3 text-gray-600 text-xs">
+                              {entry.has_address
+                                ? formatAddress(entry)
+                                : <span className="text-red-500">—</span>
+                              }
+                            </td>
+                            <td className="py-2 px-3 text-gray-600 text-xs">{entry.legal_description}</td>
+                            <td className="py-2 px-3">
+                              <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${status.color}`}>
+                                {status.label}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
-                  {getFilteredEntries().length > 15 && (
+                  {filteredEntries.length > 20 && (
                     <p className="text-sm text-gray-500 mt-3 text-center">
-                      Showing 15 of {getFilteredEntries().length} filtered entries. Download to see all.
+                      Showing 20 of {filteredEntries.length} filtered entries. Download to see all.
                     </p>
                   )}
-                  {getFilteredEntries().length === 0 && (
+                  {filteredEntries.length === 0 && (
                     <p className="text-sm text-gray-500 mt-3 text-center">
                       No entries match the current filters.
                     </p>

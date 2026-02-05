@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { DollarSign, Download, Upload, FileText, AlertCircle, CheckCircle } from 'lucide-react'
+import { DollarSign, Download, Upload, FileText, AlertCircle, CheckCircle, ChevronDown, ChevronRight } from 'lucide-react'
 import { FileUpload } from '../components'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -60,6 +60,7 @@ export default function Revenue() {
   const [activeJob, setActiveJob] = useState<RevenueJob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [expandedStatement, setExpandedStatement] = useState<number | null>(null)
 
   const handleFilesSelected = async (files: File[]) => {
     if (files.length === 0) return
@@ -94,6 +95,7 @@ export default function Revenue() {
 
       setJobs((prev) => [newJob, ...prev])
       setActiveJob(newJob)
+      setExpandedStatement(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to process files')
       newJob.result = {
@@ -191,6 +193,7 @@ export default function Revenue() {
             <FileUpload
               onFilesSelected={handleFilesSelected}
               accept=".pdf"
+              multiple={false}
               label="Upload Revenue Statement"
               description="Drop your PDF file here"
             />
@@ -303,67 +306,174 @@ export default function Revenue() {
                 </div>
               </div>
 
-              {/* Statement Info */}
-              {activeJob.result.statements && activeJob.result.statements.length > 0 && activeJob.result.statements[0].payor && (
-                <div className="px-6 py-3 border-b border-gray-100 bg-gray-50">
-                  <div className="flex flex-wrap gap-4 text-sm text-gray-600">
-                    <span><strong>Payor:</strong> {activeJob.result.statements[0].payor}</span>
-                    {activeJob.result.statements[0].check_number && (
-                      <span><strong>Check #:</strong> {activeJob.result.statements[0].check_number}</span>
-                    )}
-                    {activeJob.result.statements[0].check_date && (
-                      <span><strong>Date:</strong> {activeJob.result.statements[0].check_date}</span>
-                    )}
+              {/* Statements List */}
+              {activeJob.result.statements && activeJob.result.statements.length > 0 && (
+                <div className="p-6 border-b border-gray-100">
+                  <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                    <FileText className="w-4 h-4" />
+                    Statements ({activeJob.result.statements.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {activeJob.result.statements.map((statement, idx) => (
+                      <div key={idx} className="border border-gray-200 rounded-lg overflow-hidden">
+                        {/* Statement Header - Clickable */}
+                        <button
+                          onClick={() => setExpandedStatement(expandedStatement === idx ? null : idx)}
+                          className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
+                        >
+                          <div className="flex items-center gap-4 text-sm">
+                            {expandedStatement === idx ? (
+                              <ChevronDown className="w-4 h-4 text-gray-500" />
+                            ) : (
+                              <ChevronRight className="w-4 h-4 text-gray-500" />
+                            )}
+                            <span className="font-medium text-gray-900">{statement.filename}</span>
+                            <span className="text-gray-500">|</span>
+                            <span className="text-gray-600">{statement.format}</span>
+                            {statement.payor && (
+                              <>
+                                <span className="text-gray-500">|</span>
+                                <span className="text-gray-600">{statement.payor}</span>
+                              </>
+                            )}
+                            {statement.check_number && (
+                              <>
+                                <span className="text-gray-500">|</span>
+                                <span className="text-gray-600">Check #{statement.check_number}</span>
+                              </>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-4 text-sm">
+                            <span className="text-gray-600">{statement.rows.length} rows</span>
+                            {statement.errors.length > 0 ? (
+                              <span className="text-yellow-600 flex items-center gap-1">
+                                <AlertCircle className="w-4 h-4" />
+                                {statement.errors.length} warnings
+                              </span>
+                            ) : (
+                              <span className="text-green-600 flex items-center gap-1">
+                                <CheckCircle className="w-4 h-4" />
+                                Success
+                              </span>
+                            )}
+                          </div>
+                        </button>
+
+                        {/* Expanded Statement Details */}
+                        {expandedStatement === idx && (
+                          <div className="p-4 bg-white">
+                            {/* Statement Metadata */}
+                            <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-4 pb-3 border-b border-gray-100">
+                              {statement.check_date && (
+                                <span><strong>Check Date:</strong> {statement.check_date}</span>
+                              )}
+                              {statement.check_amount && (
+                                <span><strong>Check Amount:</strong> {formatCurrency(statement.check_amount)}</span>
+                              )}
+                              {statement.owner_name && (
+                                <span><strong>Owner:</strong> {statement.owner_name}</span>
+                              )}
+                            </div>
+
+                            {/* Rows Table */}
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="border-b border-gray-200">
+                                    <th className="text-left py-2 px-2 font-medium text-gray-600">Property</th>
+                                    <th className="text-left py-2 px-2 font-medium text-gray-600">Date</th>
+                                    <th className="text-left py-2 px-2 font-medium text-gray-600">Product</th>
+                                    <th className="text-right py-2 px-2 font-medium text-gray-600">Interest</th>
+                                    <th className="text-right py-2 px-2 font-medium text-gray-600">Volume</th>
+                                    <th className="text-right py-2 px-2 font-medium text-gray-600">Gross</th>
+                                    <th className="text-right py-2 px-2 font-medium text-gray-600">Tax</th>
+                                    <th className="text-right py-2 px-2 font-medium text-gray-600">Net</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                  {statement.rows.slice(0, 50).map((row, rowIdx) => (
+                                    <tr key={rowIdx}>
+                                      <td className="py-2 px-2 text-gray-900 text-xs">{row.property_name || '—'}</td>
+                                      <td className="py-2 px-2 text-gray-600 text-xs">{row.sales_date || '—'}</td>
+                                      <td className="py-2 px-2 text-gray-600 text-xs">
+                                        {row.product_description || row.product_code || '—'}
+                                      </td>
+                                      <td className="py-2 px-2 text-gray-600 text-right text-xs">
+                                        {row.decimal_interest ? `${(row.decimal_interest * 100).toFixed(6)}%` : '—'}
+                                      </td>
+                                      <td className="py-2 px-2 text-gray-600 text-right text-xs">
+                                        {row.owner_volume?.toFixed(2) || '—'}
+                                      </td>
+                                      <td className="py-2 px-2 text-gray-600 text-right text-xs">
+                                        {formatCurrency(row.owner_value)}
+                                      </td>
+                                      <td className="py-2 px-2 text-red-600 text-right text-xs">
+                                        {row.owner_tax_amount ? `-${formatCurrency(row.owner_tax_amount)}` : '—'}
+                                      </td>
+                                      <td className="py-2 px-2 text-green-600 font-medium text-right text-xs">
+                                        {formatCurrency(row.owner_net_revenue)}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              {statement.rows.length > 50 && (
+                                <p className="text-xs text-gray-500 mt-2 text-center">
+                                  Showing 50 of {statement.rows.length} rows
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Errors if any */}
+                            {statement.errors.length > 0 && (
+                              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                <p className="text-sm font-medium text-yellow-800 mb-1">Warnings:</p>
+                                <ul className="text-xs text-yellow-700 list-disc list-inside">
+                                  {statement.errors.map((err, errIdx) => (
+                                    <li key={errIdx}>{err}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
 
-              {/* Preview Table */}
+              {/* Summary Totals */}
               <div className="p-6">
                 <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-                  <FileText className="w-4 h-4" />
-                  Revenue Preview
+                  <DollarSign className="w-4 h-4" />
+                  Financial Summary
                 </h4>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-gray-200">
-                        <th className="text-left py-2 px-3 font-medium text-gray-600">Property</th>
-                        <th className="text-left py-2 px-3 font-medium text-gray-600">Product</th>
-                        <th className="text-right py-2 px-3 font-medium text-gray-600">Interest</th>
-                        <th className="text-right py-2 px-3 font-medium text-gray-600">Gross</th>
-                        <th className="text-right py-2 px-3 font-medium text-gray-600">Tax</th>
-                        <th className="text-right py-2 px-3 font-medium text-gray-600">Net</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {getAllRows().slice(0, 10).map((row, i) => (
-                        <tr key={i}>
-                          <td className="py-2 px-3 text-gray-900">{row.property_name || '—'}</td>
-                          <td className="py-2 px-3 text-gray-600 text-xs">
-                            {row.product_description || row.product_code || '—'}
-                          </td>
-                          <td className="py-2 px-3 text-gray-600 text-right">
-                            {row.decimal_interest ? `${(row.decimal_interest * 100).toFixed(6)}%` : '—'}
-                          </td>
-                          <td className="py-2 px-3 text-gray-600 text-right">
-                            {formatCurrency(row.owner_value)}
-                          </td>
-                          <td className="py-2 px-3 text-red-600 text-right">
-                            {row.owner_tax_amount ? `-${formatCurrency(row.owner_tax_amount)}` : '—'}
-                          </td>
-                          <td className="py-2 px-3 text-green-600 font-medium text-right">
-                            {formatCurrency(row.owner_net_revenue)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {getAllRows().length > 10 && (
-                    <p className="text-sm text-gray-500 mt-3 text-center">
-                      Showing 10 of {activeJob.result.total_rows || getAllRows().length} rows. Download to see all.
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="p-3 bg-gray-50 rounded-lg text-center">
+                    <p className="text-lg font-oswald font-semibold text-gray-900">
+                      {formatCurrency(getTotals().gross)}
                     </p>
-                  )}
+                    <p className="text-xs text-gray-500">Gross Value</p>
+                  </div>
+                  <div className="p-3 bg-red-50 rounded-lg text-center">
+                    <p className="text-lg font-oswald font-semibold text-red-600">
+                      -{formatCurrency(getTotals().tax)}
+                    </p>
+                    <p className="text-xs text-gray-500">Taxes</p>
+                  </div>
+                  <div className="p-3 bg-orange-50 rounded-lg text-center">
+                    <p className="text-lg font-oswald font-semibold text-orange-600">
+                      -{formatCurrency(getTotals().deductions)}
+                    </p>
+                    <p className="text-xs text-gray-500">Deductions</p>
+                  </div>
+                  <div className="p-3 bg-green-50 rounded-lg text-center">
+                    <p className="text-lg font-oswald font-semibold text-green-600">
+                      {formatCurrency(getTotals().net)}
+                    </p>
+                    <p className="text-xs text-gray-500">Net Revenue</p>
+                  </div>
                 </div>
               </div>
             </div>
