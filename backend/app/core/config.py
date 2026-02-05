@@ -37,13 +37,13 @@ class Settings(BaseSettings):
     gcs_uploads_folder: str = "uploads"
     gcs_profiles_folder: str = "profiles"
 
-    # Database settings
+    # Database settings (PostgreSQL - optional, for local dev)
     # Local dev: postgresql+asyncpg://postgres:postgres@localhost:5432/toolbox
-    # Supabase: postgresql+asyncpg://postgres:[password]@db.[project].supabase.co:5432/postgres
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/toolbox"
+    database_enabled: bool = False  # Disabled by default, use Firestore instead
 
-    # Set to False to disable database (run without persistence)
-    database_enabled: bool = True
+    # Firestore settings (primary database)
+    firestore_enabled: bool = True
 
     @property
     def use_gcs(self) -> bool:

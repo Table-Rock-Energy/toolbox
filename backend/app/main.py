@@ -23,6 +23,7 @@ from app.api.title import router as title_router
 from app.api.proration import router as proration_router
 from app.api.revenue import router as revenue_router
 from app.api.admin import router as admin_router
+from app.api.history import router as history_router
 from app.core.config import settings
 
 # Configure logging
@@ -67,6 +68,7 @@ app.include_router(title_router, prefix="/api/title", tags=["title"])
 app.include_router(proration_router, prefix="/api/proration", tags=["proration"])
 app.include_router(revenue_router, prefix="/api/revenue", tags=["revenue"])
 app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
+app.include_router(history_router, prefix="/api/history", tags=["history"])
 
 
 @app.exception_handler(404)
