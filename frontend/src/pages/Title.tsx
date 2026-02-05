@@ -133,8 +133,6 @@ export default function Title() {
     return { label: 'OK', color: 'text-green-600 bg-green-100' }
   }
 
-  // Keep the old function for backward compatibility (used in handleExport)
-  const getFilteredEntries = () => filteredEntries
 
   const handleFilesSelected = async (files: File[]) => {
     if (files.length === 0) return

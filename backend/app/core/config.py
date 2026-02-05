@@ -37,10 +37,23 @@ class Settings(BaseSettings):
     gcs_uploads_folder: str = "uploads"
     gcs_profiles_folder: str = "profiles"
 
+    # Database settings
+    # Local dev: postgresql+asyncpg://postgres:postgres@localhost:5432/toolbox
+    # Supabase: postgresql+asyncpg://postgres:[password]@db.[project].supabase.co:5432/postgres
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/toolbox"
+
+    # Set to False to disable database (run without persistence)
+    database_enabled: bool = True
+
     @property
     def use_gcs(self) -> bool:
         """Check if GCS should be used for storage."""
         return bool(self.gcs_bucket_name)
+
+    @property
+    def use_database(self) -> bool:
+        """Check if database should be used."""
+        return self.database_enabled and bool(self.database_url)
 
 
 settings = Settings()

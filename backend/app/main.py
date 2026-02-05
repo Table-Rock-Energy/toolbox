@@ -93,11 +93,29 @@ async def startup_event() -> None:
     """Application startup event."""
     logger.info(f"{settings.app_name} v{settings.version} starting up")
 
+    # Initialize database if enabled
+    if settings.use_database:
+        try:
+            from app.core.database import init_db
+            await init_db()
+            logger.info("Database initialized successfully")
+        except Exception as e:
+            logger.warning(f"Database initialization failed: {e}")
+            logger.warning("Continuing without database persistence")
+
 
 @app.on_event("shutdown")
 async def shutdown_event() -> None:
     """Application shutdown event."""
     logger.info(f"{settings.app_name} shutting down")
+
+    # Close database connections
+    if settings.use_database:
+        try:
+            from app.core.database import close_db
+            await close_db()
+        except Exception as e:
+            logger.warning(f"Error closing database: {e}")
 
 
 # Static file serving for production (React frontend)
