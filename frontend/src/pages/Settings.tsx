@@ -28,16 +28,24 @@ export default function Settings() {
   })
 
   // Profile form state
-  const [displayName, setDisplayName] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [isSavingProfile, setIsSavingProfile] = useState(false)
   const [profileError, setProfileError] = useState('')
   const [profileSuccess, setProfileSuccess] = useState('')
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
 
-  // Initialize display name from user
+  // Initialize name from user's displayName
   useEffect(() => {
     if (user?.displayName) {
-      setDisplayName(user.displayName)
+      const parts = user.displayName.trim().split(' ')
+      if (parts.length >= 2) {
+        setFirstName(parts[0])
+        setLastName(parts.slice(1).join(' '))
+      } else {
+        setFirstName(user.displayName)
+        setLastName('')
+      }
     }
   }, [user])
 
@@ -63,8 +71,10 @@ export default function Settings() {
     setProfileSuccess('')
 
     try {
+      // Combine first and last name for displayName
+      const fullName = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ')
       await updateProfile(user, {
-        displayName: displayName.trim() || null,
+        displayName: fullName || null,
       })
       setProfileSuccess('Profile updated successfully!')
       // Force a re-render by reloading the user
@@ -285,17 +295,31 @@ export default function Settings() {
                 </div>
               )}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Display Name
-                </label>
-                <input
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="Enter your name"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    First Name
+                  </label>
+                  <input
+                    type="text"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="First name"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Last Name
+                  </label>
+                  <input
+                    type="text"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="Last name"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
