@@ -9,6 +9,7 @@ import Revenue from './pages/Revenue'
 import Settings from './pages/Settings'
 import Help from './pages/Help'
 import Login from './pages/Login'
+import Profile from './pages/Profile'
 
 // Protected route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -48,6 +49,7 @@ function AppRoutes() {
         <Route path="revenue" element={<Revenue />} />
         <Route path="settings" element={<Settings />} />
         <Route path="help" element={<Help />} />
+        <Route path="profile" element={<Profile />} />
       </Route>
     </Routes>
   )

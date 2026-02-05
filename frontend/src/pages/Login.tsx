@@ -41,10 +41,12 @@ export default function Login() {
     <div className="min-h-screen bg-tre-navy flex flex-col items-center justify-center px-4">
       {/* Logo */}
       <div className="mb-8 text-center">
-        <h1 className="text-4xl font-oswald font-semibold text-tre-teal tracking-wide">
-          TABLE ROCK TOOLS
-        </h1>
-        <p className="text-tre-tan mt-2 text-sm">
+        <img
+          src="/logo.png"
+          alt="Table Rock Energy"
+          className="h-24 mx-auto mb-4"
+        />
+        <p className="text-tre-tan text-sm">
           Energy Industry Data Processing Suite
         </p>
       </div>
@@ -85,7 +87,7 @@ export default function Login() {
                   id="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-tre-navy border border-tre-teal/30 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-tre-teal transition-colors"
+                  className="w-full bg-white border border-tre-teal/30 rounded-lg px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-tre-teal focus:ring-1 focus:ring-tre-teal transition-colors"
                   placeholder="you@tablerocktx.com"
                   required
                 />
@@ -99,7 +101,7 @@ export default function Login() {
                   id="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-tre-navy border border-tre-teal/30 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-tre-teal transition-colors"
+                  className="w-full bg-white border border-tre-teal/30 rounded-lg px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-tre-teal focus:ring-1 focus:ring-tre-teal transition-colors"
                   placeholder="Enter your password"
                   required
                 />
