@@ -1,11 +1,14 @@
-import { useState, useRef } from 'react'
-import { Settings as SettingsIcon, User, Bell, Shield, Database, Check, AlertCircle } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Settings as SettingsIcon, User, Bell, Shield, Database, Check, AlertCircle, Upload } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import {
   updatePassword,
+  updateProfile,
   EmailAuthProvider,
   reauthenticateWithCredential,
 } from 'firebase/auth'
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Settings() {
   const { user } = useAuth()
@@ -15,6 +18,7 @@ export default function Settings() {
   const securityRef = useRef<HTMLDivElement>(null)
   const notificationsRef = useRef<HTMLDivElement>(null)
   const dataRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [notifications, setNotifications] = useState({
     email: true,
@@ -24,8 +28,18 @@ export default function Settings() {
   })
 
   // Profile form state
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
+  const [displayName, setDisplayName] = useState('')
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [profileError, setProfileError] = useState('')
+  const [profileSuccess, setProfileSuccess] = useState('')
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
+
+  // Initialize display name from user
+  useEffect(() => {
+    if (user?.displayName) {
+      setDisplayName(user.displayName)
+    }
+  }, [user])
 
   // Password change state
   const [currentPassword, setCurrentPassword] = useState('')
@@ -39,6 +53,87 @@ export default function Settings() {
 
   const scrollToSection = (ref: React.RefObject<HTMLDivElement | null>) => {
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const handleSaveProfile = async () => {
+    if (!user) return
+
+    setIsSavingProfile(true)
+    setProfileError('')
+    setProfileSuccess('')
+
+    try {
+      await updateProfile(user, {
+        displayName: displayName.trim() || null,
+      })
+      setProfileSuccess('Profile updated successfully!')
+      // Force a re-render by reloading the user
+      await user.reload()
+    } catch (error) {
+      console.error('Error updating profile:', error)
+      setProfileError('Failed to update profile. Please try again.')
+    } finally {
+      setIsSavingProfile(false)
+    }
+  }
+
+  const handlePhotoClick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !user) return
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setProfileError('Please select an image file.')
+      return
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setProfileError('Image must be less than 5MB.')
+      return
+    }
+
+    setIsUploadingPhoto(true)
+    setProfileError('')
+    setProfileSuccess('')
+
+    try {
+      // Upload to backend
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('user_id', user.uid)
+
+      const response = await fetch(`${API_BASE}/admin/upload-profile-image`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        throw new Error('Upload failed')
+      }
+
+      const data = await response.json()
+
+      // Update Firebase profile with the new photo URL
+      if (data.photo_url) {
+        await updateProfile(user, {
+          photoURL: data.photo_url,
+        })
+        await user.reload()
+        setProfileSuccess('Profile photo updated!')
+        // Force page reload to show new photo
+        window.location.reload()
+      }
+    } catch (error) {
+      console.error('Error uploading photo:', error)
+      setProfileError('Failed to upload photo. Please try again.')
+    } finally {
+      setIsUploadingPhoto(false)
+    }
   }
 
   const handlePasswordChange = async (e: React.FormEvent) => {
@@ -138,63 +233,89 @@ export default function Settings() {
             </h2>
             <div className="space-y-4">
               <div className="flex items-center gap-4">
-                {user?.photoURL ? (
-                  <img
-                    src={user.photoURL}
-                    alt={user.displayName || 'User'}
-                    className="w-20 h-20 rounded-full"
-                  />
-                ) : (
-                  <div className="w-20 h-20 bg-tre-brown-medium rounded-full flex items-center justify-center">
-                    <User className="w-10 h-10 text-tre-tan" />
-                  </div>
-                )}
+                <div className="relative">
+                  {user?.photoURL ? (
+                    <img
+                      src={user.photoURL}
+                      alt={user.displayName || 'User'}
+                      className="w-20 h-20 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 bg-tre-teal/20 rounded-full flex items-center justify-center">
+                      <User className="w-10 h-10 text-tre-teal" />
+                    </div>
+                  )}
+                  {isUploadingPhoto && (
+                    <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center">
+                      <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+                </div>
                 <div>
-                  <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm">
-                    Change Photo
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handlePhotoChange}
+                    className="hidden"
+                  />
+                  <button
+                    onClick={handlePhotoClick}
+                    disabled={isUploadingPhoto}
+                    className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm disabled:opacity-50"
+                  >
+                    <Upload className="w-4 h-4" />
+                    {isUploadingPhoto ? 'Uploading...' : 'Change Photo'}
                   </button>
+                  <p className="text-xs text-gray-500 mt-1">Max 5MB, JPG or PNG</p>
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    First Name
-                  </label>
-                  <input
-                    type="text"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    placeholder="Enter first name"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
-                  />
+
+              {profileError && (
+                <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
+                  <AlertCircle className="w-4 h-4" />
+                  {profileError}
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Last Name
-                  </label>
-                  <input
-                    type="text"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    placeholder="Enter last name"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
-                  />
+              )}
+
+              {profileSuccess && (
+                <div className="flex items-center gap-2 text-green-600 text-sm p-3 bg-green-50 rounded-lg">
+                  <Check className="w-4 h-4" />
+                  {profileSuccess}
                 </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    defaultValue={user?.email || ''}
-                    disabled
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500"
-                  />
-                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Display Name
+                </label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="Enter your name"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  defaultValue={user?.email || ''}
+                  disabled
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Email cannot be changed</p>
               </div>
               <div className="flex justify-end pt-2">
-                <button className="px-6 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors">
-                  Save Profile
+                <button
+                  onClick={handleSaveProfile}
+                  disabled={isSavingProfile}
+                  className="px-6 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors disabled:opacity-50"
+                >
+                  {isSavingProfile ? 'Saving...' : 'Save Profile'}
                 </button>
               </div>
             </div>

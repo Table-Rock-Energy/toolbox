@@ -6,7 +6,6 @@ import {
   FileText,
   Calculator,
   DollarSign,
-  Settings,
   LogOut,
   ChevronRight,
   User,
@@ -77,17 +76,6 @@ export default function Sidebar() {
           </NavLink>
         ))}
       </nav>
-
-      {/* Account Section */}
-      <div className="p-4 border-t border-tre-teal/20">
-        <p className="text-tre-tan/60 text-xs uppercase tracking-wider mb-3 px-4">
-          Account
-        </p>
-        <NavLink to="/settings" className={getLinkClassName('/settings')}>
-          <Settings className="w-5 h-5" />
-          <span className="font-oswald font-light tracking-wide">Settings</span>
-        </NavLink>
-      </div>
 
       {/* User Section with Hover Flyout */}
       <div
