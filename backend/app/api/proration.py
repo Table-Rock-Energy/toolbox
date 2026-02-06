@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Annotated, Optional
@@ -68,16 +69,19 @@ async def download_rrc_data() -> RRCDownloadResponse:
 
     success, message, stats = rrc_data_service.download_all_data()
 
-    # Sync to database after download
+    # Fire-and-forget database sync so the response returns quickly
     if success:
-        try:
-            sync_result = await rrc_data_service.sync_to_database("both")
-            if sync_result.get("success"):
-                message += f" | DB sync: {sync_result['message']}"
-            else:
-                logger.warning(f"Database sync failed: {sync_result.get('message')}")
-        except Exception as e:
-            logger.warning(f"Database sync failed (non-critical): {e}")
+        async def _background_sync():
+            try:
+                sync_result = await rrc_data_service.sync_to_database("both")
+                if sync_result.get("success"):
+                    logger.info(f"Background DB sync complete: {sync_result['message']}")
+                else:
+                    logger.warning(f"Background DB sync failed: {sync_result.get('message')}")
+            except Exception as e:
+                logger.warning(f"Background DB sync failed (non-critical): {e}")
+
+        asyncio.create_task(_background_sync())
 
     return RRCDownloadResponse(
         success=success,

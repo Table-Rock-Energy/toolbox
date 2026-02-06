@@ -2,6 +2,12 @@
 
 Consolidated web application for Table Rock Energy's internal tools.
 
+## Claude Permissions
+
+- Git commits, pushes to `main`, and GitHub operations are allowed
+- Deploying to Google Cloud Run (via `git push` triggering CI/CD) is allowed
+- Running `npx tsc`, `python3` syntax checks, and build commands is allowed
+
 ## Project Structure
 
 ```
@@ -86,8 +92,9 @@ All endpoints are prefixed with `/api`.
 - `POST /api/title/export/excel` - Export to Excel
 
 ### Proration Tool
-- `GET /api/proration/rrc/status` - RRC data status
-- `POST /api/proration/rrc/download` - Download RRC data
+- `GET /api/proration/rrc/status` - RRC data status (includes DB counts)
+- `POST /api/proration/rrc/download` - Download RRC data + sync to Firestore
+- `POST /api/proration/rrc/sync` - Manual sync CSV data to Firestore
 - `POST /api/proration/upload` - Process mineral holders CSV
 - `POST /api/proration/export/excel` - Export to Excel
 - `POST /api/proration/export/pdf` - Export to PDF
