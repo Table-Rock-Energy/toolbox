@@ -64,6 +64,14 @@ interface RRCDataStatus {
   gas_rows: number
   oil_modified?: string
   gas_modified?: string
+  db_oil_rows?: number
+  db_gas_rows?: number
+  db_available?: boolean
+  last_sync?: {
+    completed_at?: string
+    new_records?: number
+    updated_records?: number
+  } | null
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
@@ -313,11 +321,21 @@ export default function Proration() {
                 <div className="text-sm text-gray-600 mt-1">
                   {hasRRCData ? (
                     <>
-                      <span className="font-medium">{(rrcStatus.oil_rows + rrcStatus.gas_rows).toLocaleString()}</span> total records
+                      <span className="font-medium">{(rrcStatus.oil_rows + rrcStatus.gas_rows).toLocaleString()}</span> CSV records
                       ({rrcStatus.oil_rows.toLocaleString()} oil, {rrcStatus.gas_rows.toLocaleString()} gas)
+                      {rrcStatus.db_available && (
+                        <span className="ml-2 text-gray-500">
+                          • DB: {((rrcStatus.db_oil_rows || 0) + (rrcStatus.db_gas_rows || 0)).toLocaleString()} records
+                        </span>
+                      )}
                       {rrcStatus.oil_modified && (
                         <span className={`ml-2 ${dataIsStale ? 'text-orange-600 font-medium' : 'text-gray-500'}`}>
                           • Last updated: {formatDate(rrcStatus.oil_modified)}
+                        </span>
+                      )}
+                      {rrcStatus.last_sync?.completed_at && (
+                        <span className="ml-2 text-gray-500">
+                          • Last sync: {formatDate(rrcStatus.last_sync.completed_at)}
                         </span>
                       )}
                     </>

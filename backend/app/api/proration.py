@@ -32,11 +32,27 @@ async def health_check() -> dict:
     return {"status": "healthy", "service": "proration"}
 
 
-@router.get("/rrc/status", response_model=RRCDataStatus)
-async def get_rrc_status() -> RRCDataStatus:
-    """Get status of locally stored RRC proration data."""
+@router.get("/rrc/status")
+async def get_rrc_status() -> dict:
+    """Get status of RRC proration data from CSV files and database."""
     status = rrc_data_service.get_data_status()
-    return RRCDataStatus(**status)
+
+    # Try to get database status too
+    try:
+        from app.services.firestore_service import get_rrc_data_status
+        db_status = await get_rrc_data_status()
+        status["db_oil_rows"] = db_status.get("oil_rows", 0)
+        status["db_gas_rows"] = db_status.get("gas_rows", 0)
+        status["last_sync"] = db_status.get("last_sync")
+        status["db_available"] = db_status.get("oil_rows", 0) > 0 or db_status.get("gas_rows", 0) > 0
+    except Exception as e:
+        logger.debug(f"Could not get database status: {e}")
+        status["db_oil_rows"] = 0
+        status["db_gas_rows"] = 0
+        status["last_sync"] = None
+        status["db_available"] = False
+
+    return status
 
 
 @router.post("/rrc/download", response_model=RRCDownloadResponse)
@@ -46,10 +62,22 @@ async def download_rrc_data() -> RRCDownloadResponse:
 
     This downloads the full proration schedules from the Texas Railroad Commission.
     The download may take 1-2 minutes depending on connection speed.
+    After download, data is synced to the database for persistent storage.
     """
     logger.info("Starting RRC data download...")
 
     success, message, stats = rrc_data_service.download_all_data()
+
+    # Sync to database after download
+    if success:
+        try:
+            sync_result = await rrc_data_service.sync_to_database("both")
+            if sync_result.get("success"):
+                message += f" | DB sync: {sync_result['message']}"
+            else:
+                logger.warning(f"Database sync failed: {sync_result.get('message')}")
+        except Exception as e:
+            logger.warning(f"Database sync failed (non-critical): {e}")
 
     return RRCDownloadResponse(
         success=success,
@@ -81,6 +109,24 @@ async def download_gas_data() -> RRCDownloadResponse:
         oil_rows=0,
         gas_rows=row_count,
     )
+
+
+@router.post("/rrc/sync")
+async def sync_rrc_to_database() -> dict:
+    """
+    Manually sync existing CSV data to the database.
+
+    Use this if CSV data was downloaded but the database sync failed or was skipped.
+    """
+    try:
+        result = await rrc_data_service.sync_to_database("both")
+        return result
+    except Exception as e:
+        logger.exception(f"Database sync failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database sync failed: {str(e)}",
+        ) from e
 
 
 @router.post("/upload", response_model=UploadResponse)

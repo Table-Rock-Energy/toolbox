@@ -6,6 +6,7 @@ import logging
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr
 
 from app.core.auth import (
@@ -169,3 +170,31 @@ async def upload_profile_image(
             status_code=500,
             detail=f"Failed to upload image: {str(e)}"
         ) from e
+
+
+@router.get("/profile-image/{user_id}")
+async def get_profile_image(user_id: str):
+    """
+    Serve a locally stored profile image.
+
+    This endpoint is used as a fallback when GCS signed URLs are not available.
+    """
+    local_path = profile_storage.get_profile_image_path(user_id)
+    if not local_path:
+        raise HTTPException(status_code=404, detail="Profile image not found")
+
+    # Determine media type from extension
+    ext = local_path.suffix.lower().lstrip(".")
+    media_types = {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "gif": "image/gif",
+    }
+    media_type = media_types.get(ext, "image/jpeg")
+
+    return FileResponse(
+        path=str(local_path),
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=3600"},
+    )

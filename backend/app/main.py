@@ -90,9 +90,13 @@ async def internal_error_handler(request: Request, exc: Exception) -> JSONRespon
     )
 
 
+_scheduler = None
+
+
 @app.on_event("startup")
 async def startup_event() -> None:
     """Application startup event."""
+    global _scheduler
     logger.info(f"{settings.app_name} v{settings.version} starting up")
 
     # Initialize database if enabled
@@ -105,11 +109,54 @@ async def startup_event() -> None:
             logger.warning(f"Database initialization failed: {e}")
             logger.warning("Continuing without database persistence")
 
+    # Start monthly RRC data scheduler
+    try:
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        from app.services.proration.rrc_data_service import rrc_data_service
+
+        async def scheduled_rrc_download():
+            """Monthly job to download and sync RRC data."""
+            logger.info("Scheduled RRC data download starting...")
+            try:
+                success, message, stats = rrc_data_service.download_all_data()
+                if success:
+                    sync_result = await rrc_data_service.sync_to_database("both")
+                    logger.info(f"Scheduled RRC download complete: {message} | Sync: {sync_result.get('message', 'N/A')}")
+                else:
+                    logger.warning(f"Scheduled RRC download failed: {message}")
+            except Exception as e:
+                logger.exception(f"Scheduled RRC download error: {e}")
+
+        _scheduler = AsyncIOScheduler()
+        # Run on the 1st of every month at 2:00 AM
+        _scheduler.add_job(
+            scheduled_rrc_download,
+            "cron",
+            day=1,
+            hour=2,
+            minute=0,
+            id="rrc_monthly_download",
+            name="Monthly RRC Data Download",
+            replace_existing=True,
+        )
+        _scheduler.start()
+        logger.info("RRC monthly download scheduler started (1st of each month at 2:00 AM)")
+    except ImportError:
+        logger.info("APScheduler not installed, skipping RRC cron scheduler")
+    except Exception as e:
+        logger.warning(f"Failed to start RRC scheduler: {e}")
+
 
 @app.on_event("shutdown")
 async def shutdown_event() -> None:
     """Application shutdown event."""
+    global _scheduler
     logger.info(f"{settings.app_name} shutting down")
+
+    # Stop scheduler
+    if _scheduler is not None:
+        _scheduler.shutdown(wait=False)
+        _scheduler = None
 
     # Close database connections
     if settings.use_database:

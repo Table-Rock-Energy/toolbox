@@ -128,16 +128,19 @@ export default function Settings() {
 
       const data = await response.json()
 
-      // Update Firebase profile with the new photo URL
-      if (data.photo_url) {
-        await updateProfile(user, {
-          photoURL: data.photo_url,
-        })
-        await user.reload()
-        setProfileSuccess('Profile photo updated!')
-        // Force page reload to show new photo
-        window.location.reload()
+      if (!data.photo_url) {
+        setProfileError('Photo uploaded but URL could not be generated. Please try again.')
+        return
       }
+
+      // Update Firebase profile with the new photo URL
+      await updateProfile(user, {
+        photoURL: data.photo_url,
+      })
+      await user.reload()
+      setProfileSuccess('Profile photo updated!')
+      // Force page reload to show new photo
+      window.location.reload()
     } catch (error) {
       console.error('Error uploading photo:', error)
       setProfileError('Failed to upload photo. Please try again.')

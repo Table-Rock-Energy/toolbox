@@ -93,7 +93,14 @@ class StorageService:
             The storage path (GCS path or local path)
         """
         if self.is_gcs_enabled:
-            return self._upload_to_gcs(content, path, content_type)
+            try:
+                return self._upload_to_gcs(content, path, content_type)
+            except Exception as e:
+                logger.warning(f"GCS upload failed, falling back to local storage: {e}")
+                # Reset stream position if it's a file-like object
+                if hasattr(content, 'seek'):
+                    content.seek(0)
+                return self._upload_to_local(content, path)
         else:
             return self._upload_to_local(content, path)
 
@@ -108,14 +115,21 @@ class StorageService:
             File content as bytes, or None if not found
         """
         if self.is_gcs_enabled:
-            return self._download_from_gcs(path)
+            result = self._download_from_gcs(path)
+            if result is not None:
+                return result
+            # Fallback: check local storage in case file was saved locally
+            return self._download_from_local(path)
         else:
             return self._download_from_local(path)
 
     def file_exists(self, path: str) -> bool:
         """Check if a file exists in storage."""
         if self.is_gcs_enabled:
-            return self._exists_in_gcs(path)
+            if self._exists_in_gcs(path):
+                return True
+            # Fallback: check local storage too
+            return self._exists_locally(path)
         else:
             return self._exists_locally(path)
 
@@ -437,12 +451,25 @@ class ProfileStorage:
         return self.storage.upload_file(content, path, content_type)
 
     def get_profile_image_url(self, user_id: str) -> str | None:
-        """Get signed URL for profile image."""
-        # Check common extensions
+        """Get URL for profile image. Returns GCS signed URL or local API URL."""
         for ext in ["jpg", "jpeg", "png", "gif"]:
             path = f"{self.folder}/{user_id}/avatar.{ext}"
             if self.storage.file_exists(path):
-                return self.storage.get_signed_url(path, expiration_minutes=60)
+                # Try GCS signed URL first
+                signed_url = self.storage.get_signed_url(path, expiration_minutes=60)
+                if signed_url:
+                    return signed_url
+                # Fallback: return local API endpoint URL
+                return f"/api/admin/profile-image/{user_id}"
+        return None
+
+    def get_profile_image_path(self, user_id: str) -> Path | None:
+        """Get the local filesystem path for a user's profile image."""
+        for ext in ["jpg", "jpeg", "png", "gif"]:
+            path = f"{self.folder}/{user_id}/avatar.{ext}"
+            local_path = self.storage._get_local_path(path)
+            if local_path.exists():
+                return local_path
         return None
 
     def delete_profile_image(self, user_id: str) -> bool:
