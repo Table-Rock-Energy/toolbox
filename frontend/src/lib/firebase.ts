@@ -2,13 +2,13 @@ import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAkHoSHcl0ak96GQF3hwnU88uc1GyG7_ao",
-  authDomain: "table-rock-tools.firebaseapp.com",
-  projectId: "table-rock-tools",
-  storageBucket: "table-rock-tools.firebasestorage.app",
-  messagingSenderId: "956869048095",
-  appId: "1:956869048095:web:08c2cf02fa0ecf1928a22a",
-  measurementId: "G-4JL0HFNG9F"
+  apiKey: "AIzaSyDGTk6hpc4dk2MPGCBoky_kegUrg7dUuYk",
+  authDomain: "tablerockenergy.firebaseapp.com",
+  projectId: "tablerockenergy",
+  storageBucket: "tablerockenergy.firebasestorage.app",
+  messagingSenderId: "781074525174",
+  appId: "1:781074525174:web:f00b83c5401fe4b00d35d7",
+  measurementId: "G-YZYXTHXBV9"
 };
 
 // Initialize Firebase
