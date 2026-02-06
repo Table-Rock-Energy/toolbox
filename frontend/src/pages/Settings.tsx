@@ -134,8 +134,10 @@ export default function Settings() {
       }
 
       // Update Firebase profile with the new photo URL
+      // Add cache-busting timestamp so the browser fetches the new image
+      const photoUrl = `${data.photo_url}?t=${Date.now()}`
       await updateProfile(user, {
-        photoURL: data.photo_url,
+        photoURL: photoUrl,
       })
       await user.reload()
       setProfileSuccess('Profile photo updated!')

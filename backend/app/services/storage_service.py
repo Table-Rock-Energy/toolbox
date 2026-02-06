@@ -451,15 +451,12 @@ class ProfileStorage:
         return self.storage.upload_file(content, path, content_type)
 
     def get_profile_image_url(self, user_id: str) -> str | None:
-        """Get URL for profile image. Returns GCS signed URL or local API URL."""
+        """Get URL for profile image. Always returns the API proxy endpoint."""
         for ext in ["jpg", "jpeg", "png", "gif"]:
             path = f"{self.folder}/{user_id}/avatar.{ext}"
             if self.storage.file_exists(path):
-                # Try GCS signed URL first
-                signed_url = self.storage.get_signed_url(path, expiration_minutes=60)
-                if signed_url:
-                    return signed_url
-                # Fallback: return local API endpoint URL
+                # Always use the API endpoint which proxies from storage (GCS or local).
+                # This avoids GCS signed URL issues on Cloud Run.
                 return f"/api/admin/profile-image/{user_id}"
         return None
 

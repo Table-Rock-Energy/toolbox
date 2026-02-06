@@ -6,7 +6,7 @@ import logging
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, EmailStr
 
 from app.core.auth import (
@@ -15,7 +15,7 @@ from app.core.auth import (
     remove_allowed_user,
     is_user_allowed,
 )
-from app.services.storage_service import profile_storage
+from app.services.storage_service import profile_storage, storage_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -175,26 +175,28 @@ async def upload_profile_image(
 @router.get("/profile-image/{user_id}")
 async def get_profile_image(user_id: str):
     """
-    Serve a locally stored profile image.
+    Serve a profile image from storage (GCS or local).
 
-    This endpoint is used as a fallback when GCS signed URLs are not available.
+    This endpoint proxies the image from wherever it's stored,
+    avoiding the need for GCS signed URLs (which require special IAM permissions).
     """
-    local_path = profile_storage.get_profile_image_path(user_id)
-    if not local_path:
-        raise HTTPException(status_code=404, detail="Profile image not found")
+    from app.core.config import settings
 
-    # Determine media type from extension
-    ext = local_path.suffix.lower().lstrip(".")
-    media_types = {
-        "jpg": "image/jpeg",
-        "jpeg": "image/jpeg",
-        "png": "image/png",
-        "gif": "image/gif",
-    }
-    media_type = media_types.get(ext, "image/jpeg")
+    # Try each extension
+    for ext in ["jpg", "jpeg", "png", "gif"]:
+        path = f"{settings.gcs_profiles_folder}/{user_id}/avatar.{ext}"
+        content = storage_service.download_file(path)
+        if content:
+            media_types = {
+                "jpg": "image/jpeg",
+                "jpeg": "image/jpeg",
+                "png": "image/png",
+                "gif": "image/gif",
+            }
+            return Response(
+                content=content,
+                media_type=media_types.get(ext, "image/jpeg"),
+                headers={"Cache-Control": "public, max-age=3600"},
+            )
 
-    return FileResponse(
-        path=str(local_path),
-        media_type=media_type,
-        headers={"Cache-Control": "public, max-age=3600"},
-    )
+    raise HTTPException(status_code=404, detail="Profile image not found")
