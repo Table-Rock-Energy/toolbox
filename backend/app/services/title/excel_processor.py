@@ -14,6 +14,7 @@ from app.services.title.address_parser import (
     extract_address_annotations,
     parse_address,
     parse_address_with_notes,
+    split_address_lines,
 )
 from app.services.title.entity_detector import detect_entity_type
 from app.services.title.name_parser import clean_name, parse_name, is_valid_name
@@ -31,6 +32,13 @@ def _merge_notes(*note_sources: str | list | None) -> str | None:
         elif isinstance(source, str) and source.strip():
             all_notes.append(source.strip())
     return "; ".join(all_notes) if all_notes else None
+
+
+def _is_unknown_address(value: str | None) -> bool:
+    """Check if address value is unknown/placeholder."""
+    if not value:
+        return True
+    return value.strip().lower() in ("address unknown", "unknown", "n/a", "none", "")
 
 
 logger = logging.getLogger(__name__)
@@ -266,6 +274,11 @@ def _process_multi_column(
         raw_address = _get_cell_value(row, col_mapping.get("address"))
         address_notes: list[str] = []
         address = None
+        address_line_2 = None
+
+        # Treat "Address Unknown" as no address
+        if _is_unknown_address(raw_address):
+            raw_address = None
 
         if raw_address:
             cleaned_addr, addr_notes = extract_address_annotations(raw_address)
@@ -276,6 +289,10 @@ def _process_multi_column(
         state = _get_cell_value(row, col_mapping.get("state"))
         zip_code = _get_cell_value(row, col_mapping.get("zip"))
 
+        # Treat unknown city as no city
+        if _is_unknown_address(city):
+            city = None
+
         # If we have a combined city/state/zip column, parse it
         if city and not state and not zip_code:
             parsed = parse_address_with_notes(city)
@@ -285,11 +302,15 @@ def _process_multi_column(
                 zip_code = parsed.zip_code
                 address_notes.extend(parsed.notes)
 
+        # Split address into line 1 and line 2
+        if address:
+            address, address_line_2 = split_address_lines(address)
+
         # Detect entity type
         entity_type = detect_entity_type(full_name)
 
         # Parse name for individuals
-        first_name, last_name = parse_name(full_name, entity_type)
+        first_name, middle_name, last_name = parse_name(full_name, entity_type)
 
         # Determine if has address
         has_address = bool(address or city or state or zip_code)
@@ -300,9 +321,11 @@ def _process_multi_column(
         entry = OwnerEntry(
             full_name=full_name,
             first_name=first_name,
+            middle_name=middle_name,
             last_name=last_name,
             entity_type=entity_type,
             address=address,
+            address_line_2=address_line_2,
             city=city,
             state=state.upper() if state else None,
             zip_code=zip_code,
@@ -350,10 +373,11 @@ def _process_two_column(
         entity_type = detect_entity_type(full_name)
 
         # Parse name for individuals
-        first_name, last_name = parse_name(full_name, entity_type)
+        first_name, middle_name, last_name = parse_name(full_name, entity_type)
 
         # Try to parse second column as address
         address = None
+        address_line_2 = None
         city = None
         state = None
         zip_code = None
@@ -362,8 +386,11 @@ def _process_two_column(
 
         if raw_second and not pd.isna(raw_second):
             second_text = str(raw_second).strip()
-            # Check if it looks like an address (has numbers or ZIP)
-            if re.search(r"\d", second_text):
+            # Treat "Address Unknown" as no address
+            if _is_unknown_address(second_text):
+                second_text = None
+            elif re.search(r"\d", second_text):
+                # Check if it looks like an address (has numbers or ZIP)
                 parsed = parse_address_with_notes(second_text)
                 address = parsed.street
                 city = parsed.city
@@ -374,6 +401,10 @@ def _process_two_column(
                 # Treat as notes
                 other_notes = second_text
 
+        # Split address into line 1 and line 2
+        if address:
+            address, address_line_2 = split_address_lines(address)
+
         has_address = bool(address or city or state or zip_code)
 
         # Merge notes
@@ -382,9 +413,11 @@ def _process_two_column(
         entry = OwnerEntry(
             full_name=full_name,
             first_name=first_name,
+            middle_name=middle_name,
             last_name=last_name,
             entity_type=entity_type,
             address=address,
+            address_line_2=address_line_2,
             city=city,
             state=state,
             zip_code=zip_code,
@@ -480,22 +513,31 @@ def _create_entry_from_text(raw_text: str, legal_description: str) -> Optional[O
     entity_type = detect_entity_type(full_name)
 
     # Parse name for individuals
-    first_name, last_name = parse_name(full_name, entity_type)
+    first_name, middle_name, last_name = parse_name(full_name, entity_type)
 
     # Parse address with annotation extraction
     address = None
+    address_line_2 = None
     city = None
     state = None
     zip_code = None
     address_notes: list[str] = []
 
     if parsed.address_text:
-        addr = parse_address_with_notes(parsed.address_text)
-        address = addr.street
-        city = addr.city
-        state = addr.state
-        zip_code = addr.zip_code
-        address_notes = addr.notes
+        # Treat "Address Unknown" as no address
+        if _is_unknown_address(parsed.address_text):
+            pass
+        else:
+            addr = parse_address_with_notes(parsed.address_text)
+            address = addr.street
+            city = addr.city
+            state = addr.state
+            zip_code = addr.zip_code
+            address_notes = addr.notes
+
+    # Split address into line 1 and line 2
+    if address:
+        address, address_line_2 = split_address_lines(address)
 
     has_address = bool(address or city or state or zip_code)
 
@@ -505,9 +547,11 @@ def _create_entry_from_text(raw_text: str, legal_description: str) -> Optional[O
     return OwnerEntry(
         full_name=full_name,
         first_name=first_name,
+        middle_name=middle_name,
         last_name=last_name,
         entity_type=entity_type,
         address=address,
+        address_line_2=address_line_2,
         city=city,
         state=state,
         zip_code=zip_code,

@@ -68,9 +68,11 @@ def entries_to_dataframe(entries: list[OwnerEntry]) -> pd.DataFrame:
         rows.append({
             "Full Name": entry.full_name,
             "First Name": entry.first_name or "",
+            "Middle Name": entry.middle_name or "",
             "Last Name": entry.last_name or "",
             "Entity Type": entry.entity_type.value,
             "Address": entry.address or "",
+            "Address Line 2": entry.address_line_2 or "",
             "City": entry.city or "",
             "State": entry.state or "",
             "Zip": entry.zip_code or "",
@@ -112,9 +114,11 @@ def to_csv(
         writer.writerow({
             "Full Name": entry.full_name,
             "First Name": entry.first_name or "",
+            "Middle Name": entry.middle_name or "",
             "Last Name": entry.last_name or "",
             "Entity Type": entry.entity_type.value,
             "Address": entry.address or "",
+            "Address Line 2": entry.address_line_2 or "",
             "City": entry.city or "",
             "State": entry.state or "",
             "Zip": entry.zip_code or "",
@@ -257,8 +261,10 @@ def entries_to_mineral_dataframe(entries: list[OwnerEntry]) -> pd.DataFrame:
         # Map our extracted data to CRM fields
         row["Full Name"] = entry.full_name
         row["First Name"] = entry.first_name or ""
+        row["Middle Name"] = entry.middle_name or ""
         row["Last Name"] = entry.last_name or ""
         row["Primary Address 1"] = entry.address or ""
+        row["Primary Address 2"] = entry.address_line_2 or ""
         row["Primary Address City"] = entry.city or ""
         row["Primary Address State"] = entry.state or ""
         row["Primary Address Zip"] = entry.zip_code or ""

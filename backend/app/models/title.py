@@ -25,11 +25,13 @@ class OwnerEntry(BaseModel):
 
     full_name: str = Field(..., description="Complete entity name")
     first_name: Optional[str] = Field(None, description="Parsed first name (individuals only)")
+    middle_name: Optional[str] = Field(None, description="Parsed middle name/initial (individuals only)")
     last_name: Optional[str] = Field(None, description="Parsed last name (individuals only)")
     entity_type: EntityType = Field(
         default=EntityType.INDIVIDUAL, description="Type of entity"
     )
     address: Optional[str] = Field(None, description="Street address")
+    address_line_2: Optional[str] = Field(None, description="Secondary address (apt, suite, unit)")
     city: Optional[str] = Field(None, description="City name")
     state: Optional[str] = Field(None, description="2-letter state code")
     zip_code: Optional[str] = Field(None, description="ZIP code")
@@ -106,9 +108,11 @@ class ExportRequest(BaseModel):
 EXPORT_COLUMNS = [
     "Full Name",
     "First Name",
+    "Middle Name",
     "Last Name",
     "Entity Type",
     "Address",
+    "Address Line 2",
     "City",
     "State",
     "Zip",

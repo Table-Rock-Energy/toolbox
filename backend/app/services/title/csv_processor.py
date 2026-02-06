@@ -13,6 +13,7 @@ from app.models.title import EntityType, OwnerEntry
 from app.services.title.address_parser import (
     extract_address_annotations,
     parse_address_with_notes,
+    split_address_lines,
 )
 from app.services.title.entity_detector import detect_entity_type
 from app.services.title.name_parser import clean_name, parse_name
@@ -227,8 +228,9 @@ def _process_row(
     first_name = _get_value(row, col_mapping["first_name"])
     last_name = _get_value(row, col_mapping["last_name"])
 
+    middle_name = None
     if not first_name and not last_name:
-        first_name, last_name = parse_name(full_name, entity_type)
+        first_name, middle_name, last_name = parse_name(full_name, entity_type)
 
     # Get address components with annotation extraction
     raw_address = _get_value(row, col_mapping["address"])
@@ -272,14 +274,21 @@ def _process_row(
     if state:
         state = state.upper()[:2]
 
+    # Split address into line 1 and line 2
+    address_line_2 = None
+    if address:
+        address, address_line_2 = split_address_lines(address)
+
     has_address = bool(address or city or state or zip_code)
 
     return OwnerEntry(
         full_name=full_name,
         first_name=first_name,
+        middle_name=middle_name,
         last_name=last_name,
         entity_type=entity_type,
         address=address,
+        address_line_2=address_line_2,
         city=city,
         state=state,
         zip_code=zip_code,

@@ -39,12 +39,16 @@ ANNOTATION_PATTERNS = [
     (re.compile(r"\bQCMD:\s*([^\n,]+)", re.IGNORECASE), "QCMD"),
     # Lease references - Lease 23, Lease 22
     (re.compile(r"-?\s*Lease\s+(\d+(?:\s*[-&]\s*\d+)?)", re.IGNORECASE), "Lease"),
-    # Relationship annotations - daugh., son, step daughter (but not "son of")
-    (re.compile(r",?\s*-?\s*\b(daugh(?:ter)?\.?)\b", re.IGNORECASE), "relationship"),
+    # Relationship annotations - ORDER MATTERS: compound patterns first
+    (re.compile(r",?\s*\b(step\s*(?:daughter|son|mother|father))\b", re.IGNORECASE), "relationship"),
+    (re.compile(r",?\s*-?\s*\b(daugh(?:ter)?\.?)", re.IGNORECASE), "relationship"),
     (re.compile(r",?\s*\b(son)\b(?!\s+of)", re.IGNORECASE), "relationship"),
-    (re.compile(r",?\s*\b(step\s*(?:daughter|son|mother|father)?)\b", re.IGNORECASE), "relationship"),
-    # Just "step" alone at end of name (e.g., "John Smith, step")
+    # Standalone "step" at end (after compound failed to match)
     (re.compile(r",\s*(step)\s*$", re.IGNORECASE), "relationship"),
+    # "now [Name]" (married name change)
+    (re.compile(r",?\s*\bnow\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)", re.IGNORECASE), "now"),
+    # "formerly [Name]"
+    (re.compile(r",?\s*\bformerly\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)", re.IGNORECASE), "formerly"),
     # Established/created dates for trusts - Established June 15, 2006
     (re.compile(r"\bEstablished\s+([A-Z][a-z]+\s+\d{1,2},?\s+\d{4})", re.IGNORECASE), "established"),
     # BENEFICIARY marker
@@ -104,6 +108,10 @@ def extract_address_annotations(text: str) -> tuple[str, list[str]]:
                 notes.append(f"Lease {match.strip()}")
             elif note_type == "relationship":
                 notes.append(match.strip())
+            elif note_type == "now":
+                notes.append(f"now {match.strip()}")
+            elif note_type == "formerly":
+                notes.append(f"formerly {match.strip()}")
             elif note_type == "established":
                 notes.append(f"established {match.strip()}")
             elif note_type == "marker":
@@ -430,3 +438,28 @@ def has_apartment(street: Optional[str]) -> bool:
     if not street:
         return False
     return bool(APT_SUITE_PATTERN.search(street))
+
+
+def split_address_lines(street: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    """
+    Split street into line 1 and line 2 (apt/suite/unit/#).
+
+    Args:
+        street: Street address that may contain apt/suite/unit
+
+    Returns:
+        Tuple of (address_line_1, address_line_2)
+    """
+    if not street:
+        return None, None
+
+    match = re.search(
+        r"[,\s]+(?:Apt\.?|Suite|Ste\.?|Unit|#)\s*\S+.*$",
+        street, re.IGNORECASE,
+    )
+    if match:
+        line1 = street[:match.start()].rstrip(", ")
+        line2 = street[match.start():].lstrip(", ")
+        return line1 or None, line2 or None
+
+    return street, None

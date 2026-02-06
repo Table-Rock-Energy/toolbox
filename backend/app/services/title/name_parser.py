@@ -101,35 +101,33 @@ def parse_individual_name(name: str) -> ParsedName:
     return ParsedName(first_name, middle_name, last_name, suffix)
 
 
-def parse_name(name: str, entity_type: EntityType) -> tuple[Optional[str], Optional[str]]:
+def parse_name(name: str, entity_type: EntityType) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """
     Parse a name based on entity type.
 
-    Only parses first/last for INDIVIDUAL entities.
+    Only parses first/last/middle for INDIVIDUAL entities.
 
     Args:
         name: Full name string
         entity_type: The detected entity type
 
     Returns:
-        Tuple of (first_name, last_name) - both None for non-individuals
+        Tuple of (first_name, middle_name, last_name) - all None for non-individuals
     """
     if entity_type != EntityType.INDIVIDUAL:
-        return None, None
+        return None, None, None
 
     parsed = parse_individual_name(name)
 
-    # Combine middle name with first name if present
-    first_name = parsed.first_name
-    if parsed.middle_name:
-        first_name = f"{parsed.first_name} {parsed.middle_name}"
+    first_name = parsed.first_name or None
+    middle_name = parsed.middle_name or None
 
     # Add suffix to last name if present
     last_name = parsed.last_name
     if parsed.suffix:
         last_name = f"{parsed.last_name} {parsed.suffix}"
 
-    return first_name or None, last_name or None
+    return first_name, middle_name, last_name or None
 
 
 def clean_name(name: str) -> str:
@@ -146,6 +144,25 @@ def clean_name(name: str) -> str:
         return name
 
     cleaned = name
+
+    # Strip "as Guardian of ..." before general comma handling
+    cleaned = re.sub(r",\s+as\s+Guardian\s+(?:of|for)\s+.*$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r",\s+incompetent\b.*$", "", cleaned, flags=re.IGNORECASE)
+
+    # Strip "now [Name]" (married name change) before comma parsing
+    cleaned = re.sub(r",?\s+now\s+\w+(?:\s+\w+)?$", "", cleaned, flags=re.IGNORECASE)
+
+    # Strip "formerly [Name]"
+    cleaned = re.sub(r",?\s+formerly\s+\w+(?:\s+\w+)?$", "", cleaned, flags=re.IGNORECASE)
+
+    # Strip "record owner"
+    cleaned = re.sub(r",?\s+record\s+owner\b.*$", "", cleaned, flags=re.IGNORECASE)
+
+    # Strip "a widow" / "widow"
+    cleaned = re.sub(r",?\s+(?:a\s+)?widow\b", "", cleaned, flags=re.IGNORECASE)
+
+    # Strip parenthetical spouse markers like "(Mae Henslee/wife)"
+    cleaned = re.sub(r"\s*\([^)]*?/(?:wife|husband|hus)\)", "", cleaned, flags=re.IGNORECASE)
 
     # Remove a/k/a and everything after
     cleaned = re.sub(r"\s+a/?k/?a\s+.*$", "", cleaned, flags=re.IGNORECASE)

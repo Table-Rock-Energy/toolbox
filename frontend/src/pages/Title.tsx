@@ -6,9 +6,11 @@ import { useAuth } from '../contexts/AuthContext'
 interface OwnerEntry {
   full_name: string
   first_name?: string
+  middle_name?: string
   last_name?: string
   entity_type: string
   address?: string
+  address_line_2?: string
   city?: string
   state?: string
   zip_code?: string
