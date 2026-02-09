@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Copy, Filter, RotateCcw, Edit2, Columns } from 'lucide-react'
+import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Filter, RotateCcw, Edit2, Columns } from 'lucide-react'
 import { FileUpload, Modal } from '../components'
 import { useAuth } from '../contexts/AuthContext'
 
