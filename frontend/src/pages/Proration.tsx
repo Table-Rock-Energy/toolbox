@@ -500,25 +500,20 @@ export default function Proration() {
                       <>
                         <span className="font-medium">{(rrcStatus.oil_rows + rrcStatus.gas_rows).toLocaleString()}</span> CSV records
                         ({rrcStatus.oil_rows.toLocaleString()} oil, {rrcStatus.gas_rows.toLocaleString()} gas)
-                        {rrcStatus.db_available && (
-                          <span className="ml-2 text-gray-500">
-                            &bull; DB: {((rrcStatus.db_oil_rows || 0) + (rrcStatus.db_gas_rows || 0)).toLocaleString()} records
-                          </span>
-                        )}
                         {rrcStatus.oil_modified && (
                           <span className="ml-2 text-orange-600 font-medium">
                             &bull; Last updated: {formatDate(rrcStatus.oil_modified)}
-                          </span>
-                        )}
-                        {rrcStatus.last_sync?.completed_at && (
-                          <span className="ml-2 text-gray-500">
-                            &bull; Last sync: {formatDate(rrcStatus.last_sync.completed_at)}
                           </span>
                         )}
                       </>
                     ) : (
                       <span className="text-green-700">
                         Data current through {formatMonthYear(rrcStatus.oil_modified)}
+                        {rrcStatus.oil_modified && (
+                          <span className="ml-2 text-green-600/70">
+                            &bull; Updated {formatDate(rrcStatus.oil_modified)}
+                          </span>
+                        )}
                       </span>
                     )
                   ) : (
