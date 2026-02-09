@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -11,6 +12,26 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _serialize_value(val):
+    """Convert Firestore-specific types to JSON-safe values."""
+    if val is None:
+        return val
+    if isinstance(val, datetime):
+        return val.isoformat()
+    if hasattr(val, "isoformat"):
+        return val.isoformat()
+    if isinstance(val, dict):
+        return {k: _serialize_value(v) for k, v in val.items()}
+    if isinstance(val, list):
+        return [_serialize_value(v) for v in val]
+    return val
+
+
+def _serialize_doc(doc: dict) -> dict:
+    """Ensure all values in a Firestore document are JSON-serializable."""
+    return {k: _serialize_value(v) for k, v in doc.items()}
 
 
 @router.get("/jobs")
@@ -26,6 +47,7 @@ async def get_jobs(
         from app.services import firestore_service as db
 
         jobs = await db.get_recent_jobs(tool=tool, limit=limit)
+        jobs = [_serialize_doc(j) for j in jobs]
 
         return {
             "jobs": jobs,
@@ -85,7 +107,7 @@ async def get_job_entries(job_id: str):
         return {
             "job_id": job_id,
             "tool": tool,
-            "entries": entries,
+            "entries": [_serialize_doc(e) for e in entries],
             "count": len(entries),
         }
     except HTTPException:

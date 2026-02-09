@@ -151,21 +151,14 @@ export default function Proration() {
         const response = await fetch(`${API_BASE}/history/jobs?tool=proration&limit=20`)
         if (response.ok) {
           const data = await response.json()
-          const loadedJobs: ProrationJob[] = (data.jobs || data || []).map((job: any) => ({
-            id: job.id || job.job_id || String(Date.now()),
-            job_id: job.job_id || job.id,
-            documentName: job.filename || job.document_name || job.documentName || 'Unknown',
-            user: job.user || job.user_email || 'Unknown',
-            timestamp: job.created_at
-              ? new Date(job.created_at).toLocaleString()
-              : job.timestamp || '',
-            result: job.result || {
-              success: true,
-              total_rows: job.total_rows,
-              processed_rows: job.processed_rows,
-              matched_rows: job.matched_rows,
-              failed_rows: job.failed_rows,
-            },
+          const loadedJobs: ProrationJob[] = (data.jobs || []).map((j: Record<string, unknown>) => ({
+            id: j.id as string,
+            job_id: j.id as string,
+            documentName: (j.source_filename as string) || 'Unknown',
+            user: (j.user_id as string) || 'System',
+            timestamp: j.created_at
+              ? new Date(j.created_at as string).toLocaleString()
+              : '',
           }))
           setJobs(loadedJobs)
         }

@@ -131,23 +131,13 @@ export default function Title() {
         const jobsArray = data.jobs || (Array.isArray(data) ? data : [])
         if (jobsArray.length > 0) {
           const loadedJobs: TitleJob[] = jobsArray.map((j: Record<string, unknown>) => ({
-            id: (j.job_id as string) || (j.id as string) || String(Date.now()),
-            job_id: (j.job_id as string) || (j.id as string),
-            documentName: (j.source_filename as string) || (j.document_name as string) || 'Unknown',
-            user: (j.user as string) || (j.user_email as string) || 'Unknown',
+            id: j.id as string,
+            job_id: j.id as string,
+            documentName: (j.source_filename as string) || 'Unknown',
+            user: (j.user_id as string) || 'System',
             timestamp: j.created_at
               ? new Date(j.created_at as string).toLocaleString()
-              : (j.timestamp as string) || '',
-            result: j.result
-              ? (j.result as ProcessingResult)
-              : {
-                  success: true,
-                  job_id: (j.job_id as string) || (j.id as string),
-                  total_count: j.total_count as number | undefined,
-                  duplicate_count: j.duplicate_count as number | undefined,
-                  no_address_count: j.no_address_count as number | undefined,
-                  source_filename: (j.source_filename as string) || (j.document_name as string),
-                },
+              : '',
           }))
           setJobs(loadedJobs)
         }
