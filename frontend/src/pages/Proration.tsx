@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
-import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw, Filter, Settings } from 'lucide-react'
-import { FileUpload } from '../components'
+import { useState, useEffect, useRef } from 'react'
+import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw, Filter, Settings, Edit2, Columns } from 'lucide-react'
+import { FileUpload, Modal } from '../components'
 import { useAuth } from '../contexts/AuthContext'
 
 interface MineralHolderRow {
@@ -42,6 +42,7 @@ interface ProcessingResult {
   rows?: MineralHolderRow[]
   error_message?: string
   source_filename?: string
+  job_id?: string
 }
 
 interface UploadResponse {
@@ -51,6 +52,7 @@ interface UploadResponse {
 
 interface ProrationJob {
   id: string
+  job_id?: string
   documentName: string
   user: string
   timestamp: string
@@ -74,6 +76,23 @@ interface RRCDataStatus {
   } | null
 }
 
+interface ColumnConfig {
+  key: string
+  label: string
+  alwaysVisible?: boolean
+}
+
+const COLUMNS: ColumnConfig[] = [
+  { key: 'owner', label: 'Owner' },
+  { key: 'county', label: 'County' },
+  { key: 'interest', label: 'Interest' },
+  { key: 'rrc_acres', label: 'RRC Acres' },
+  { key: 'est_nra', label: 'Est NRA' },
+  { key: 'dollars_per_nra', label: '$/NRA' },
+  { key: 'status', label: 'Status' },
+  { key: 'edit', label: '', alwaysVisible: true },
+]
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Proration() {
@@ -96,9 +115,65 @@ export default function Proration() {
   const [wellTypeOverride, setWellTypeOverride] = useState<string>('auto')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
 
+  // Edit Row Modal State
+  const [editingRow, setEditingRow] = useState<MineralHolderRow | null>(null)
+  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+
+  // Column Visibility State
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
+    new Set(COLUMNS.filter(c => !c.alwaysVisible).map(c => c.key))
+  )
+  const [showColumnPicker, setShowColumnPicker] = useState(false)
+  const columnPickerRef = useRef<HTMLDivElement>(null)
+
+  // Close column picker on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (columnPickerRef.current && !columnPickerRef.current.contains(e.target as Node)) {
+        setShowColumnPicker(false)
+      }
+    }
+    if (showColumnPicker) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showColumnPicker])
+
   // Check RRC data status on mount
   useEffect(() => {
     checkRRCStatus()
+  }, [])
+
+  // Load recent jobs on mount
+  useEffect(() => {
+    const loadRecentJobs = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/history/jobs?tool=proration&limit=20`)
+        if (response.ok) {
+          const data = await response.json()
+          const loadedJobs: ProrationJob[] = (data.jobs || data || []).map((job: any) => ({
+            id: job.id || job.job_id || String(Date.now()),
+            job_id: job.job_id || job.id,
+            documentName: job.filename || job.document_name || job.documentName || 'Unknown',
+            user: job.user || job.user_email || 'Unknown',
+            timestamp: job.created_at
+              ? new Date(job.created_at).toLocaleString()
+              : job.timestamp || '',
+            result: job.result || {
+              success: true,
+              total_rows: job.total_rows,
+              processed_rows: job.processed_rows,
+              matched_rows: job.matched_rows,
+              failed_rows: job.failed_rows,
+            },
+          }))
+          setJobs(loadedJobs)
+        }
+      } catch (err) {
+        console.error('Failed to load recent jobs:', err)
+      }
+    }
+    loadRecentJobs()
   }, [])
 
   const checkRRCStatus = async () => {
@@ -182,6 +257,9 @@ export default function Proration() {
 
       const data: UploadResponse = await response.json()
       newJob.result = data.result
+      if (data.result?.job_id) {
+        newJob.job_id = data.result.job_id
+      }
 
       setJobs((prev) => [newJob, ...prev])
       setActiveJob(newJob)
@@ -203,7 +281,7 @@ export default function Proration() {
     setSelectedFile(null)
   }
 
-  const handleExport = async (format: 'excel' | 'pdf') => {
+  const handleExport = async (format: 'csv' | 'excel' | 'pdf') => {
     if (!activeJob?.result?.rows) return
 
     try {
@@ -224,7 +302,8 @@ export default function Proration() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${activeJob.documentName.replace(/\.[^.]+$/, '')}_proration.${format === 'excel' ? 'xlsx' : 'pdf'}`
+      const ext = format === 'excel' ? 'xlsx' : format === 'pdf' ? 'pdf' : 'csv'
+      a.download = `${activeJob.documentName.replace(/\.[^.]+$/, '')}_proration.${ext}`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
@@ -234,13 +313,83 @@ export default function Proration() {
     }
   }
 
-  const handleSelectJob = (job: ProrationJob) => {
+  const handleSelectJob = async (job: ProrationJob) => {
     setActiveJob(job)
     setError(null)
+
+    // Lazy-load entries if not already loaded
+    if (!job.result?.rows && job.job_id) {
+      try {
+        const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}/entries`)
+        if (response.ok) {
+          const data = await response.json()
+          const updatedJob = {
+            ...job,
+            result: {
+              ...job.result,
+              success: true,
+              rows: data.entries || data.rows || data,
+            } as ProcessingResult,
+          }
+          setActiveJob(updatedJob)
+          setJobs((prev) =>
+            prev.map((j) => (j.id === job.id ? updatedJob : j))
+          )
+        }
+      } catch (err) {
+        console.error('Failed to load job entries:', err)
+      }
+    }
+  }
+
+  const handleEditRow = (row: MineralHolderRow, index: number) => {
+    setEditingRow({ ...row })
+    setEditingIndex(index)
+  }
+
+  const handleSaveEdit = () => {
+    if (editingRow === null || editingIndex === null || !activeJob?.result?.rows) return
+
+    const updatedRows = [...activeJob.result.rows]
+    updatedRows[editingIndex] = editingRow
+
+    setActiveJob({
+      ...activeJob,
+      result: {
+        ...activeJob.result,
+        rows: updatedRows,
+      },
+    })
+
+    setEditingRow(null)
+    setEditingIndex(null)
+  }
+
+  const handleCancelEdit = () => {
+    setEditingRow(null)
+    setEditingIndex(null)
+  }
+
+  const isColumnVisible = (key: string): boolean => {
+    const col = COLUMNS.find(c => c.key === key)
+    if (col?.alwaysVisible) return true
+    return visibleColumns.has(key)
+  }
+
+  const toggleColumn = (key: string) => {
+    setVisibleColumns(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
   }
 
   const formatCurrency = (amount?: number): string => {
-    if (amount === undefined || amount === null) return '—'
+    if (amount === undefined || amount === null) return '\u2014'
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
@@ -248,7 +397,7 @@ export default function Proration() {
   }
 
   const formatNumber = (num?: number, decimals: number = 4): string => {
-    if (num === undefined || num === null) return '—'
+    if (num === undefined || num === null) return '\u2014'
     return num.toFixed(decimals)
   }
 
@@ -264,18 +413,29 @@ export default function Proration() {
     })
   }
 
-  const hasRRCData = rrcStatus?.oil_available || rrcStatus?.gas_available
-
-  // Check if RRC data is older than 30 days
-  const isDataStale = (): boolean => {
-    if (!rrcStatus?.oil_modified) return false
-    const lastModified = new Date(rrcStatus.oil_modified)
-    const thirtyDaysAgo = new Date()
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-    return lastModified < thirtyDaysAgo
+  const formatMonthYear = (isoString?: string): string => {
+    if (!isoString) return ''
+    const date = new Date(isoString)
+    return date.toLocaleDateString('en-US', {
+      month: 'long',
+      year: 'numeric',
+    })
   }
 
-  const dataIsStale = hasRRCData && isDataStale()
+  const hasRRCData = rrcStatus?.oil_available || rrcStatus?.gas_available
+
+  // Check if RRC data is expired: oil_modified date is before the 1st of the current month
+  const isDataExpired = (): boolean => {
+    if (!rrcStatus?.oil_modified) return false
+    const lastModified = new Date(rrcStatus.oil_modified)
+    const firstOfMonth = new Date()
+    firstOfMonth.setDate(1)
+    firstOfMonth.setHours(0, 0, 0, 0)
+    return lastModified < firstOfMonth
+  }
+
+  const dataExpired = hasRRCData && isDataExpired()
+  const showDownloadButton = dataExpired || !hasRRCData
 
   return (
     <div className="space-y-6">
@@ -296,22 +456,22 @@ export default function Proration() {
 
       {/* RRC Data Status Banner */}
       <div className={`rounded-xl border p-4 ${
-        dataIsStale ? 'bg-orange-50 border-orange-200' :
+        dataExpired ? 'bg-orange-50 border-orange-200' :
         hasRRCData ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'
       }`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Database className={`w-5 h-5 ${
-              dataIsStale ? 'text-orange-600' :
+              dataExpired ? 'text-orange-600' :
               hasRRCData ? 'text-green-600' : 'text-yellow-600'
             }`} />
             <div>
               <h3 className={`font-medium ${
-                dataIsStale ? 'text-orange-800' :
+                dataExpired ? 'text-orange-800' :
                 hasRRCData ? 'text-green-800' : 'text-yellow-800'
               }`}>
                 RRC Proration Data
-                {dataIsStale && (
+                {dataExpired && (
                   <span className="ml-2 text-xs font-normal bg-orange-200 text-orange-800 px-2 py-0.5 rounded">
                     Monthly Update Needed
                   </span>
@@ -320,25 +480,31 @@ export default function Proration() {
               {rrcStatus ? (
                 <div className="text-sm text-gray-600 mt-1">
                   {hasRRCData ? (
-                    <>
-                      <span className="font-medium">{(rrcStatus.oil_rows + rrcStatus.gas_rows).toLocaleString()}</span> CSV records
-                      ({rrcStatus.oil_rows.toLocaleString()} oil, {rrcStatus.gas_rows.toLocaleString()} gas)
-                      {rrcStatus.db_available && (
-                        <span className="ml-2 text-gray-500">
-                          • DB: {((rrcStatus.db_oil_rows || 0) + (rrcStatus.db_gas_rows || 0)).toLocaleString()} records
-                        </span>
-                      )}
-                      {rrcStatus.oil_modified && (
-                        <span className={`ml-2 ${dataIsStale ? 'text-orange-600 font-medium' : 'text-gray-500'}`}>
-                          • Last updated: {formatDate(rrcStatus.oil_modified)}
-                        </span>
-                      )}
-                      {rrcStatus.last_sync?.completed_at && (
-                        <span className="ml-2 text-gray-500">
-                          • Last sync: {formatDate(rrcStatus.last_sync.completed_at)}
-                        </span>
-                      )}
-                    </>
+                    dataExpired ? (
+                      <>
+                        <span className="font-medium">{(rrcStatus.oil_rows + rrcStatus.gas_rows).toLocaleString()}</span> CSV records
+                        ({rrcStatus.oil_rows.toLocaleString()} oil, {rrcStatus.gas_rows.toLocaleString()} gas)
+                        {rrcStatus.db_available && (
+                          <span className="ml-2 text-gray-500">
+                            &bull; DB: {((rrcStatus.db_oil_rows || 0) + (rrcStatus.db_gas_rows || 0)).toLocaleString()} records
+                          </span>
+                        )}
+                        {rrcStatus.oil_modified && (
+                          <span className="ml-2 text-orange-600 font-medium">
+                            &bull; Last updated: {formatDate(rrcStatus.oil_modified)}
+                          </span>
+                        )}
+                        {rrcStatus.last_sync?.completed_at && (
+                          <span className="ml-2 text-gray-500">
+                            &bull; Last sync: {formatDate(rrcStatus.last_sync.completed_at)}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-green-700">
+                        Data current through {formatMonthYear(rrcStatus.oil_modified)}
+                      </span>
+                    )
                   ) : (
                     'No RRC data available. Download to enable NRA calculations.'
                   )}
@@ -348,27 +514,21 @@ export default function Proration() {
               )}
             </div>
           </div>
-          <button
-            onClick={handleDownloadRRC}
-            disabled={isDownloadingRRC}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm ${
-              dataIsStale
-                ? 'bg-orange-600 text-white hover:bg-orange-700'
-                : hasRRCData
-                  ? 'border border-green-300 text-green-700 hover:bg-green-100'
+          {showDownloadButton && (
+            <button
+              onClick={handleDownloadRRC}
+              disabled={isDownloadingRRC}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm ${
+                dataExpired
+                  ? 'bg-orange-600 text-white hover:bg-orange-700'
                   : 'bg-yellow-600 text-white hover:bg-yellow-700'
-            } ${isDownloadingRRC ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            <RefreshCw className={`w-4 h-4 ${isDownloadingRRC ? 'animate-spin' : ''}`} />
-            {isDownloadingRRC ? 'Downloading...' : dataIsStale ? 'Update Now' : hasRRCData ? 'Refresh Data' : 'Download Data'}
-          </button>
+              } ${isDownloadingRRC ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <RefreshCw className={`w-4 h-4 ${isDownloadingRRC ? 'animate-spin' : ''}`} />
+              {isDownloadingRRC ? 'Downloading...' : dataExpired ? 'Update Now' : 'Download Data'}
+            </button>
+          )}
         </div>
-        {dataIsStale && !rrcMessage && (
-          <div className="mt-2 text-sm text-orange-700 flex items-center gap-1">
-            <AlertTriangle className="w-4 h-4" />
-            RRC data is over 30 days old. Please download the latest data for accurate calculations.
-          </div>
-        )}
         {rrcMessage && (
           <div className="mt-2 text-sm text-green-700 flex items-center gap-1">
             <CheckCircle className="w-4 h-4" />
@@ -555,18 +715,11 @@ export default function Proration() {
                   </div>
                   <div className="flex gap-2">
                     <button
-                      onClick={() => handleExport('excel')}
-                      className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-                    >
-                      <Download className="w-4 h-4" />
-                      Excel
-                    </button>
-                    <button
-                      onClick={() => handleExport('pdf')}
+                      onClick={() => handleExport('csv')}
                       className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
                     >
                       <Download className="w-4 h-4" />
-                      PDF
+                      CSV
                     </button>
                   </div>
                 </div>
@@ -602,59 +755,121 @@ export default function Proration() {
 
               {/* Preview Table */}
               <div className="p-6">
-                <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-                  <Users className="w-4 h-4" />
-                  Proration Preview
-                </h4>
-                <div className="overflow-x-auto">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                    <Users className="w-4 h-4" />
+                    Proration Preview
+                  </h4>
+                  <div className="relative" ref={columnPickerRef}>
+                    <button
+                      onClick={() => setShowColumnPicker(!showColumnPicker)}
+                      className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      <Columns className="w-4 h-4" />
+                      Columns
+                    </button>
+                    {showColumnPicker && (
+                      <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-2 min-w-[160px]">
+                        {COLUMNS.filter(c => !c.alwaysVisible).map((col) => (
+                          <label
+                            key={col.key}
+                            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={visibleColumns.has(col.key)}
+                              onChange={() => toggleColumn(col.key)}
+                              className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                            />
+                            <span>{col.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
                   <table className="w-full text-sm">
-                    <thead>
+                    <thead className="sticky top-0 bg-white z-10">
                       <tr className="border-b border-gray-200">
-                        <th className="text-left py-2 px-3 font-medium text-gray-600">Owner</th>
-                        <th className="text-left py-2 px-3 font-medium text-gray-600">County</th>
-                        <th className="text-right py-2 px-3 font-medium text-gray-600">Interest</th>
-                        <th className="text-right py-2 px-3 font-medium text-gray-600">RRC Acres</th>
-                        <th className="text-right py-2 px-3 font-medium text-gray-600">Est NRA</th>
-                        <th className="text-right py-2 px-3 font-medium text-gray-600">$/NRA</th>
-                        <th className="text-left py-2 px-3 font-medium text-gray-600">Status</th>
+                        {isColumnVisible('owner') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Owner</th>
+                        )}
+                        {isColumnVisible('county') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">County</th>
+                        )}
+                        {isColumnVisible('interest') && (
+                          <th className="text-right py-2 px-3 font-medium text-gray-600">Interest</th>
+                        )}
+                        {isColumnVisible('rrc_acres') && (
+                          <th className="text-right py-2 px-3 font-medium text-gray-600">RRC Acres</th>
+                        )}
+                        {isColumnVisible('est_nra') && (
+                          <th className="text-right py-2 px-3 font-medium text-gray-600">Est NRA</th>
+                        )}
+                        {isColumnVisible('dollars_per_nra') && (
+                          <th className="text-right py-2 px-3 font-medium text-gray-600">$/NRA</th>
+                        )}
+                        {isColumnVisible('status') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Status</th>
+                        )}
+                        <th className="text-center py-2 px-3 font-medium text-gray-600 w-10"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {activeJob.result.rows?.slice(0, 10).map((row, i) => (
+                      {activeJob.result.rows?.map((row, i) => (
                         <tr key={i} className={!row.rrc_acres ? 'bg-red-50' : ''}>
-                          <td className="py-2 px-3 text-gray-900">{row.owner}</td>
-                          <td className="py-2 px-3 text-gray-600">{row.county}</td>
-                          <td className="py-2 px-3 text-gray-600 text-right">
-                            {(row.interest * 100).toFixed(6)}%
-                          </td>
-                          <td className="py-2 px-3 text-gray-600 text-right">
-                            {formatNumber(row.rrc_acres, 2)}
-                          </td>
-                          <td className="py-2 px-3 text-gray-600 text-right">
-                            {formatNumber(row.est_nra, 4)}
-                          </td>
-                          <td className="py-2 px-3 text-gray-600 text-right">
-                            {formatCurrency(row.dollars_per_nra)}
-                          </td>
-                          <td className="py-2 px-3">
-                            {row.rrc_acres ? (
-                              <span className="text-green-600 text-xs">Matched</span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-red-600 text-xs">
-                                <AlertTriangle className="w-3 h-3" />
-                                No Match
-                              </span>
-                            )}
+                          {isColumnVisible('owner') && (
+                            <td className="py-2 px-3 text-gray-900">{row.owner}</td>
+                          )}
+                          {isColumnVisible('county') && (
+                            <td className="py-2 px-3 text-gray-600">{row.county}</td>
+                          )}
+                          {isColumnVisible('interest') && (
+                            <td className="py-2 px-3 text-gray-600 text-right">
+                              {(row.interest * 100).toFixed(6)}%
+                            </td>
+                          )}
+                          {isColumnVisible('rrc_acres') && (
+                            <td className="py-2 px-3 text-gray-600 text-right">
+                              {formatNumber(row.rrc_acres, 2)}
+                            </td>
+                          )}
+                          {isColumnVisible('est_nra') && (
+                            <td className="py-2 px-3 text-gray-600 text-right">
+                              {formatNumber(row.est_nra, 4)}
+                            </td>
+                          )}
+                          {isColumnVisible('dollars_per_nra') && (
+                            <td className="py-2 px-3 text-gray-600 text-right">
+                              {formatCurrency(row.dollars_per_nra)}
+                            </td>
+                          )}
+                          {isColumnVisible('status') && (
+                            <td className="py-2 px-3">
+                              {row.rrc_acres ? (
+                                <span className="text-green-600 text-xs">Matched</span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-red-600 text-xs">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  No Match
+                                </span>
+                              )}
+                            </td>
+                          )}
+                          <td className="py-2 px-3 text-center">
+                            <button
+                              onClick={() => handleEditRow(row, i)}
+                              className="p-1 rounded hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
+                              title="Edit row"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                  {(activeJob.result.rows?.length || 0) > 10 && (
-                    <p className="text-sm text-gray-500 mt-3 text-center">
-                      Showing 10 of {activeJob.result.total_rows} rows. Download to see all.
-                    </p>
-                  )}
                 </div>
               </div>
             </div>
@@ -673,6 +888,178 @@ export default function Proration() {
           )}
         </div>
       </div>
+
+      {/* Edit Row Modal */}
+      <Modal
+        isOpen={editingRow !== null}
+        onClose={handleCancelEdit}
+        title="Edit Row"
+        size="lg"
+        footer={
+          <>
+            <button
+              onClick={handleCancelEdit}
+              className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveEdit}
+              className="px-4 py-2 bg-tre-navy text-white rounded-lg text-sm hover:bg-tre-navy/90 transition-colors"
+            >
+              Save
+            </button>
+          </>
+        }
+      >
+        {editingRow && (
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Owner</label>
+              <input
+                type="text"
+                value={editingRow.owner}
+                onChange={(e) => setEditingRow({ ...editingRow, owner: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">County</label>
+              <input
+                type="text"
+                value={editingRow.county}
+                onChange={(e) => setEditingRow({ ...editingRow, county: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Interest</label>
+              <input
+                type="number"
+                step="any"
+                value={editingRow.interest}
+                onChange={(e) => setEditingRow({ ...editingRow, interest: Number(e.target.value) })}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Interest Type</label>
+              <input
+                type="text"
+                value={editingRow.interest_type || ''}
+                onChange={(e) => setEditingRow({ ...editingRow, interest_type: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Legal Description</label>
+              <input
+                type="text"
+                value={editingRow.legal_description || ''}
+                onChange={(e) => setEditingRow({ ...editingRow, legal_description: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Property</label>
+              <input
+                type="text"
+                value={editingRow.property || ''}
+                onChange={(e) => setEditingRow({ ...editingRow, property: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Operator</label>
+              <input
+                type="text"
+                value={editingRow.operator || ''}
+                onChange={(e) => setEditingRow({ ...editingRow, operator: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Block</label>
+              <input
+                type="text"
+                value={editingRow.block || ''}
+                onChange={(e) => setEditingRow({ ...editingRow, block: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Section</label>
+              <input
+                type="text"
+                value={editingRow.section || ''}
+                onChange={(e) => setEditingRow({ ...editingRow, section: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Abstract</label>
+              <input
+                type="text"
+                value={editingRow.abstract || ''}
+                onChange={(e) => setEditingRow({ ...editingRow, abstract: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">RRC Acres</label>
+              <input
+                type="number"
+                step="any"
+                value={editingRow.rrc_acres ?? ''}
+                onChange={(e) => setEditingRow({ ...editingRow, rrc_acres: e.target.value ? Number(e.target.value) : undefined })}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Est NRA</label>
+              <input
+                type="number"
+                step="any"
+                value={editingRow.est_nra ?? ''}
+                onChange={(e) => setEditingRow({ ...editingRow, est_nra: e.target.value ? Number(e.target.value) : undefined })}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">$/NRA</label>
+              <input
+                type="number"
+                step="any"
+                value={editingRow.dollars_per_nra ?? ''}
+                onChange={(e) => setEditingRow({ ...editingRow, dollars_per_nra: e.target.value ? Number(e.target.value) : undefined })}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Well Type</label>
+              <select
+                value={editingRow.well_type || 'auto'}
+                onChange={(e) => setEditingRow({ ...editingRow, well_type: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+              >
+                <option value="auto">Auto-detect</option>
+                <option value="oil">Oil</option>
+                <option value="gas">Gas</option>
+                <option value="both">Both</option>
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+              <input
+                type="text"
+                value={editingRow.notes || ''}
+                onChange={(e) => setEditingRow({ ...editingRow, notes: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

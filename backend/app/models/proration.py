@@ -104,6 +104,7 @@ class ProcessingResult(BaseModel):
         None, description="Error message if processing failed"
     )
     source_filename: Optional[str] = Field(None, description="Original CSV filename")
+    job_id: Optional[str] = Field(None, description="Firestore job ID")
 
 
 class RRCDataStatus(BaseModel):

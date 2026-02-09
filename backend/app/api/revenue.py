@@ -78,12 +78,47 @@ async def upload_pdfs(files: List[UploadFile] = File(...)):
         except Exception as e:
             errors.append(f"Error processing {file.filename}: {str(e)}")
 
-    return UploadResponse(
+    result = UploadResponse(
         success=len(statements) > 0,
         statements=statements,
         total_rows=total_rows,
-        errors=errors
+        errors=errors,
     )
+
+    # Persist to Firestore (non-blocking, failure doesn't break upload)
+    if len(statements) > 0:
+        try:
+            from app.services.firestore_service import (
+                create_job,
+                save_revenue_statement,
+                update_job_status,
+            )
+
+            filenames = ", ".join(s.filename for s in statements)
+            job = await create_job(
+                tool="revenue",
+                source_filename=filenames,
+            )
+            job_id = job["id"]
+            result.job_id = job_id
+
+            for stmt in statements:
+                await save_revenue_statement(job_id, stmt.model_dump(mode="json"))
+
+            await update_job_status(
+                job_id,
+                status="completed",
+                total_count=total_rows,
+                success_count=total_rows,
+                error_count=len(errors),
+            )
+        except Exception as fs_err:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"Firestore persistence failed (non-critical): {fs_err}"
+            )
+
+    return result
 
 
 @router.post("/export/csv")

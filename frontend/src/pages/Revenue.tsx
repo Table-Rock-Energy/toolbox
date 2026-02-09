@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { DollarSign, Download, Upload, FileText, AlertCircle, CheckCircle, ChevronDown, ChevronRight } from 'lucide-react'
-import { FileUpload } from '../components'
+import { useState, useEffect, useRef } from 'react'
+import { DollarSign, Download, Upload, FileText, AlertCircle, CheckCircle, ChevronDown, ChevronRight, Edit2, Columns } from 'lucide-react'
+import { FileUpload, Modal } from '../components'
 import { useAuth } from '../contexts/AuthContext'
 
 interface RevenueRow {
@@ -42,15 +42,35 @@ interface UploadResponse {
   statements?: RevenueStatement[]
   total_rows?: number
   errors?: string[]
+  job_id?: string
 }
 
 interface RevenueJob {
   id: string
+  job_id?: string
   documentName: string
   user: string
   timestamp: string
   result?: UploadResponse
 }
+
+interface ColumnConfig {
+  key: string
+  label: string
+  alwaysVisible?: boolean
+}
+
+const COLUMNS: ColumnConfig[] = [
+  { key: 'property_name', label: 'Property' },
+  { key: 'sales_date', label: 'Date' },
+  { key: 'product', label: 'Product' },
+  { key: 'interest', label: 'Interest' },
+  { key: 'volume', label: 'Volume' },
+  { key: 'gross', label: 'Gross' },
+  { key: 'tax', label: 'Tax' },
+  { key: 'net', label: 'Net' },
+  { key: 'edit', label: '', alwaysVisible: true },
+]
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
@@ -61,6 +81,53 @@ export default function Revenue() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expandedStatement, setExpandedStatement] = useState<number | null>(null)
+
+  // Edit modal state
+  const [editingRow, setEditingRow] = useState<{ statementIdx: number; rowIdx: number; row: RevenueRow } | null>(null)
+
+  // Column visibility
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
+    new Set(COLUMNS.map((c) => c.key))
+  )
+  const [showColumnPicker, setShowColumnPicker] = useState(false)
+  const columnPickerRef = useRef<HTMLDivElement>(null)
+
+  // Close column picker on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (columnPickerRef.current && !columnPickerRef.current.contains(e.target as Node)) {
+        setShowColumnPicker(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Load recent jobs from Firestore on mount
+  useEffect(() => {
+    const loadJobs = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/history/jobs?tool=revenue&limit=20`)
+        if (!response.ok) return
+        const data = await response.json()
+        if (data.jobs?.length) {
+          const loaded: RevenueJob[] = data.jobs.map((j: Record<string, unknown>) => ({
+            id: j.id as string,
+            job_id: j.id as string,
+            documentName: (j.source_filename as string) || 'Unknown',
+            user: (j.user_id as string) || 'System',
+            timestamp: j.created_at
+              ? new Date(j.created_at as string).toLocaleString()
+              : '',
+          }))
+          setJobs(loaded)
+        }
+      } catch {
+        // Firestore unavailable
+      }
+    }
+    loadJobs()
+  }, [])
 
   const handleFilesSelected = async (files: File[]) => {
     if (files.length === 0) return
@@ -92,6 +159,7 @@ export default function Revenue() {
 
       const data: UploadResponse = await response.json()
       newJob.result = data
+      newJob.job_id = data.job_id
 
       setJobs((prev) => [newJob, ...prev])
       setActiveJob(newJob)
@@ -133,31 +201,52 @@ export default function Revenue() {
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
-    } catch (err) {
+    } catch {
       setError('Failed to export file')
     }
   }
 
-  const handleSelectJob = (job: RevenueJob) => {
+  const handleSelectJob = async (job: RevenueJob) => {
     setActiveJob(job)
     setError(null)
+
+    // Lazy-load entries if not already loaded
+    if (!job.result && job.job_id) {
+      try {
+        const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}/entries`)
+        if (response.ok) {
+          const data = await response.json()
+          const statements = data.entries as RevenueStatement[]
+          const totalRows = statements.reduce((sum: number, s: RevenueStatement) => sum + s.rows.length, 0)
+          const result: UploadResponse = {
+            success: true,
+            statements,
+            total_rows: totalRows,
+            job_id: job.job_id,
+          }
+          const updatedJob = { ...job, result }
+          setJobs((prev) => prev.map((j) => (j.id === job.id ? updatedJob : j)))
+          setActiveJob(updatedJob)
+        }
+      } catch {
+        // Failed to load
+      }
+    }
   }
 
   const formatCurrency = (amount?: number): string => {
-    if (amount === undefined || amount === null) return '—'
+    if (amount === undefined || amount === null) return '\u2014'
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
     }).format(amount)
   }
 
-  // Flatten all rows from all statements for preview
   const getAllRows = (): RevenueRow[] => {
     if (!activeJob?.result?.statements) return []
     return activeJob.result.statements.flatMap(s => s.rows)
   }
 
-  // Calculate totals
   const getTotals = () => {
     const rows = getAllRows()
     return {
@@ -167,6 +256,39 @@ export default function Revenue() {
       net: rows.reduce((sum, r) => sum + (r.owner_net_revenue || 0), 0),
     }
   }
+
+  const handleEditRow = (statementIdx: number, rowIdx: number, row: RevenueRow) => {
+    setEditingRow({ statementIdx, rowIdx, row: { ...row } })
+  }
+
+  const handleSaveEditRow = () => {
+    if (!editingRow || !activeJob?.result?.statements) return
+
+    const updatedStatements = [...activeJob.result.statements]
+    const stmt = { ...updatedStatements[editingRow.statementIdx] }
+    const updatedRows = [...stmt.rows]
+    updatedRows[editingRow.rowIdx] = editingRow.row
+    stmt.rows = updatedRows
+    updatedStatements[editingRow.statementIdx] = stmt
+
+    setActiveJob({
+      ...activeJob,
+      result: {
+        ...activeJob.result,
+        statements: updatedStatements,
+      },
+    })
+    setEditingRow(null)
+  }
+
+  const toggleColumn = (key: string) => {
+    const next = new Set(visibleColumns)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    setVisibleColumns(next)
+  }
+
+  const isColVisible = (key: string) => visibleColumns.has(key)
 
   return (
     <div className="space-y-6">
@@ -188,7 +310,6 @@ export default function Revenue() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column - Upload and History */}
         <div className="space-y-6">
-          {/* Upload Section */}
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <FileUpload
               onFilesSelected={handleFilesSelected}
@@ -205,7 +326,6 @@ export default function Revenue() {
             )}
           </div>
 
-          {/* Job History */}
           <div className="bg-white rounded-xl border border-gray-200">
             <div className="px-4 py-3 border-b border-gray-100">
               <h3 className="font-medium text-gray-900">Recent Jobs</h3>
@@ -309,14 +429,39 @@ export default function Revenue() {
               {/* Statements List */}
               {activeJob.result.statements && activeJob.result.statements.length > 0 && (
                 <div className="p-6 border-b border-gray-100">
-                  <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-                    <FileText className="w-4 h-4" />
-                    Statements ({activeJob.result.statements.length})
-                  </h4>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                      <FileText className="w-4 h-4" />
+                      Statements ({activeJob.result.statements.length})
+                    </h4>
+                    <div className="relative" ref={columnPickerRef}>
+                      <button
+                        onClick={() => setShowColumnPicker(!showColumnPicker)}
+                        className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100"
+                      >
+                        <Columns className="w-4 h-4" />
+                        Columns
+                      </button>
+                      {showColumnPicker && (
+                        <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-2">
+                          {COLUMNS.filter((c) => !c.alwaysVisible).map((col) => (
+                            <label key={col.key} className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={visibleColumns.has(col.key)}
+                                onChange={() => toggleColumn(col.key)}
+                                className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                              />
+                              {col.label}
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                   <div className="space-y-2">
                     {activeJob.result.statements.map((statement, idx) => (
                       <div key={idx} className="border border-gray-200 rounded-lg overflow-hidden">
-                        {/* Statement Header - Clickable */}
                         <button
                           onClick={() => setExpandedStatement(expandedStatement === idx ? null : idx)}
                           className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
@@ -359,10 +504,8 @@ export default function Revenue() {
                           </div>
                         </button>
 
-                        {/* Expanded Statement Details */}
                         {expandedStatement === idx && (
                           <div className="p-4 bg-white">
-                            {/* Statement Metadata */}
                             <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-4 pb-3 border-b border-gray-100">
                               {statement.check_date && (
                                 <span><strong>Check Date:</strong> {statement.check_date}</span>
@@ -375,56 +518,71 @@ export default function Revenue() {
                               )}
                             </div>
 
-                            {/* Rows Table */}
-                            <div className="overflow-x-auto">
+                            <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
                               <table className="w-full text-sm">
-                                <thead>
+                                <thead className="sticky top-0 bg-white z-10">
                                   <tr className="border-b border-gray-200">
-                                    <th className="text-left py-2 px-2 font-medium text-gray-600">Property</th>
-                                    <th className="text-left py-2 px-2 font-medium text-gray-600">Date</th>
-                                    <th className="text-left py-2 px-2 font-medium text-gray-600">Product</th>
-                                    <th className="text-right py-2 px-2 font-medium text-gray-600">Interest</th>
-                                    <th className="text-right py-2 px-2 font-medium text-gray-600">Volume</th>
-                                    <th className="text-right py-2 px-2 font-medium text-gray-600">Gross</th>
-                                    <th className="text-right py-2 px-2 font-medium text-gray-600">Tax</th>
-                                    <th className="text-right py-2 px-2 font-medium text-gray-600">Net</th>
+                                    {isColVisible('property_name') && <th className="text-left py-2 px-2 font-medium text-gray-600">Property</th>}
+                                    {isColVisible('sales_date') && <th className="text-left py-2 px-2 font-medium text-gray-600">Date</th>}
+                                    {isColVisible('product') && <th className="text-left py-2 px-2 font-medium text-gray-600">Product</th>}
+                                    {isColVisible('interest') && <th className="text-right py-2 px-2 font-medium text-gray-600">Interest</th>}
+                                    {isColVisible('volume') && <th className="text-right py-2 px-2 font-medium text-gray-600">Volume</th>}
+                                    {isColVisible('gross') && <th className="text-right py-2 px-2 font-medium text-gray-600">Gross</th>}
+                                    {isColVisible('tax') && <th className="text-right py-2 px-2 font-medium text-gray-600">Tax</th>}
+                                    {isColVisible('net') && <th className="text-right py-2 px-2 font-medium text-gray-600">Net</th>}
+                                    <th className="text-left py-2 px-2 font-medium text-gray-600 w-8"></th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
-                                  {statement.rows.slice(0, 50).map((row, rowIdx) => (
+                                  {statement.rows.map((row, rowIdx) => (
                                     <tr key={rowIdx}>
-                                      <td className="py-2 px-2 text-gray-900 text-xs">{row.property_name || '—'}</td>
-                                      <td className="py-2 px-2 text-gray-600 text-xs">{row.sales_date || '—'}</td>
-                                      <td className="py-2 px-2 text-gray-600 text-xs">
-                                        {row.product_description || row.product_code || '—'}
-                                      </td>
-                                      <td className="py-2 px-2 text-gray-600 text-right text-xs">
-                                        {row.decimal_interest ? `${(row.decimal_interest * 100).toFixed(6)}%` : '—'}
-                                      </td>
-                                      <td className="py-2 px-2 text-gray-600 text-right text-xs">
-                                        {row.owner_volume?.toFixed(2) || '—'}
-                                      </td>
-                                      <td className="py-2 px-2 text-gray-600 text-right text-xs">
-                                        {formatCurrency(row.owner_value)}
-                                      </td>
-                                      <td className="py-2 px-2 text-red-600 text-right text-xs">
-                                        {row.owner_tax_amount ? `-${formatCurrency(row.owner_tax_amount)}` : '—'}
-                                      </td>
-                                      <td className="py-2 px-2 text-green-600 font-medium text-right text-xs">
-                                        {formatCurrency(row.owner_net_revenue)}
+                                      {isColVisible('property_name') && <td className="py-2 px-2 text-gray-900 text-xs">{row.property_name || '\u2014'}</td>}
+                                      {isColVisible('sales_date') && <td className="py-2 px-2 text-gray-600 text-xs">{row.sales_date || '\u2014'}</td>}
+                                      {isColVisible('product') && (
+                                        <td className="py-2 px-2 text-gray-600 text-xs">
+                                          {row.product_description || row.product_code || '\u2014'}
+                                        </td>
+                                      )}
+                                      {isColVisible('interest') && (
+                                        <td className="py-2 px-2 text-gray-600 text-right text-xs">
+                                          {row.decimal_interest ? `${(row.decimal_interest * 100).toFixed(6)}%` : '\u2014'}
+                                        </td>
+                                      )}
+                                      {isColVisible('volume') && (
+                                        <td className="py-2 px-2 text-gray-600 text-right text-xs">
+                                          {row.owner_volume?.toFixed(2) || '\u2014'}
+                                        </td>
+                                      )}
+                                      {isColVisible('gross') && (
+                                        <td className="py-2 px-2 text-gray-600 text-right text-xs">
+                                          {formatCurrency(row.owner_value)}
+                                        </td>
+                                      )}
+                                      {isColVisible('tax') && (
+                                        <td className="py-2 px-2 text-red-600 text-right text-xs">
+                                          {row.owner_tax_amount ? `-${formatCurrency(row.owner_tax_amount)}` : '\u2014'}
+                                        </td>
+                                      )}
+                                      {isColVisible('net') && (
+                                        <td className="py-2 px-2 text-green-600 font-medium text-right text-xs">
+                                          {formatCurrency(row.owner_net_revenue)}
+                                        </td>
+                                      )}
+                                      <td className="py-2 px-2">
+                                        <button
+                                          onClick={() => handleEditRow(idx, rowIdx, row)}
+                                          className="text-gray-400 hover:text-tre-teal"
+                                          title="Edit row"
+                                        >
+                                          <Edit2 className="w-3.5 h-3.5" />
+                                        </button>
                                       </td>
                                     </tr>
                                   ))}
                                 </tbody>
                               </table>
-                              {statement.rows.length > 50 && (
-                                <p className="text-xs text-gray-500 mt-2 text-center">
-                                  Showing 50 of {statement.rows.length} rows
-                                </p>
-                              )}
                             </div>
 
-                            {/* Errors if any */}
                             {statement.errors.length > 0 && (
                               <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                                 <p className="text-sm font-medium text-yellow-800 mb-1">Warnings:</p>
@@ -492,6 +650,138 @@ export default function Revenue() {
           )}
         </div>
       </div>
+
+      {/* Edit Row Modal */}
+      <Modal
+        isOpen={!!editingRow}
+        onClose={() => setEditingRow(null)}
+        title="Edit Revenue Row"
+        size="lg"
+        footer={
+          <>
+            <button
+              onClick={() => setEditingRow(null)}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveEditRow}
+              className="px-4 py-2 bg-tre-teal text-white rounded-lg hover:bg-tre-teal/90 transition-colors"
+            >
+              Save Changes
+            </button>
+          </>
+        }
+      >
+        {editingRow && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Property Name</label>
+                <input
+                  type="text"
+                  value={editingRow.row.property_name || ''}
+                  onChange={(e) => setEditingRow({ ...editingRow, row: { ...editingRow.row, property_name: e.target.value } })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Property Number</label>
+                <input
+                  type="text"
+                  value={editingRow.row.property_number || ''}
+                  onChange={(e) => setEditingRow({ ...editingRow, row: { ...editingRow.row, property_number: e.target.value } })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Sales Date</label>
+                <input
+                  type="text"
+                  value={editingRow.row.sales_date || ''}
+                  onChange={(e) => setEditingRow({ ...editingRow, row: { ...editingRow.row, sales_date: e.target.value } })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Product Code</label>
+                <input
+                  type="text"
+                  value={editingRow.row.product_code || ''}
+                  onChange={(e) => setEditingRow({ ...editingRow, row: { ...editingRow.row, product_code: e.target.value } })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Product Description</label>
+                <input
+                  type="text"
+                  value={editingRow.row.product_description || ''}
+                  onChange={(e) => setEditingRow({ ...editingRow, row: { ...editingRow.row, product_description: e.target.value } })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Interest</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={editingRow.row.decimal_interest ?? ''}
+                  onChange={(e) => setEditingRow({ ...editingRow, row: { ...editingRow.row, decimal_interest: e.target.value ? Number(e.target.value) : undefined } })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Volume</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={editingRow.row.owner_volume ?? ''}
+                  onChange={(e) => setEditingRow({ ...editingRow, row: { ...editingRow.row, owner_volume: e.target.value ? Number(e.target.value) : undefined } })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Gross</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={editingRow.row.owner_value ?? ''}
+                  onChange={(e) => setEditingRow({ ...editingRow, row: { ...editingRow.row, owner_value: e.target.value ? Number(e.target.value) : undefined } })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tax</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={editingRow.row.owner_tax_amount ?? ''}
+                  onChange={(e) => setEditingRow({ ...editingRow, row: { ...editingRow.row, owner_tax_amount: e.target.value ? Number(e.target.value) : undefined } })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Net</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={editingRow.row.owner_net_revenue ?? ''}
+                  onChange={(e) => setEditingRow({ ...editingRow, row: { ...editingRow.row, owner_net_revenue: e.target.value ? Number(e.target.value) : undefined } })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

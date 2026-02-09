@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react'
-import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Copy, Filter, RotateCcw } from 'lucide-react'
-import { FileUpload } from '../components'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Copy, Filter, RotateCcw, Edit2, Columns } from 'lucide-react'
+import { FileUpload, Modal } from '../components'
 import { useAuth } from '../contexts/AuthContext'
 
 interface OwnerEntry {
@@ -22,6 +22,7 @@ interface OwnerEntry {
 
 interface ProcessingResult {
   success: boolean
+  job_id?: string
   entries?: OwnerEntry[]
   total_count?: number
   duplicate_count?: number
@@ -38,11 +39,40 @@ interface UploadResponse {
 
 interface TitleJob {
   id: string
+  job_id?: string
   documentName: string
   user: string
   timestamp: string
   result?: ProcessingResult
 }
+
+interface ColumnConfig {
+  key: string
+  label: string
+  alwaysVisible?: boolean
+}
+
+const COLUMNS: ColumnConfig[] = [
+  { key: 'checkbox', label: 'Select', alwaysVisible: true },
+  { key: 'full_name', label: 'Name' },
+  { key: 'entity_type', label: 'Type' },
+  { key: 'address', label: 'Address' },
+  { key: 'legal_description', label: 'Legal Desc' },
+  { key: 'status', label: 'Status' },
+  { key: 'edit', label: 'Edit', alwaysVisible: true },
+]
+
+const ENTITY_TYPE_OPTIONS = [
+  'INDIVIDUAL',
+  'CORPORATION',
+  'TRUST',
+  'ESTATE',
+  'FOUNDATION',
+  'MINERAL CO',
+  'UNIVERSITY',
+  'CHURCH',
+  'UNKNOWN',
+]
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
@@ -61,6 +91,87 @@ export default function Title() {
 
   // Row selection state
   const [excludedIndices, setExcludedIndices] = useState<Set<number>>(new Set())
+
+  // Edit modal state
+  const [editingEntry, setEditingEntry] = useState<OwnerEntry | null>(null)
+  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+
+  // Column visibility state
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
+    new Set(COLUMNS.map((c) => c.key))
+  )
+  const [showColumnPicker, setShowColumnPicker] = useState(false)
+  const columnPickerRef = useRef<HTMLDivElement>(null)
+
+  // Click-outside handler for column picker
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        columnPickerRef.current &&
+        !columnPickerRef.current.contains(event.target as Node)
+      ) {
+        setShowColumnPicker(false)
+      }
+    }
+    if (showColumnPicker) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showColumnPicker])
+
+  // Load recent jobs on mount
+  useEffect(() => {
+    const loadRecentJobs = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/history/jobs?tool=title&limit=20`)
+        if (!response.ok) return
+        const data = await response.json()
+        if (Array.isArray(data)) {
+          const loadedJobs: TitleJob[] = data.map((j: Record<string, unknown>) => ({
+            id: (j.job_id as string) || (j.id as string) || String(Date.now()),
+            job_id: (j.job_id as string) || (j.id as string),
+            documentName: (j.source_filename as string) || (j.document_name as string) || 'Unknown',
+            user: (j.user as string) || (j.user_email as string) || 'Unknown',
+            timestamp: j.created_at
+              ? new Date(j.created_at as string).toLocaleString()
+              : (j.timestamp as string) || '',
+            result: j.result
+              ? (j.result as ProcessingResult)
+              : {
+                  success: true,
+                  job_id: (j.job_id as string) || (j.id as string),
+                  total_count: j.total_count as number | undefined,
+                  duplicate_count: j.duplicate_count as number | undefined,
+                  no_address_count: j.no_address_count as number | undefined,
+                  source_filename: (j.source_filename as string) || (j.document_name as string),
+                },
+          }))
+          setJobs(loadedJobs)
+        }
+      } catch {
+        // Silently fail - jobs will load fresh from uploads
+      }
+    }
+    loadRecentJobs()
+  }, [])
+
+  const isColumnVisible = (key: string): boolean => {
+    const col = COLUMNS.find((c) => c.key === key)
+    if (col?.alwaysVisible) return true
+    return visibleColumns.has(key)
+  }
+
+  const toggleColumnVisibility = (key: string) => {
+    const newVisible = new Set(visibleColumns)
+    if (newVisible.has(key)) {
+      newVisible.delete(key)
+    } else {
+      newVisible.add(key)
+    }
+    setVisibleColumns(newVisible)
+  }
 
   // Apply filters to entries
   const filteredEntries = useMemo(() => {
@@ -166,6 +277,9 @@ export default function Title() {
 
       const data: UploadResponse = await response.json()
       newJob.result = data.result
+      if (data.result?.job_id) {
+        newJob.job_id = data.result.job_id
+      }
 
       setJobs((prev) => [newJob, ...prev])
       setActiveJob(newJob)
@@ -228,10 +342,36 @@ export default function Title() {
     }
   }
 
-  const handleSelectJob = (job: TitleJob) => {
+  const handleSelectJob = async (job: TitleJob) => {
     setActiveJob(job)
     setError(null)
     setExcludedIndices(new Set())
+
+    // Lazy-load entries if not already loaded
+    if (job.job_id && (!job.result?.entries || job.result.entries.length === 0)) {
+      try {
+        const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}/entries`)
+        if (response.ok) {
+          const data = await response.json()
+          const entries = Array.isArray(data) ? data : data.entries || []
+          const updatedResult: ProcessingResult = {
+            ...job.result,
+            success: true,
+            entries,
+            total_count: job.result?.total_count || entries.length,
+            duplicate_count: job.result?.duplicate_count || 0,
+            no_address_count: job.result?.no_address_count || 0,
+          }
+          const updatedJob = { ...job, result: updatedResult }
+          setActiveJob(updatedJob)
+          setJobs((prev) =>
+            prev.map((j) => (j.id === job.id ? updatedJob : j))
+          )
+        }
+      } catch {
+        // Entries may not be available from history; that's okay
+      }
+    }
   }
 
   const resetFilters = () => {
@@ -249,6 +389,31 @@ export default function Title() {
     if (entry.state) parts.push(entry.state)
     if (entry.zip_code) parts.push(entry.zip_code)
     return parts.join(', ')
+  }
+
+  const handleEditEntry = (entry: OwnerEntry, index: number) => {
+    setEditingEntry({ ...entry })
+    setEditingIndex(index)
+  }
+
+  const handleSaveEdit = () => {
+    if (editingEntry === null || editingIndex === null || !activeJob?.result?.entries) return
+
+    const updatedEntries = [...activeJob.result.entries]
+    // Find the original index in the full entries array
+    const filteredEntry = filteredEntries[editingIndex]
+    const originalIndex = activeJob.result.entries.indexOf(filteredEntry)
+    if (originalIndex !== -1) {
+      updatedEntries[originalIndex] = editingEntry
+    }
+
+    const updatedResult = { ...activeJob.result, entries: updatedEntries }
+    const updatedJob = { ...activeJob, result: updatedResult }
+    setActiveJob(updatedJob)
+    setJobs((prev) => prev.map((j) => (j.id === activeJob.id ? updatedJob : j)))
+
+    setEditingEntry(null)
+    setEditingIndex(null)
   }
 
   return (
@@ -352,25 +517,11 @@ export default function Title() {
                   </div>
                   <div className="flex gap-2">
                     <button
-                      onClick={() => handleExport('csv')}
-                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-                    >
-                      <Download className="w-4 h-4" />
-                      CSV
-                    </button>
-                    <button
-                      onClick={() => handleExport('excel')}
-                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-                    >
-                      <Download className="w-4 h-4" />
-                      Excel
-                    </button>
-                    <button
                       onClick={() => handleExport('mineral')}
                       className="flex items-center gap-2 px-3 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
                     >
-                      <Copy className="w-4 h-4" />
-                      Mineral Format
+                      <Download className="w-4 h-4" />
+                      Mineral
                     </button>
                   </div>
                 </div>
@@ -475,34 +626,78 @@ export default function Title() {
 
               {/* Preview Table */}
               <div className="p-6">
-                <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-                  <Users className="w-4 h-4" />
-                  Owner Entries Preview
-                </h4>
-                <div className="overflow-x-auto">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                    <Users className="w-4 h-4" />
+                    Owner Entries Preview
+                  </h4>
+                  <div className="relative" ref={columnPickerRef}>
+                    <button
+                      onClick={() => setShowColumnPicker(!showColumnPicker)}
+                      className="flex items-center gap-1 px-2 py-1 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      <Columns className="w-4 h-4" />
+                      Columns
+                    </button>
+                    {showColumnPicker && (
+                      <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-2 min-w-[160px]">
+                        {COLUMNS.filter((c) => !c.alwaysVisible).map((col) => (
+                          <label
+                            key={col.key}
+                            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={visibleColumns.has(col.key)}
+                              onChange={() => toggleColumnVisibility(col.key)}
+                              className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                            />
+                            {col.label}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
                   <table className="w-full text-sm">
-                    <thead>
+                    <thead className="sticky top-0 bg-white z-10">
                       <tr className="border-b border-gray-200">
-                        <th className="text-left py-2 px-3 font-medium text-gray-600 w-10">
-                          <input
-                            type="checkbox"
-                            checked={isAllSelected}
-                            ref={(el) => {
-                              if (el) el.indeterminate = isSomeSelected
-                            }}
-                            onChange={toggleSelectAll}
-                            className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
-                          />
-                        </th>
-                        <th className="text-left py-2 px-3 font-medium text-gray-600">Name</th>
-                        <th className="text-left py-2 px-3 font-medium text-gray-600">Type</th>
-                        <th className="text-left py-2 px-3 font-medium text-gray-600">Address</th>
-                        <th className="text-left py-2 px-3 font-medium text-gray-600">Legal Desc</th>
-                        <th className="text-left py-2 px-3 font-medium text-gray-600">Status</th>
+                        {isColumnVisible('checkbox') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600 w-10">
+                            <input
+                              type="checkbox"
+                              checked={isAllSelected}
+                              ref={(el) => {
+                                if (el) el.indeterminate = isSomeSelected
+                              }}
+                              onChange={toggleSelectAll}
+                              className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                            />
+                          </th>
+                        )}
+                        {isColumnVisible('full_name') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Name</th>
+                        )}
+                        {isColumnVisible('entity_type') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Type</th>
+                        )}
+                        {isColumnVisible('address') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Address</th>
+                        )}
+                        {isColumnVisible('legal_description') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Legal Desc</th>
+                        )}
+                        {isColumnVisible('status') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Status</th>
+                        )}
+                        {isColumnVisible('edit') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600 w-10"></th>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {filteredEntries.slice(0, 20).map((entry, i) => {
+                      {filteredEntries.map((entry, i) => {
                         const isExcluded = excludedIndices.has(i)
                         const status = getEntryStatus(entry)
                         return (
@@ -515,40 +710,58 @@ export default function Title() {
                               ${isExcluded ? 'opacity-50' : ''}
                             `}
                           >
-                            <td className="py-2 px-3">
-                              <input
-                                type="checkbox"
-                                checked={!isExcluded}
-                                onChange={() => toggleEntry(i)}
-                                className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
-                              />
-                            </td>
-                            <td className={`py-2 px-3 text-gray-900 ${isExcluded ? 'line-through' : ''}`} title={entry.full_name}>
-                              {entry.full_name.length > 30 ? entry.full_name.substring(0, 30) + '...' : entry.full_name}
-                            </td>
-                            <td className="py-2 px-3 text-gray-600 text-xs">{entry.entity_type}</td>
-                            <td className="py-2 px-3 text-gray-600 text-xs">
-                              {entry.has_address
-                                ? formatAddress(entry)
-                                : <span className="text-red-500">—</span>
-                              }
-                            </td>
-                            <td className="py-2 px-3 text-gray-600 text-xs">{entry.legal_description}</td>
-                            <td className="py-2 px-3">
-                              <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${status.color}`}>
-                                {status.label}
-                              </span>
-                            </td>
+                            {isColumnVisible('checkbox') && (
+                              <td className="py-2 px-3">
+                                <input
+                                  type="checkbox"
+                                  checked={!isExcluded}
+                                  onChange={() => toggleEntry(i)}
+                                  className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                                />
+                              </td>
+                            )}
+                            {isColumnVisible('full_name') && (
+                              <td className={`py-2 px-3 text-gray-900 ${isExcluded ? 'line-through' : ''}`} title={entry.full_name}>
+                                {entry.full_name.length > 30 ? entry.full_name.substring(0, 30) + '...' : entry.full_name}
+                              </td>
+                            )}
+                            {isColumnVisible('entity_type') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.entity_type}</td>
+                            )}
+                            {isColumnVisible('address') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">
+                                {entry.has_address
+                                  ? formatAddress(entry)
+                                  : <span className="text-red-500">—</span>
+                                }
+                              </td>
+                            )}
+                            {isColumnVisible('legal_description') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.legal_description}</td>
+                            )}
+                            {isColumnVisible('status') && (
+                              <td className="py-2 px-3">
+                                <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${status.color}`}>
+                                  {status.label}
+                                </span>
+                              </td>
+                            )}
+                            {isColumnVisible('edit') && (
+                              <td className="py-2 px-3">
+                                <button
+                                  onClick={() => handleEditEntry(entry, i)}
+                                  className="p-1 text-gray-400 hover:text-tre-teal transition-colors rounded hover:bg-gray-100"
+                                  title="Edit entry"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            )}
                           </tr>
                         )
                       })}
                     </tbody>
                   </table>
-                  {filteredEntries.length > 20 && (
-                    <p className="text-sm text-gray-500 mt-3 text-center">
-                      Showing 20 of {filteredEntries.length} filtered entries. Download to see all.
-                    </p>
-                  )}
                   {filteredEntries.length === 0 && (
                     <p className="text-sm text-gray-500 mt-3 text-center">
                       No entries match the current filters.
@@ -572,6 +785,146 @@ export default function Title() {
           )}
         </div>
       </div>
+
+      {/* Edit Entry Modal */}
+      <Modal
+        isOpen={editingEntry !== null}
+        onClose={() => { setEditingEntry(null); setEditingIndex(null) }}
+        title="Edit Entry"
+        size="lg"
+        footer={
+          <>
+            <button
+              onClick={() => { setEditingEntry(null); setEditingIndex(null) }}
+              className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveEdit}
+              className="px-4 py-2 bg-tre-navy text-white rounded-lg text-sm hover:bg-tre-navy/90 transition-colors"
+            >
+              Save
+            </button>
+          </>
+        }
+      >
+        {editingEntry && (
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+              <input
+                type="text"
+                value={editingEntry.full_name}
+                onChange={(e) => setEditingEntry({ ...editingEntry, full_name: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+              <input
+                type="text"
+                value={editingEntry.first_name || ''}
+                onChange={(e) => setEditingEntry({ ...editingEntry, first_name: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Middle Name</label>
+              <input
+                type="text"
+                value={editingEntry.middle_name || ''}
+                onChange={(e) => setEditingEntry({ ...editingEntry, middle_name: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+              <input
+                type="text"
+                value={editingEntry.last_name || ''}
+                onChange={(e) => setEditingEntry({ ...editingEntry, last_name: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Entity Type</label>
+              <select
+                value={editingEntry.entity_type}
+                onChange={(e) => setEditingEntry({ ...editingEntry, entity_type: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-tre-teal focus:border-tre-teal"
+              >
+                {ENTITY_TYPE_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+              <input
+                type="text"
+                value={editingEntry.address || ''}
+                onChange={(e) => setEditingEntry({ ...editingEntry, address: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Address 2</label>
+              <input
+                type="text"
+                value={editingEntry.address_line_2 || ''}
+                onChange={(e) => setEditingEntry({ ...editingEntry, address_line_2: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+              <input
+                type="text"
+                value={editingEntry.city || ''}
+                onChange={(e) => setEditingEntry({ ...editingEntry, city: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+              <input
+                type="text"
+                value={editingEntry.state || ''}
+                onChange={(e) => setEditingEntry({ ...editingEntry, state: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">ZIP</label>
+              <input
+                type="text"
+                value={editingEntry.zip_code || ''}
+                onChange={(e) => setEditingEntry({ ...editingEntry, zip_code: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Legal Description</label>
+              <input
+                type="text"
+                value={editingEntry.legal_description}
+                onChange={(e) => setEditingEntry({ ...editingEntry, legal_description: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+              <input
+                type="text"
+                value={editingEntry.notes || ''}
+                onChange={(e) => setEditingEntry({ ...editingEntry, notes: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

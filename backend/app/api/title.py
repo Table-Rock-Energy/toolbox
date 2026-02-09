@@ -94,17 +94,48 @@ async def upload_file(
             f"{no_address_count} without address) from {file.filename}"
         )
 
+        result = ProcessingResult(
+            success=True,
+            entries=entries,
+            total_count=len(entries),
+            duplicate_count=duplicate_count,
+            no_address_count=no_address_count,
+            sections=sorted(sections),
+            source_filename=file.filename,
+        )
+
+        # Persist to Firestore (non-blocking, failure doesn't break upload)
+        try:
+            from app.services.firestore_service import (
+                create_job,
+                save_title_entries,
+                update_job_status,
+            )
+
+            job = await create_job(
+                tool="title",
+                source_filename=file.filename,
+                source_file_size=len(file_bytes),
+            )
+            job_id = job["id"]
+            result.job_id = job_id
+
+            await save_title_entries(
+                job_id, [e.model_dump() for e in entries]
+            )
+            await update_job_status(
+                job_id,
+                status="completed",
+                total_count=len(entries),
+                success_count=len(entries),
+                error_count=duplicate_count,
+            )
+        except Exception as fs_err:
+            logger.warning(f"Firestore persistence failed (non-critical): {fs_err}")
+
         return UploadResponse(
             message=f"Successfully processed {len(entries)} entries",
-            result=ProcessingResult(
-                success=True,
-                entries=entries,
-                total_count=len(entries),
-                duplicate_count=duplicate_count,
-                no_address_count=no_address_count,
-                sections=sorted(sections),
-                source_filename=file.filename,
-            ),
+            result=result,
         )
 
     except HTTPException:

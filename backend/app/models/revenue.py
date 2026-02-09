@@ -128,6 +128,7 @@ class UploadResponse(BaseModel):
     statements: list[RevenueStatement] = Field(default_factory=list)
     total_rows: int = 0
     errors: list[str] = Field(default_factory=list)
+    job_id: Optional[str] = Field(None, description="Firestore job ID")
 
 
 class ExportRequest(BaseModel):

@@ -19,7 +19,7 @@ from app.models.proration import (
     UploadResponse,
 )
 from app.services.proration.csv_processor import process_csv
-from app.services.proration.export_service import to_excel, to_pdf
+from app.services.proration.export_service import to_csv, to_excel, to_pdf
 from app.services.proration.rrc_data_service import rrc_data_service
 
 logger = logging.getLogger(__name__)
@@ -204,6 +204,35 @@ async def upload_csv(
             f"({result.matched_rows} matched, {result.failed_rows} failed) from {file.filename}"
         )
 
+        # Persist to Firestore (non-blocking, failure doesn't break upload)
+        try:
+            from app.services.firestore_service import (
+                create_job,
+                save_proration_rows,
+                update_job_status,
+            )
+
+            job = await create_job(
+                tool="proration",
+                source_filename=file.filename,
+                source_file_size=len(file_bytes),
+            )
+            job_id = job["id"]
+            result.job_id = job_id
+
+            await save_proration_rows(
+                job_id, [r.model_dump() for r in result.rows]
+            )
+            await update_job_status(
+                job_id,
+                status="completed",
+                total_count=result.total_rows,
+                success_count=result.matched_rows,
+                error_count=result.failed_rows,
+            )
+        except Exception as fs_err:
+            logger.warning(f"Firestore persistence failed (non-critical): {fs_err}")
+
         return UploadResponse(
             message=f"Successfully processed {result.processed_rows} rows ({result.matched_rows} matched with RRC data)",
             result=result,
@@ -216,6 +245,32 @@ async def upload_csv(
         raise HTTPException(
             status_code=500,
             detail=f"Error processing CSV: {str(e)}",
+        ) from e
+
+
+@router.post("/export/csv")
+async def export_csv(request: ExportRequest) -> Response:
+    """Export mineral holder rows to CSV format."""
+    if not request.rows:
+        raise HTTPException(status_code=400, detail="No rows provided for export")
+
+    try:
+        csv_bytes = to_csv(request.rows)
+        filename = f"{request.filename or 'proration_export'}.csv"
+
+        return Response(
+            content=csv_bytes,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+
+    except Exception as e:
+        logger.exception(f"Error generating CSV: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating CSV: {str(e)}",
         ) from e
 
 

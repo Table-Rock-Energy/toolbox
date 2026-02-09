@@ -1,7 +1,8 @@
-"""Export service for generating Excel and PDF files."""
+"""Export service for generating CSV, Excel, and PDF files."""
 
 from __future__ import annotations
 
+import csv
 import io
 from typing import TYPE_CHECKING
 
@@ -17,6 +18,68 @@ from app.models.proration import MineralHolderRow
 
 if TYPE_CHECKING:
     pass
+
+
+def to_csv(rows: list[MineralHolderRow]) -> bytes:
+    """
+    Export mineral holder rows to CSV format.
+
+    Args:
+        rows: List of MineralHolderRow objects
+
+    Returns:
+        CSV file as bytes
+    """
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    headers = [
+        "Owner",
+        "Year",
+        "Appraisal Value",
+        "Interest Type",
+        "County",
+        "Legal Description",
+        "Property",
+        "Operator",
+        "Raw RRC",
+        "New Record",
+        "Estimated Monthly Revenue",
+        "Interest",
+        "Block",
+        "Section",
+        "Abstract",
+        "RRC Acres",
+        "Est NRA",
+        "$/NRA",
+        "Notes",
+    ]
+    writer.writerow(headers)
+
+    for row in rows:
+        writer.writerow([
+            row.owner,
+            row.year,
+            row.appraisal_value,
+            row.interest_type,
+            row.county,
+            row.legal_description,
+            row.property,
+            row.operator,
+            row.raw_rrc,
+            row.new_record,
+            row.estimated_monthly_revenue,
+            row.interest,
+            row.block,
+            row.section,
+            row.abstract,
+            row.rrc_acres,
+            row.est_nra,
+            row.dollars_per_nra,
+            row.notes,
+        ])
+
+    return output.getvalue().encode("utf-8")
 
 
 def to_excel(rows: list[MineralHolderRow]) -> bytes:

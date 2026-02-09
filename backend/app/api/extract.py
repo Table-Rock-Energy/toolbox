@@ -105,15 +105,46 @@ async def upload_pdf(
             f"from {file.filename}"
         )
 
+        result = ExtractionResult(
+            success=True,
+            entries=entries,
+            total_count=len(entries),
+            flagged_count=flagged_count,
+            source_filename=file.filename,
+        )
+
+        # Persist to Firestore (non-blocking, failure doesn't break upload)
+        try:
+            from app.services.firestore_service import (
+                create_job,
+                save_extract_entries,
+                update_job_status,
+            )
+
+            job = await create_job(
+                tool="extract",
+                source_filename=file.filename,
+                source_file_size=len(file_bytes),
+            )
+            job_id = job["id"]
+            result.job_id = job_id
+
+            await save_extract_entries(
+                job_id, [e.model_dump() for e in entries]
+            )
+            await update_job_status(
+                job_id,
+                status="completed",
+                total_count=len(entries),
+                success_count=len(entries),
+                error_count=flagged_count,
+            )
+        except Exception as fs_err:
+            logger.warning(f"Firestore persistence failed (non-critical): {fs_err}")
+
         return UploadResponse(
             message=f"Successfully extracted {len(entries)} entries",
-            result=ExtractionResult(
-                success=True,
-                entries=entries,
-                total_count=len(entries),
-                flagged_count=flagged_count,
-                source_filename=file.filename,
-            ),
+            result=result,
         )
 
     except HTTPException:
