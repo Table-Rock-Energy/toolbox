@@ -49,7 +49,17 @@ async def upload_pdfs(files: List[UploadFile] = File(...)):
             text = extract_text(content)
 
             if not text or len(text.strip()) < 50:
-                errors.append(f"Could not extract text from {file.filename}")
+                from app.services.revenue.pdf_extractor import is_ocr_available
+                if is_ocr_available():
+                    errors.append(
+                        f"Could not extract text from {file.filename}. "
+                        "OCR was attempted but could not read the document."
+                    )
+                else:
+                    errors.append(
+                        f"Could not extract text from {file.filename}. "
+                        "This appears to be a scanned PDF. OCR is not available in this environment."
+                    )
                 continue
 
             # Detect format
@@ -61,8 +71,7 @@ async def upload_pdfs(files: List[UploadFile] = File(...)):
             if parser is None:
                 errors.append(
                     f"Unknown statement format for {file.filename}. "
-                    "This may be a scanned/image-based PDF that requires OCR. "
-                    "Supported formats: EnergyLink, Energy Transfer"
+                    "Text was extracted but did not match EnergyLink or Energy Transfer format."
                 )
                 continue
 

@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
   FileSearch,
@@ -8,52 +9,94 @@ import {
   Activity,
 } from 'lucide-react'
 
-const tools = [
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
+
+interface ToolConfig {
+  name: string
+  tool: string
+  description: string
+  icon: typeof FileSearch
+  path: string
+  color: string
+}
+
+const toolConfigs: ToolConfig[] = [
   {
     name: 'Extract',
+    tool: 'extract',
     description: 'Extract party and stakeholder data from OCC Exhibit A PDFs',
     icon: FileSearch,
     path: '/extract',
     color: 'bg-blue-500',
-    usageCount: 0,
   },
   {
     name: 'Title',
+    tool: 'title',
     description: 'Consolidate owner and contact info from Oklahoma title opinions',
     icon: FileText,
     path: '/title',
     color: 'bg-green-500',
-    usageCount: 0,
   },
   {
     name: 'Proration',
+    tool: 'proration',
     description: 'Calculate interest prorations and NRA allocations with RRC data',
     icon: Calculator,
     path: '/proration',
     color: 'bg-purple-500',
-    usageCount: 0,
   },
   {
     name: 'Revenue',
+    tool: 'revenue',
     description: 'Extract revenue statements from EnergyLink and Energy Transfer PDFs',
     icon: DollarSign,
     path: '/revenue',
     color: 'bg-amber-500',
-    usageCount: 0,
   },
 ]
 
-// This would come from the backend in a real implementation
-const recentActivity: {
-  id: number
+interface RecentJob {
+  id: string
   tool: string
-  fileName: string
-  user: string
-  timestamp: string
-}[] = []
+  source_filename: string
+  user_email: string
+  created_at: string
+  status: string
+}
+
+const toolColors: Record<string, string> = {
+  extract: 'bg-blue-100 text-blue-700',
+  title: 'bg-green-100 text-green-700',
+  proration: 'bg-purple-100 text-purple-700',
+  revenue: 'bg-amber-100 text-amber-700',
+}
 
 export default function Dashboard() {
-  const totalJobs = tools.reduce((sum, tool) => sum + tool.usageCount, 0)
+  const [recentJobs, setRecentJobs] = useState<RecentJob[]>([])
+  const [toolCounts, setToolCounts] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    const fetchJobs = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/history/jobs?limit=50`)
+        if (!response.ok) return
+        const data = await response.json()
+        const jobs: RecentJob[] = data.jobs || []
+        setRecentJobs(jobs.slice(0, 20))
+
+        const counts: Record<string, number> = {}
+        for (const job of jobs) {
+          counts[job.tool] = (counts[job.tool] || 0) + 1
+        }
+        setToolCounts(counts)
+      } catch {
+        // Silently fail
+      }
+    }
+    fetchJobs()
+  }, [])
+
+  const totalJobs = Object.values(toolCounts).reduce((sum, c) => sum + c, 0)
 
   return (
     <div className="space-y-8">
@@ -88,7 +131,7 @@ export default function Dashboard() {
           Tools
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {tools.map((tool) => (
+          {toolConfigs.map((tool) => (
             <Link
               key={tool.path}
               to={tool.path}
@@ -99,7 +142,7 @@ export default function Dashboard() {
                   <tool.icon className="w-6 h-6 text-white" />
                 </div>
                 <div className="text-right">
-                  <p className="text-2xl font-oswald font-semibold text-tre-navy">{tool.usageCount}</p>
+                  <p className="text-2xl font-oswald font-semibold text-tre-navy">{toolCounts[tool.tool] || 0}</p>
                   <p className="text-xs text-gray-400">times used</p>
                 </div>
               </div>
@@ -124,7 +167,7 @@ export default function Dashboard() {
           Recent Activity
         </h2>
         <div className="bg-white rounded-xl border border-gray-200">
-          {recentActivity.length === 0 ? (
+          {recentJobs.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
               <Activity className="w-12 h-12 mx-auto mb-3 text-gray-300" />
               <p className="font-medium">No activity yet</p>
@@ -141,16 +184,18 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {recentActivity.map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                {recentJobs.map((job) => (
+                  <tr key={job.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-tre-teal/10 text-tre-teal">
-                        {item.tool}
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${toolColors[job.tool] || 'bg-gray-100 text-gray-700'}`}>
+                        {job.tool.charAt(0).toUpperCase() + job.tool.slice(1)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{item.fileName}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{item.user}</td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{item.timestamp}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{job.source_filename || 'Unknown'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{job.user_email || 'Unknown'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500">
+                      {job.created_at ? new Date(job.created_at).toLocaleString() : ''}
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -128,8 +128,9 @@ export default function Title() {
         const response = await fetch(`${API_BASE}/history/jobs?tool=title&limit=20`)
         if (!response.ok) return
         const data = await response.json()
-        if (Array.isArray(data)) {
-          const loadedJobs: TitleJob[] = data.map((j: Record<string, unknown>) => ({
+        const jobsArray = data.jobs || (Array.isArray(data) ? data : [])
+        if (jobsArray.length > 0) {
+          const loadedJobs: TitleJob[] = jobsArray.map((j: Record<string, unknown>) => ({
             id: (j.job_id as string) || (j.id as string) || String(Date.now()),
             job_id: (j.job_id as string) || (j.id as string),
             documentName: (j.source_filename as string) || (j.document_name as string) || 'Unknown',

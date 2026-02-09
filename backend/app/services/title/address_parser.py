@@ -383,9 +383,12 @@ def _clean_result(result: dict[str, Optional[str]]) -> dict[str, Optional[str]]:
     for key in result:
         if result[key]:
             # Strip whitespace and trailing punctuation
-            value = result[key].strip().rstrip(".,").strip()
+            value = result[key].strip().rstrip(".,)").strip()
             # Remove multiple spaces
             value = re.sub(r"\s+", " ", value)
+            # Treat punctuation-only values as empty
+            if value and not re.search(r"[a-zA-Z0-9]", value):
+                value = None
             result[key] = value if value else None
 
     # Validate state
