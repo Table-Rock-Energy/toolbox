@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 import logging
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import pandas as pd
 
@@ -24,6 +24,31 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 logger = logging.getLogger(__name__)
+
+# Whether to use Firestore master database for RRC lookups
+_use_firestore = True
+
+
+async def _lookup_from_firestore(
+    district: str, lease_number: str
+) -> Optional[dict]:
+    """Look up RRC data from Firestore master database."""
+    try:
+        from app.services.firestore_service import lookup_rrc_acres
+        return await lookup_rrc_acres(district, lease_number)
+    except Exception as e:
+        logger.debug(f"Firestore lookup failed: {e}")
+        return None
+
+
+async def _lookup_by_lease_from_firestore(lease_number: str) -> Optional[dict]:
+    """Look up RRC data by lease number only from Firestore."""
+    try:
+        from app.services.firestore_service import lookup_rrc_by_lease_number
+        return await lookup_rrc_by_lease_number(lease_number)
+    except Exception as e:
+        logger.debug(f"Firestore lease lookup failed: {e}")
+        return None
 
 
 def parse_currency(value) -> float | None:
@@ -110,14 +135,21 @@ async def process_csv(
                 # Determine well type from RRC lookup or estimates
                 well_type = determine_well_type(row_data, options.well_type_override)
 
-                # Look up acres from RRC data
+                # Look up acres from RRC master database (Firestore),
+                # falling back to in-memory CSV if Firestore unavailable
                 rrc_acres = None
                 rrc_info = None
                 notes = None
 
                 if district and lease_number:
-                    # Try district + lease number lookup first
-                    rrc_info = rrc_data_service.lookup_acres(district, lease_number)
+                    # Try Firestore master database first
+                    if _use_firestore:
+                        rrc_info = await _lookup_from_firestore(district, lease_number)
+
+                    # Fall back to in-memory CSV lookup
+                    if rrc_info is None:
+                        rrc_info = rrc_data_service.lookup_acres(district, lease_number)
+
                     if rrc_info:
                         rrc_acres = rrc_info.get("acres")
                         well_type_str = rrc_info.get("type", "")
@@ -135,16 +167,21 @@ async def process_csv(
                         notes = "Not found in RRC data"
                 elif lease_number or rrc_lease_str:
                     # No district parsed - try looking up by lease number only
-                    # Extract just the numeric part if present
                     lease_only = lease_number
                     if not lease_only and rrc_lease_str:
-                        # Try to extract numbers from the string
                         numbers = re.findall(r'\d+', str(rrc_lease_str))
                         if numbers:
                             lease_only = numbers[0]
 
                     if lease_only:
-                        rrc_info = rrc_data_service.lookup_by_lease_number(lease_only)
+                        # Try Firestore first
+                        if _use_firestore:
+                            rrc_info = await _lookup_by_lease_from_firestore(lease_only)
+
+                        # Fall back to in-memory CSV
+                        if rrc_info is None:
+                            rrc_info = rrc_data_service.lookup_by_lease_number(lease_only)
+
                         if rrc_info:
                             rrc_acres = rrc_info.get("acres")
                             well_type_str = rrc_info.get("type", "")

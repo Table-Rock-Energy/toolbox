@@ -438,20 +438,24 @@ export default function Proration() {
     })
   }
 
-  const hasRRCData = rrcStatus?.oil_available || rrcStatus?.gas_available
+  const hasDBData = (rrcStatus?.db_oil_rows || 0) + (rrcStatus?.db_gas_rows || 0) > 0
+  const hasCSVData = rrcStatus?.oil_available || rrcStatus?.gas_available
+  const hasRRCData = hasDBData || hasCSVData
 
-  // Check if RRC data is expired: oil_modified date is before the 1st of the current month
+  // Check if monthly update is needed: last sync is before the 1st of the current month
   const isDataExpired = (): boolean => {
-    if (!rrcStatus?.oil_modified) return false
-    const lastModified = new Date(rrcStatus.oil_modified)
+    const syncDate = rrcStatus?.last_sync?.completed_at || rrcStatus?.oil_modified
+    if (!syncDate) return false
+    const lastUpdated = new Date(syncDate)
     const firstOfMonth = new Date()
     firstOfMonth.setDate(1)
     firstOfMonth.setHours(0, 0, 0, 0)
-    return lastModified < firstOfMonth
+    return lastUpdated < firstOfMonth
   }
 
   const dataExpired = hasRRCData && isDataExpired()
   const showDownloadButton = dataExpired || !hasRRCData
+  const totalDBRecords = (rrcStatus?.db_oil_rows || 0) + (rrcStatus?.db_gas_rows || 0)
 
   return (
     <div className="space-y-6">
@@ -486,38 +490,37 @@ export default function Proration() {
                 dataExpired ? 'text-orange-800' :
                 hasRRCData ? 'text-green-800' : 'text-yellow-800'
               }`}>
-                RRC Proration Data
+                RRC Master Database
                 {dataExpired && (
                   <span className="ml-2 text-xs font-normal bg-orange-200 text-orange-800 px-2 py-0.5 rounded">
-                    Monthly Update Needed
+                    Monthly Update Available
                   </span>
                 )}
               </h3>
               {rrcStatus ? (
-                <div className="text-sm text-gray-600 mt-1">
+                <div className="text-sm mt-1 space-y-0.5">
                   {hasRRCData ? (
-                    dataExpired ? (
-                      <>
-                        <span className="font-medium">{(rrcStatus.oil_rows + rrcStatus.gas_rows).toLocaleString()}</span> CSV records
-                        ({rrcStatus.oil_rows.toLocaleString()} oil, {rrcStatus.gas_rows.toLocaleString()} gas)
-                        {rrcStatus.oil_modified && (
-                          <span className="ml-2 text-orange-600 font-medium">
-                            &bull; Last updated: {formatDate(rrcStatus.oil_modified)}
-                          </span>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-green-700">
-                        Data current through {formatMonthYear(rrcStatus.oil_modified)}
-                        {rrcStatus.oil_modified && (
-                          <span className="ml-2 text-green-600/70">
-                            &bull; Updated {formatDate(rrcStatus.oil_modified)}
-                          </span>
-                        )}
-                      </span>
-                    )
+                    <>
+                      <div className={dataExpired ? 'text-orange-700' : 'text-green-700'}>
+                        <span className="font-medium">{totalDBRecords.toLocaleString()}</span> records
+                        ({(rrcStatus.db_oil_rows || 0).toLocaleString()} oil, {(rrcStatus.db_gas_rows || 0).toLocaleString()} gas)
+                      </div>
+                      <div className="text-gray-500 text-xs">
+                        Last synced: {rrcStatus.last_sync?.completed_at
+                          ? formatDate(rrcStatus.last_sync.completed_at)
+                          : rrcStatus.oil_modified
+                            ? formatDate(rrcStatus.oil_modified)
+                            : 'Never'
+                        }
+                        {rrcStatus.last_sync?.new_records ? (
+                          <span className="ml-2">&bull; {rrcStatus.last_sync.new_records.toLocaleString()} new, {(rrcStatus.last_sync.updated_records || 0).toLocaleString()} updated</span>
+                        ) : null}
+                      </div>
+                    </>
                   ) : (
-                    'No RRC data available. Download to enable NRA calculations.'
+                    <div className="text-yellow-700">
+                      No RRC data available. Download to build the master database.
+                    </div>
                   )}
                 </div>
               ) : (
@@ -529,14 +532,14 @@ export default function Proration() {
             <button
               onClick={handleDownloadRRC}
               disabled={isDownloadingRRC}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm whitespace-nowrap ${
                 dataExpired
                   ? 'bg-orange-600 text-white hover:bg-orange-700'
                   : 'bg-yellow-600 text-white hover:bg-yellow-700'
               } ${isDownloadingRRC ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <RefreshCw className={`w-4 h-4 ${isDownloadingRRC ? 'animate-spin' : ''}`} />
-              {isDownloadingRRC ? 'Downloading...' : dataExpired ? 'Update Now' : 'Download Data'}
+              {isDownloadingRRC ? 'Syncing...' : dataExpired ? 'Download & Sync' : 'Download & Build'}
             </button>
           )}
         </div>

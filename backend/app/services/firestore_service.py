@@ -464,36 +464,105 @@ async def upsert_rrc_gas_record(
 async def lookup_rrc_acres(
     district: str,
     lease_number: str,
-) -> tuple[Optional[float], Optional[str]]:
+) -> Optional[dict]:
     """
-    Look up acres for a lease from RRC data.
-    Returns: (acres, well_type) where well_type is 'oil', 'gas', or 'both'
+    Look up RRC lease data from Firestore master database.
+
+    Returns dict with: acres, type, operator, lease_name, field_name, county, row_count
+    or None if not found.
     """
     db = get_firestore_client()
     doc_id = f"{district}-{lease_number}"
 
-    oil_acres = None
-    gas_acres = None
+    oil_data = None
+    gas_data = None
 
     # Check oil collection
     oil_doc = await db.collection(RRC_OIL_COLLECTION).document(doc_id).get()
     if oil_doc.exists:
-        oil_acres = oil_doc.to_dict().get("unit_acres")
+        oil_data = oil_doc.to_dict()
 
     # Check gas collection
     gas_doc = await db.collection(RRC_GAS_COLLECTION).document(doc_id).get()
     if gas_doc.exists:
-        gas_acres = gas_doc.to_dict().get("unit_acres")
+        gas_data = gas_doc.to_dict()
 
-    # Determine well type and return acres
-    if oil_acres is not None and gas_acres is not None:
-        return max(oil_acres, gas_acres), "both"
-    elif oil_acres is not None:
-        return oil_acres, "oil"
-    elif gas_acres is not None:
-        return gas_acres, "gas"
+    if oil_data is None and gas_data is None:
+        return None
+
+    # Determine well type and pick best data source
+    if oil_data and gas_data:
+        well_type = "both"
+        acres = max(oil_data.get("unit_acres") or 0, gas_data.get("unit_acres") or 0)
+        primary = oil_data if (oil_data.get("unit_acres") or 0) >= (gas_data.get("unit_acres") or 0) else gas_data
+    elif oil_data:
+        well_type = "oil"
+        acres = oil_data.get("unit_acres")
+        primary = oil_data
     else:
-        return None, None
+        well_type = "gas"
+        acres = gas_data.get("unit_acres")
+        primary = gas_data
+
+    return {
+        "acres": acres,
+        "type": well_type,
+        "operator": primary.get("operator_name"),
+        "lease_name": primary.get("lease_name"),
+        "field_name": primary.get("field_name"),
+        "county": primary.get("county"),
+        "row_count": 1,
+    }
+
+
+async def lookup_rrc_by_lease_number(lease_number: str) -> Optional[dict]:
+    """
+    Look up RRC lease data by lease number only (searches across all districts).
+
+    Returns dict with: acres, type, districts_found, operator, lease_name
+    or None if not found.
+    """
+    db = get_firestore_client()
+
+    total_acres = 0.0
+    well_type = None
+    districts_found = 0
+    primary_data = None
+
+    # Query oil collection for matching lease_number
+    oil_query = db.collection(RRC_OIL_COLLECTION).where("lease_number", "==", lease_number)
+    oil_docs = await oil_query.get()
+    for doc in oil_docs:
+        data = doc.to_dict()
+        total_acres += data.get("unit_acres") or 0
+        districts_found += 1
+        if primary_data is None:
+            primary_data = data
+        well_type = "oil"
+
+    # Query gas collection for matching lease_number
+    gas_query = db.collection(RRC_GAS_COLLECTION).where("lease_number", "==", lease_number)
+    gas_docs = await gas_query.get()
+    for doc in gas_docs:
+        data = doc.to_dict()
+        gas_acres = data.get("unit_acres") or 0
+        total_acres += gas_acres
+        districts_found += 1
+        if primary_data is None:
+            primary_data = data
+        well_type = "both" if well_type == "oil" else "gas"
+
+    if primary_data is None:
+        return None
+
+    return {
+        "acres": total_acres,
+        "type": well_type or "unknown",
+        "districts_found": districts_found,
+        "operator": primary_data.get("operator_name"),
+        "lease_name": primary_data.get("lease_name"),
+        "row_count": districts_found,
+    }
 
 
 async def get_rrc_data_status() -> dict:
