@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Filter, RotateCcw, Edit2, Columns } from 'lucide-react'
-import { FileUpload, Modal } from '../components'
+import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Filter, RotateCcw, Edit2, Columns, Sparkles } from 'lucide-react'
+import { FileUpload, Modal, AiReviewPanel } from '../components'
+import { aiApi } from '../utils/api'
+import type { AiSuggestion } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 
 interface OwnerEntry {
@@ -93,6 +95,10 @@ export default function Title() {
 
   // Row selection state
   const [excludedIndices, setExcludedIndices] = useState<Set<number>>(new Set())
+
+  // AI Review state
+  const [showAiReview, setShowAiReview] = useState(false)
+  const [aiEnabled, setAiEnabled] = useState(false)
 
   // Edit modal state
   const [editingEntry, setEditingEntry] = useState<OwnerEntry | null>(null)
@@ -248,6 +254,31 @@ export default function Title() {
     return { label: 'OK', color: 'text-green-600 bg-green-100' }
   }
 
+
+  // Check AI status on mount
+  useEffect(() => {
+    aiApi.getStatus().then(res => {
+      if (res.data?.enabled) setAiEnabled(true)
+    })
+  }, [])
+
+  const handleApplySuggestions = (accepted: AiSuggestion[]) => {
+    if (!activeJob?.result?.entries) return
+
+    const updatedEntries = [...activeJob.result.entries]
+    for (const suggestion of accepted) {
+      const entry = updatedEntries[suggestion.entry_index]
+      if (entry && suggestion.field in entry) {
+        (entry as unknown as Record<string, unknown>)[suggestion.field] = suggestion.suggested_value
+      }
+    }
+
+    const updatedResult = { ...activeJob.result, entries: updatedEntries }
+    const updatedJob = { ...activeJob, result: updatedResult }
+    setActiveJob(updatedJob)
+    setJobs(prev => prev.map(j => j.id === activeJob.id ? updatedJob : j))
+    setShowAiReview(false)
+  }
 
   const handleFilesSelected = async (files: File[]) => {
     if (files.length === 0) return
@@ -505,6 +536,7 @@ export default function Title() {
           )}
 
           {activeJob?.result?.success ? (
+            <>
             <div className="bg-white rounded-xl border border-gray-200">
               {/* Results Header */}
               <div className="px-6 py-4 border-b border-gray-100">
@@ -518,6 +550,19 @@ export default function Title() {
                     </p>
                   </div>
                   <div className="flex gap-2">
+                    {aiEnabled && (
+                      <button
+                        onClick={() => setShowAiReview(!showAiReview)}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
+                          showAiReview
+                            ? 'bg-purple-100 text-purple-700 border border-purple-300'
+                            : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        AI Review
+                      </button>
+                    )}
                     <button
                       onClick={() => handleExport('mineral')}
                       className="flex items-center gap-2 px-3 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
@@ -772,6 +817,17 @@ export default function Title() {
                 </div>
               </div>
             </div>
+
+            {/* AI Review Panel */}
+            {showAiReview && activeJob?.result?.entries && (
+              <AiReviewPanel
+                tool="title"
+                entries={activeJob.result.entries}
+                onApplySuggestions={handleApplySuggestions}
+                onClose={() => setShowAiReview(false)}
+              />
+            )}
+            </>
           ) : activeJob?.result?.error_message ? (
             <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
               <AlertCircle className="w-12 h-12 mx-auto mb-3 text-red-400" />

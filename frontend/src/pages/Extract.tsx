@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns } from 'lucide-react'
-import { FileUpload, Modal } from '../components'
+import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, Sparkles } from 'lucide-react'
+import { FileUpload, Modal, AiReviewPanel } from '../components'
+import { aiApi } from '../utils/api'
+import type { AiSuggestion } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 
 interface PartyEntry {
@@ -78,6 +80,10 @@ export default function Extract() {
   // Row selection state (set of excluded entry numbers)
   const [excludedEntries, setExcludedEntries] = useState<Set<string>>(new Set())
 
+  // AI Review state
+  const [showAiReview, setShowAiReview] = useState(false)
+  const [aiEnabled, setAiEnabled] = useState(false)
+
   // Edit modal state
   const [editingEntry, setEditingEntry] = useState<PartyEntry | null>(null)
 
@@ -133,6 +139,34 @@ export default function Extract() {
     }
     loadJobs()
   }, [])
+
+  // Check AI status on mount
+  useEffect(() => {
+    aiApi.getStatus().then(res => {
+      if (res.data?.enabled) setAiEnabled(true)
+    })
+  }, [])
+
+  const handleApplySuggestions = (accepted: AiSuggestion[]) => {
+    if (!activeJob?.result?.entries) return
+
+    const updatedEntries = [...activeJob.result.entries]
+    for (const suggestion of accepted) {
+      const entry = updatedEntries[suggestion.entry_index]
+      if (entry && suggestion.field in entry) {
+        (entry as unknown as Record<string, unknown>)[suggestion.field] = suggestion.suggested_value
+      }
+    }
+
+    setActiveJob({
+      ...activeJob,
+      result: {
+        ...activeJob.result,
+        entries: updatedEntries,
+      },
+    })
+    setShowAiReview(false)
+  }
 
   const handleFilesSelected = async (files: File[]) => {
     if (files.length === 0) return
@@ -415,6 +449,7 @@ export default function Extract() {
           )}
 
           {activeJob?.result?.success ? (
+            <>
             <div className="bg-white rounded-xl border border-gray-200">
               {/* Results Header */}
               <div className="px-6 py-4 border-b border-gray-100">
@@ -427,13 +462,28 @@ export default function Extract() {
                       Processed by {activeJob.user} on {activeJob.timestamp}
                     </p>
                   </div>
-                  <button
-                    onClick={() => handleExport('excel')}
-                    className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
-                  >
-                    <Download className="w-4 h-4" />
-                    Mineral
-                  </button>
+                  <div className="flex gap-2">
+                    {aiEnabled && (
+                      <button
+                        onClick={() => setShowAiReview(!showAiReview)}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
+                          showAiReview
+                            ? 'bg-purple-100 text-purple-700 border border-purple-300'
+                            : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        AI Review
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleExport('excel')}
+                      className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
+                    >
+                      <Download className="w-4 h-4" />
+                      Mineral
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -642,6 +692,16 @@ export default function Extract() {
                 </div>
               </div>
             </div>
+            {/* AI Review Panel */}
+            {showAiReview && activeJob?.result?.entries && (
+              <AiReviewPanel
+                tool="extract"
+                entries={activeJob.result.entries}
+                onApplySuggestions={handleApplySuggestions}
+                onClose={() => setShowAiReview(false)}
+              />
+            )}
+            </>
           ) : activeJob?.result?.error_message ? (
             <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
               <AlertCircle className="w-12 h-12 mx-auto mb-3 text-red-400" />

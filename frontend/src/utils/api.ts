@@ -203,4 +203,39 @@ export const revenueApi = {
   listStatements: () => api.get('/revenue/statements'),
 }
 
+// AI validation types
+export interface AiSuggestion {
+  entry_index: number
+  field: string
+  current_value: string
+  suggested_value: string
+  reason: string
+  confidence: 'high' | 'medium' | 'low'
+}
+
+export interface AiValidationResult {
+  success: boolean
+  suggestions: AiSuggestion[]
+  summary: string
+  entries_reviewed: number
+  issues_found: number
+  error_message?: string | null
+}
+
+export interface AiStatusResponse {
+  enabled: boolean
+  model: string
+  requests_remaining_minute: number
+  requests_remaining_day: number
+  monthly_budget: number
+  monthly_spend: number
+  monthly_budget_remaining: number
+}
+
+export const aiApi = {
+  getStatus: () => api.get<AiStatusResponse>('/ai/status'),
+  validate: (tool: string, entries: unknown[]) =>
+    api.post<AiValidationResult>('/ai/validate', { tool, entries }, { timeout: 120000 }),
+}
+
 export default api

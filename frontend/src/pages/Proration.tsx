@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw, Filter, Settings, Edit2, Columns } from 'lucide-react'
-import { FileUpload, Modal } from '../components'
+import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw, Filter, Settings, Edit2, Columns, Sparkles } from 'lucide-react'
+import { FileUpload, Modal, AiReviewPanel } from '../components'
+import { aiApi } from '../utils/api'
+import type { AiSuggestion } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 
 interface MineralHolderRow {
@@ -129,6 +131,10 @@ export default function Proration() {
   const [wellTypeOverride, setWellTypeOverride] = useState<string>('auto')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
 
+  // AI Review state
+  const [showAiReview, setShowAiReview] = useState(false)
+  const [aiEnabled, setAiEnabled] = useState(false)
+
   // Edit Row Modal State
   const [editingRow, setEditingRow] = useState<MineralHolderRow | null>(null)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
@@ -191,6 +197,34 @@ export default function Proration() {
     }
     loadRecentJobs()
   }, [])
+
+  // Check AI status on mount
+  useEffect(() => {
+    aiApi.getStatus().then(res => {
+      if (res.data?.enabled) setAiEnabled(true)
+    })
+  }, [])
+
+  const handleApplySuggestions = (accepted: AiSuggestion[]) => {
+    if (!activeJob?.result?.rows) return
+
+    const updatedRows = [...activeJob.result.rows]
+    for (const suggestion of accepted) {
+      const row = updatedRows[suggestion.entry_index]
+      if (row && suggestion.field in row) {
+        (row as unknown as Record<string, unknown>)[suggestion.field] = suggestion.suggested_value
+      }
+    }
+
+    setActiveJob({
+      ...activeJob,
+      result: {
+        ...activeJob.result,
+        rows: updatedRows,
+      },
+    })
+    setShowAiReview(false)
+  }
 
   const checkRRCStatus = async () => {
     try {
@@ -426,15 +460,6 @@ export default function Proration() {
       year: 'numeric',
       hour: 'numeric',
       minute: '2-digit',
-    })
-  }
-
-  const formatMonthYear = (isoString?: string): string => {
-    if (!isoString) return ''
-    const date = new Date(isoString)
-    return date.toLocaleDateString('en-US', {
-      month: 'long',
-      year: 'numeric',
     })
   }
 
@@ -715,6 +740,7 @@ export default function Proration() {
           )}
 
           {activeJob?.result?.success ? (
+            <>
             <div className="bg-white rounded-xl border border-gray-200">
               {/* Results Header */}
               <div className="px-6 py-4 border-b border-gray-100">
@@ -728,6 +754,19 @@ export default function Proration() {
                     </p>
                   </div>
                   <div className="flex gap-2">
+                    {aiEnabled && (
+                      <button
+                        onClick={() => setShowAiReview(!showAiReview)}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
+                          showAiReview
+                            ? 'bg-purple-100 text-purple-700 border border-purple-300'
+                            : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        AI Review
+                      </button>
+                    )}
                     <button
                       onClick={() => handleExport('csv')}
                       className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
@@ -874,6 +913,17 @@ export default function Proration() {
                 </div>
               </div>
             </div>
+
+            {/* AI Review Panel */}
+            {showAiReview && activeJob?.result?.rows && (
+              <AiReviewPanel
+                tool="proration"
+                entries={activeJob.result.rows}
+                onApplySuggestions={handleApplySuggestions}
+                onClose={() => setShowAiReview(false)}
+              />
+            )}
+            </>
           ) : activeJob?.result?.error_message ? (
             <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
               <AlertCircle className="w-12 h-12 mx-auto mb-3 text-red-400" />

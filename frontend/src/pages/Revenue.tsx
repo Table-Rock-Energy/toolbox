@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { DollarSign, Download, Upload, FileText, AlertCircle, CheckCircle, ChevronDown, ChevronRight, Edit2, Columns } from 'lucide-react'
-import { FileUpload, Modal } from '../components'
+import { DollarSign, Download, Upload, FileText, AlertCircle, CheckCircle, ChevronDown, ChevronRight, Edit2, Columns, Sparkles } from 'lucide-react'
+import { FileUpload, Modal, AiReviewPanel } from '../components'
+import { aiApi } from '../utils/api'
+import type { AiSuggestion } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 
 interface RevenueRow {
@@ -105,6 +107,10 @@ export default function Revenue() {
   const [error, setError] = useState<string | null>(null)
   const [expandedStatement, setExpandedStatement] = useState<number | null>(null)
 
+  // AI Review state
+  const [showAiReview, setShowAiReview] = useState(false)
+  const [aiEnabled, setAiEnabled] = useState(false)
+
   // Edit modal state
   const [editingRow, setEditingRow] = useState<{ statementIdx: number; rowIdx: number; row: RevenueRow } | null>(null)
 
@@ -160,6 +166,50 @@ export default function Revenue() {
     }
     loadJobs()
   }, [])
+
+  // Check AI status on mount
+  useEffect(() => {
+    aiApi.getStatus().then(res => {
+      if (res.data?.enabled) setAiEnabled(true)
+    })
+  }, [])
+
+  const handleApplySuggestions = (accepted: AiSuggestion[]) => {
+    if (!activeJob?.result?.statements) return
+
+    const updatedStatements = [...activeJob.result.statements]
+    // Revenue entries are flattened rows across all statements
+    // entry_index maps to the flat row index
+    let flatIdx = 0
+    for (let si = 0; si < updatedStatements.length; si++) {
+      const stmt = { ...updatedStatements[si] }
+      const updatedRows = [...stmt.rows]
+      for (let ri = 0; ri < updatedRows.length; ri++) {
+        const matching = accepted.filter(s => s.entry_index === flatIdx)
+        if (matching.length > 0) {
+          const row = { ...updatedRows[ri] }
+          for (const suggestion of matching) {
+            if (suggestion.field in row) {
+              (row as Record<string, unknown>)[suggestion.field] = suggestion.suggested_value
+            }
+          }
+          updatedRows[ri] = row
+        }
+        flatIdx++
+      }
+      stmt.rows = updatedRows
+      updatedStatements[si] = stmt
+    }
+
+    setActiveJob({
+      ...activeJob,
+      result: {
+        ...activeJob.result,
+        statements: updatedStatements,
+      },
+    })
+    setShowAiReview(false)
+  }
 
   const handleFilesSelected = async (files: File[]) => {
     if (files.length === 0) return
@@ -416,6 +466,7 @@ export default function Revenue() {
           )}
 
           {activeJob?.result?.success ? (
+            <>
             <div className="bg-white rounded-xl border border-gray-200">
               {/* Results Header */}
               <div className="px-6 py-4 border-b border-gray-100">
@@ -428,13 +479,28 @@ export default function Revenue() {
                       Processed by {activeJob.user} on {activeJob.timestamp}
                     </p>
                   </div>
-                  <button
-                    onClick={handleExport}
-                    className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
-                  >
-                    <Download className="w-4 h-4" />
-                    M1 CSV
-                  </button>
+                  <div className="flex gap-2">
+                    {aiEnabled && (
+                      <button
+                        onClick={() => setShowAiReview(!showAiReview)}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
+                          showAiReview
+                            ? 'bg-purple-100 text-purple-700 border border-purple-300'
+                            : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        AI Review
+                      </button>
+                    )}
+                    <button
+                      onClick={handleExport}
+                      className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
+                    >
+                      <Download className="w-4 h-4" />
+                      M1 CSV
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -699,6 +765,17 @@ export default function Revenue() {
                 </div>
               </div>
             </div>
+
+            {/* AI Review Panel */}
+            {showAiReview && activeJob?.result?.statements && (
+              <AiReviewPanel
+                tool="revenue"
+                entries={getAllRows()}
+                onApplySuggestions={handleApplySuggestions}
+                onClose={() => setShowAiReview(false)}
+              />
+            )}
+            </>
           ) : activeJob?.result?.errors?.length ? (
             <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
               <AlertCircle className="w-12 h-12 mx-auto mb-3 text-red-400" />

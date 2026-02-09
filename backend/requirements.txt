@@ -36,6 +36,9 @@ lxml>=4.9.0
 # Scheduling (monthly RRC data downloads)
 apscheduler>=3.10.0
 
+# Google Gemini AI (optional AI-powered data validation)
+google-genai>=1.0.0
+
 # Database (PostgreSQL)
 sqlalchemy[asyncio]>=2.0.0
 asyncpg>=0.29.0

@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     # Firestore settings (primary database)
     firestore_enabled: bool = True
 
+    # Gemini AI settings (optional AI-powered data validation)
+    gemini_api_key: Optional[str] = None
+    gemini_enabled: bool = False
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_monthly_budget: float = 15.00  # Maximum monthly spend in USD
+
     @property
     def use_gcs(self) -> bool:
         """Check if GCS should be used for storage."""
@@ -54,6 +60,11 @@ class Settings(BaseSettings):
     def use_database(self) -> bool:
         """Check if database should be used."""
         return self.database_enabled and bool(self.database_url)
+
+    @property
+    def use_gemini(self) -> bool:
+        """Check if Gemini AI validation should be used."""
+        return self.gemini_enabled and bool(self.gemini_api_key)
 
 
 settings = Settings()
