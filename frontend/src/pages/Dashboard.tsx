@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   FileSearch,
   FileText,
@@ -7,6 +7,8 @@ import {
   DollarSign,
   ArrowRight,
   Activity,
+  CheckCircle,
+  XCircle,
 } from 'lucide-react'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
@@ -60,8 +62,12 @@ interface RecentJob {
   tool: string
   source_filename: string
   user_email: string
+  user_id: string
   created_at: string
   status: string
+  total_count?: number
+  success_count?: number
+  error_count?: number
 }
 
 const toolColors: Record<string, string> = {
@@ -71,7 +77,15 @@ const toolColors: Record<string, string> = {
   revenue: 'bg-amber-100 text-amber-700',
 }
 
+const toolPaths: Record<string, string> = {
+  extract: '/extract',
+  title: '/title',
+  proration: '/proration',
+  revenue: '/revenue',
+}
+
 export default function Dashboard() {
+  const navigate = useNavigate()
   const [recentJobs, setRecentJobs] = useState<RecentJob[]>([])
   const [toolCounts, setToolCounts] = useState<Record<string, number>>({})
 
@@ -180,19 +194,39 @@ export default function Dashboard() {
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Tool</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">File</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Date & Time</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {recentJobs.map((job) => (
-                  <tr key={job.id} className="hover:bg-gray-50 transition-colors">
+                  <tr
+                    key={job.id}
+                    onClick={() => navigate(toolPaths[job.tool] || '/')}
+                    className="hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${toolColors[job.tool] || 'bg-gray-100 text-gray-700'}`}>
                         {job.tool.charAt(0).toUpperCase() + job.tool.slice(1)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900">{job.source_filename || 'Unknown'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{job.user_email || 'Unknown'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{job.user_id || job.user_email || 'Unknown'}</td>
+                    <td className="px-4 py-3">
+                      {job.status === 'completed' ? (
+                        <span className="inline-flex items-center gap-1 text-green-600 text-xs">
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          {job.total_count ? `${job.total_count} rows` : 'Done'}
+                        </span>
+                      ) : job.status === 'failed' ? (
+                        <span className="inline-flex items-center gap-1 text-red-600 text-xs">
+                          <XCircle className="w-3.5 h-3.5" />
+                          Failed
+                        </span>
+                      ) : (
+                        <span className="text-gray-500 text-xs">{job.status || '\u2014'}</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {job.created_at ? new Date(job.created_at).toLocaleString() : ''}
                     </td>

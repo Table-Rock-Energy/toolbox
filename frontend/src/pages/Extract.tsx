@@ -59,6 +59,8 @@ const COLUMNS: ColumnConfig[] = [
   { key: 'edit', label: '', alwaysVisible: true },
 ]
 
+const STORAGE_KEY = 'extract-visible-columns'
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Extract() {
@@ -79,12 +81,21 @@ export default function Extract() {
   // Edit modal state
   const [editingEntry, setEditingEntry] = useState<PartyEntry | null>(null)
 
-  // Column visibility
-  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
-    new Set(COLUMNS.map((c) => c.key))
-  )
+  // Column visibility (persisted in localStorage)
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) return new Set(JSON.parse(saved))
+    } catch { /* use defaults */ }
+    return new Set(COLUMNS.map((c) => c.key))
+  })
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const columnPickerRef = useRef<HTMLDivElement>(null)
+
+  // Persist column visibility to localStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...visibleColumns]))
+  }, [visibleColumns])
 
   // Close column picker on outside click
   useEffect(() => {

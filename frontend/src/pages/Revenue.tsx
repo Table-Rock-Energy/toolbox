@@ -61,16 +61,39 @@ interface ColumnConfig {
 }
 
 const COLUMNS: ColumnConfig[] = [
+  { key: 'payor', label: 'Payor' },
+  { key: 'check_number', label: 'Check #' },
+  { key: 'check_amount', label: 'Check Amt' },
+  { key: 'check_date', label: 'Check Date' },
   { key: 'property_name', label: 'Property' },
-  { key: 'sales_date', label: 'Date' },
-  { key: 'product', label: 'Product' },
-  { key: 'interest', label: 'Interest' },
-  { key: 'volume', label: 'Volume' },
-  { key: 'gross', label: 'Gross' },
-  { key: 'tax', label: 'Tax' },
-  { key: 'net', label: 'Net' },
+  { key: 'property_number', label: 'Prop #' },
+  { key: 'operator_name', label: 'Operator' },
+  { key: 'owner_name', label: 'Owner' },
+  { key: 'owner_number', label: 'Owner #' },
+  { key: 'sales_date', label: 'Sales Date' },
+  { key: 'product_code', label: 'Prod Code' },
+  { key: 'product_description', label: 'Prod Desc' },
+  { key: 'decimal_interest', label: 'Interest' },
+  { key: 'interest_type', label: 'Int Type' },
+  { key: 'avg_price', label: 'Avg Price' },
+  { key: 'property_gross_volume', label: 'Prop Vol' },
+  { key: 'property_gross_revenue', label: 'Prop Rev' },
+  { key: 'owner_volume', label: 'Owner Vol' },
+  { key: 'owner_value', label: 'Owner Val' },
+  { key: 'owner_tax_amount', label: 'Tax' },
+  { key: 'tax_type', label: 'Tax Type' },
+  { key: 'owner_deduct_amount', label: 'Deductions' },
+  { key: 'deduct_code', label: 'Deduct Code' },
+  { key: 'owner_net_revenue', label: 'Net Revenue' },
   { key: 'edit', label: '', alwaysVisible: true },
 ]
+
+const DEFAULT_VISIBLE = new Set([
+  'property_name', 'sales_date', 'product_code', 'decimal_interest',
+  'owner_volume', 'owner_value', 'owner_tax_amount', 'owner_net_revenue', 'edit',
+])
+
+const STORAGE_KEY = 'revenue-visible-columns'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
@@ -85,12 +108,21 @@ export default function Revenue() {
   // Edit modal state
   const [editingRow, setEditingRow] = useState<{ statementIdx: number; rowIdx: number; row: RevenueRow } | null>(null)
 
-  // Column visibility
-  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
-    new Set(COLUMNS.map((c) => c.key))
-  )
+  // Column visibility (persisted in localStorage)
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) return new Set(JSON.parse(saved))
+    } catch { /* use defaults */ }
+    return new Set(DEFAULT_VISIBLE)
+  })
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const columnPickerRef = useRef<HTMLDivElement>(null)
+
+  // Persist column visibility to localStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...visibleColumns]))
+  }, [visibleColumns])
 
   // Close column picker on outside click
   useEffect(() => {
@@ -234,12 +266,20 @@ export default function Revenue() {
     }
   }
 
-  const formatCurrency = (amount?: number): string => {
-    if (amount === undefined || amount === null) return '\u2014'
+  // Safely coerce to number (handles old Firestore data stored as strings)
+  const toNum = (v: unknown): number | undefined => {
+    if (v === undefined || v === null) return undefined
+    const n = Number(v)
+    return isNaN(n) ? undefined : n
+  }
+
+  const formatCurrency = (amount?: unknown): string => {
+    const n = toNum(amount)
+    if (n === undefined) return '\u2014'
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-    }).format(amount)
+    }).format(n)
   }
 
   const getAllRows = (): RevenueRow[] => {
@@ -250,10 +290,10 @@ export default function Revenue() {
   const getTotals = () => {
     const rows = getAllRows()
     return {
-      gross: rows.reduce((sum, r) => sum + (r.owner_value || 0), 0),
-      tax: rows.reduce((sum, r) => sum + (r.owner_tax_amount || 0), 0),
-      deductions: rows.reduce((sum, r) => sum + (r.owner_deduct_amount || 0), 0),
-      net: rows.reduce((sum, r) => sum + (r.owner_net_revenue || 0), 0),
+      gross: rows.reduce((sum, r) => sum + (toNum(r.owner_value) || 0), 0),
+      tax: rows.reduce((sum, r) => sum + (toNum(r.owner_tax_amount) || 0), 0),
+      deductions: rows.reduce((sum, r) => sum + (toNum(r.owner_deduct_amount) || 0), 0),
+      net: rows.reduce((sum, r) => sum + (toNum(r.owner_net_revenue) || 0), 0),
     }
   }
 
@@ -522,48 +562,72 @@ export default function Revenue() {
                               <table className="w-full text-sm">
                                 <thead className="sticky top-0 bg-white z-10">
                                   <tr className="border-b border-gray-200">
-                                    {isColVisible('property_name') && <th className="text-left py-2 px-2 font-medium text-gray-600">Property</th>}
-                                    {isColVisible('sales_date') && <th className="text-left py-2 px-2 font-medium text-gray-600">Date</th>}
-                                    {isColVisible('product') && <th className="text-left py-2 px-2 font-medium text-gray-600">Product</th>}
-                                    {isColVisible('interest') && <th className="text-right py-2 px-2 font-medium text-gray-600">Interest</th>}
-                                    {isColVisible('volume') && <th className="text-right py-2 px-2 font-medium text-gray-600">Volume</th>}
-                                    {isColVisible('gross') && <th className="text-right py-2 px-2 font-medium text-gray-600">Gross</th>}
-                                    {isColVisible('tax') && <th className="text-right py-2 px-2 font-medium text-gray-600">Tax</th>}
-                                    {isColVisible('net') && <th className="text-right py-2 px-2 font-medium text-gray-600">Net</th>}
+                                    {isColVisible('payor') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Payor</th>}
+                                    {isColVisible('check_number') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Check #</th>}
+                                    {isColVisible('check_amount') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Check Amt</th>}
+                                    {isColVisible('check_date') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Check Date</th>}
+                                    {isColVisible('property_name') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Property</th>}
+                                    {isColVisible('property_number') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Prop #</th>}
+                                    {isColVisible('operator_name') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Operator</th>}
+                                    {isColVisible('owner_name') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Owner</th>}
+                                    {isColVisible('owner_number') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Owner #</th>}
+                                    {isColVisible('sales_date') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Sales Date</th>}
+                                    {isColVisible('product_code') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Prod Code</th>}
+                                    {isColVisible('product_description') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Prod Desc</th>}
+                                    {isColVisible('decimal_interest') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Interest</th>}
+                                    {isColVisible('interest_type') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Int Type</th>}
+                                    {isColVisible('avg_price') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Avg Price</th>}
+                                    {isColVisible('property_gross_volume') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Prop Vol</th>}
+                                    {isColVisible('property_gross_revenue') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Prop Rev</th>}
+                                    {isColVisible('owner_volume') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Owner Vol</th>}
+                                    {isColVisible('owner_value') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Owner Val</th>}
+                                    {isColVisible('owner_tax_amount') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Tax</th>}
+                                    {isColVisible('tax_type') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Tax Type</th>}
+                                    {isColVisible('owner_deduct_amount') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Deductions</th>}
+                                    {isColVisible('deduct_code') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Deduct Code</th>}
+                                    {isColVisible('owner_net_revenue') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Net Revenue</th>}
                                     <th className="text-left py-2 px-2 font-medium text-gray-600 w-8"></th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                   {statement.rows.map((row, rowIdx) => (
                                     <tr key={rowIdx}>
-                                      {isColVisible('property_name') && <td className="py-2 px-2 text-gray-900 text-xs">{row.property_name || '\u2014'}</td>}
+                                      {isColVisible('payor') && <td className="py-2 px-2 text-gray-600 text-xs whitespace-nowrap">{statement.payor || '\u2014'}</td>}
+                                      {isColVisible('check_number') && <td className="py-2 px-2 text-gray-600 text-xs">{statement.check_number || '\u2014'}</td>}
+                                      {isColVisible('check_amount') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{formatCurrency(statement.check_amount)}</td>}
+                                      {isColVisible('check_date') && <td className="py-2 px-2 text-gray-600 text-xs">{statement.check_date || '\u2014'}</td>}
+                                      {isColVisible('property_name') && <td className="py-2 px-2 text-gray-900 text-xs whitespace-nowrap">{row.property_name || '\u2014'}</td>}
+                                      {isColVisible('property_number') && <td className="py-2 px-2 text-gray-600 text-xs">{row.property_number || '\u2014'}</td>}
+                                      {isColVisible('operator_name') && <td className="py-2 px-2 text-gray-600 text-xs whitespace-nowrap">{statement.operator_name || '\u2014'}</td>}
+                                      {isColVisible('owner_name') && <td className="py-2 px-2 text-gray-600 text-xs whitespace-nowrap">{statement.owner_name || '\u2014'}</td>}
+                                      {isColVisible('owner_number') && <td className="py-2 px-2 text-gray-600 text-xs">{statement.owner_number || '\u2014'}</td>}
                                       {isColVisible('sales_date') && <td className="py-2 px-2 text-gray-600 text-xs">{row.sales_date || '\u2014'}</td>}
-                                      {isColVisible('product') && (
-                                        <td className="py-2 px-2 text-gray-600 text-xs">
-                                          {row.product_description || row.product_code || '\u2014'}
-                                        </td>
-                                      )}
-                                      {isColVisible('interest') && (
+                                      {isColVisible('product_code') && <td className="py-2 px-2 text-gray-600 text-xs">{row.product_code || '\u2014'}</td>}
+                                      {isColVisible('product_description') && <td className="py-2 px-2 text-gray-600 text-xs">{row.product_description || '\u2014'}</td>}
+                                      {isColVisible('decimal_interest') && (
                                         <td className="py-2 px-2 text-gray-600 text-right text-xs">
-                                          {row.decimal_interest ? `${(row.decimal_interest * 100).toFixed(6)}%` : '\u2014'}
+                                          {toNum(row.decimal_interest) !== undefined ? `${(toNum(row.decimal_interest)! * 100).toFixed(6)}%` : '\u2014'}
                                         </td>
                                       )}
-                                      {isColVisible('volume') && (
-                                        <td className="py-2 px-2 text-gray-600 text-right text-xs">
-                                          {row.owner_volume?.toFixed(2) || '\u2014'}
-                                        </td>
-                                      )}
-                                      {isColVisible('gross') && (
-                                        <td className="py-2 px-2 text-gray-600 text-right text-xs">
-                                          {formatCurrency(row.owner_value)}
-                                        </td>
-                                      )}
-                                      {isColVisible('tax') && (
+                                      {isColVisible('interest_type') && <td className="py-2 px-2 text-gray-600 text-xs">{row.interest_type || '\u2014'}</td>}
+                                      {isColVisible('avg_price') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{formatCurrency(row.avg_price)}</td>}
+                                      {isColVisible('property_gross_volume') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{toNum(row.property_gross_volume)?.toFixed(2) ?? '\u2014'}</td>}
+                                      {isColVisible('property_gross_revenue') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{formatCurrency(row.property_gross_revenue)}</td>}
+                                      {isColVisible('owner_volume') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{toNum(row.owner_volume)?.toFixed(2) ?? '\u2014'}</td>}
+                                      {isColVisible('owner_value') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{formatCurrency(row.owner_value)}</td>}
+                                      {isColVisible('owner_tax_amount') && (
                                         <td className="py-2 px-2 text-red-600 text-right text-xs">
-                                          {row.owner_tax_amount ? `-${formatCurrency(row.owner_tax_amount)}` : '\u2014'}
+                                          {toNum(row.owner_tax_amount) ? `-${formatCurrency(row.owner_tax_amount)}` : '\u2014'}
                                         </td>
                                       )}
-                                      {isColVisible('net') && (
+                                      {isColVisible('tax_type') && <td className="py-2 px-2 text-gray-600 text-xs">{row.tax_type || '\u2014'}</td>}
+                                      {isColVisible('owner_deduct_amount') && (
+                                        <td className="py-2 px-2 text-orange-600 text-right text-xs">
+                                          {toNum(row.owner_deduct_amount) ? `-${formatCurrency(row.owner_deduct_amount)}` : '\u2014'}
+                                        </td>
+                                      )}
+                                      {isColVisible('deduct_code') && <td className="py-2 px-2 text-gray-600 text-xs">{row.deduct_code || '\u2014'}</td>}
+                                      {isColVisible('owner_net_revenue') && (
                                         <td className="py-2 px-2 text-green-600 font-medium text-right text-xs">
                                           {formatCurrency(row.owner_net_revenue)}
                                         </td>

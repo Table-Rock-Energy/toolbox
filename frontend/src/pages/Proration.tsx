@@ -86,12 +86,26 @@ const COLUMNS: ColumnConfig[] = [
   { key: 'owner', label: 'Owner' },
   { key: 'county', label: 'County' },
   { key: 'interest', label: 'Interest' },
+  { key: 'interest_type', label: 'Int Type' },
+  { key: 'legal_description', label: 'Legal Desc' },
+  { key: 'property', label: 'Property' },
+  { key: 'operator', label: 'Operator' },
+  { key: 'block', label: 'Block' },
+  { key: 'section', label: 'Section' },
+  { key: 'abstract', label: 'Abstract' },
   { key: 'rrc_acres', label: 'RRC Acres' },
   { key: 'est_nra', label: 'Est NRA' },
   { key: 'dollars_per_nra', label: '$/NRA' },
-  { key: 'status', label: 'Status' },
+  { key: 'well_type', label: 'Well Type' },
+  { key: 'notes', label: 'Notes' },
   { key: 'edit', label: '', alwaysVisible: true },
 ]
+
+const DEFAULT_PRORATION_VISIBLE = new Set([
+  'owner', 'county', 'interest', 'rrc_acres', 'est_nra', 'dollars_per_nra', 'edit',
+])
+
+const STORAGE_KEY = 'proration-visible-columns'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
@@ -119,12 +133,21 @@ export default function Proration() {
   const [editingRow, setEditingRow] = useState<MineralHolderRow | null>(null)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
 
-  // Column Visibility State
-  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
-    new Set(COLUMNS.filter(c => !c.alwaysVisible).map(c => c.key))
-  )
+  // Column Visibility State (persisted in localStorage)
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) return new Set(JSON.parse(saved))
+    } catch { /* use defaults */ }
+    return new Set(DEFAULT_PRORATION_VISIBLE)
+  })
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const columnPickerRef = useRef<HTMLDivElement>(null)
+
+  // Persist column visibility to localStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...visibleColumns]))
+  }, [visibleColumns])
 
   // Close column picker on outside click
   useEffect(() => {
@@ -785,44 +808,41 @@ export default function Proration() {
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 bg-white z-10">
                       <tr className="border-b border-gray-200">
-                        {isColumnVisible('owner') && (
-                          <th className="text-left py-2 px-3 font-medium text-gray-600">Owner</th>
-                        )}
-                        {isColumnVisible('county') && (
-                          <th className="text-left py-2 px-3 font-medium text-gray-600">County</th>
-                        )}
-                        {isColumnVisible('interest') && (
-                          <th className="text-right py-2 px-3 font-medium text-gray-600">Interest</th>
-                        )}
-                        {isColumnVisible('rrc_acres') && (
-                          <th className="text-right py-2 px-3 font-medium text-gray-600">RRC Acres</th>
-                        )}
-                        {isColumnVisible('est_nra') && (
-                          <th className="text-right py-2 px-3 font-medium text-gray-600">Est NRA</th>
-                        )}
-                        {isColumnVisible('dollars_per_nra') && (
-                          <th className="text-right py-2 px-3 font-medium text-gray-600">$/NRA</th>
-                        )}
-                        {isColumnVisible('status') && (
-                          <th className="text-left py-2 px-3 font-medium text-gray-600">Status</th>
-                        )}
+                        {isColumnVisible('owner') && <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Owner</th>}
+                        {isColumnVisible('county') && <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">County</th>}
+                        {isColumnVisible('interest') && <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Interest</th>}
+                        {isColumnVisible('interest_type') && <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Int Type</th>}
+                        {isColumnVisible('legal_description') && <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Legal Desc</th>}
+                        {isColumnVisible('property') && <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Property</th>}
+                        {isColumnVisible('operator') && <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Operator</th>}
+                        {isColumnVisible('block') && <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Block</th>}
+                        {isColumnVisible('section') && <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Section</th>}
+                        {isColumnVisible('abstract') && <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Abstract</th>}
+                        {isColumnVisible('rrc_acres') && <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">RRC Acres</th>}
+                        {isColumnVisible('est_nra') && <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Est NRA</th>}
+                        {isColumnVisible('dollars_per_nra') && <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">$/NRA</th>}
+                        {isColumnVisible('well_type') && <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Well Type</th>}
+                        {isColumnVisible('notes') && <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Notes</th>}
                         <th className="text-center py-2 px-3 font-medium text-gray-600 w-10"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {activeJob.result.rows?.map((row, i) => (
                         <tr key={i} className={!row.rrc_acres ? 'bg-red-50' : ''}>
-                          {isColumnVisible('owner') && (
-                            <td className="py-2 px-3 text-gray-900">{row.owner}</td>
-                          )}
-                          {isColumnVisible('county') && (
-                            <td className="py-2 px-3 text-gray-600">{row.county}</td>
-                          )}
+                          {isColumnVisible('owner') && <td className="py-2 px-3 text-gray-900 whitespace-nowrap">{row.owner}</td>}
+                          {isColumnVisible('county') && <td className="py-2 px-3 text-gray-600">{row.county}</td>}
                           {isColumnVisible('interest') && (
                             <td className="py-2 px-3 text-gray-600 text-right">
                               {(row.interest * 100).toFixed(6)}%
                             </td>
                           )}
+                          {isColumnVisible('interest_type') && <td className="py-2 px-3 text-gray-600 text-xs">{row.interest_type || '\u2014'}</td>}
+                          {isColumnVisible('legal_description') && <td className="py-2 px-3 text-gray-600 text-xs max-w-[200px] truncate" title={row.legal_description}>{row.legal_description || '\u2014'}</td>}
+                          {isColumnVisible('property') && <td className="py-2 px-3 text-gray-600 text-xs whitespace-nowrap">{row.property || '\u2014'}</td>}
+                          {isColumnVisible('operator') && <td className="py-2 px-3 text-gray-600 text-xs whitespace-nowrap">{row.operator || '\u2014'}</td>}
+                          {isColumnVisible('block') && <td className="py-2 px-3 text-gray-600 text-xs">{row.block || '\u2014'}</td>}
+                          {isColumnVisible('section') && <td className="py-2 px-3 text-gray-600 text-xs">{row.section || '\u2014'}</td>}
+                          {isColumnVisible('abstract') && <td className="py-2 px-3 text-gray-600 text-xs">{row.abstract || '\u2014'}</td>}
                           {isColumnVisible('rrc_acres') && (
                             <td className="py-2 px-3 text-gray-600 text-right">
                               {formatNumber(row.rrc_acres, 2)}
@@ -838,18 +858,8 @@ export default function Proration() {
                               {formatCurrency(row.dollars_per_nra)}
                             </td>
                           )}
-                          {isColumnVisible('status') && (
-                            <td className="py-2 px-3">
-                              {row.rrc_acres ? (
-                                <span className="text-green-600 text-xs">Matched</span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-red-600 text-xs">
-                                  <AlertTriangle className="w-3 h-3" />
-                                  No Match
-                                </span>
-                              )}
-                            </td>
-                          )}
+                          {isColumnVisible('well_type') && <td className="py-2 px-3 text-gray-600 text-xs">{row.well_type || '\u2014'}</td>}
+                          {isColumnVisible('notes') && <td className="py-2 px-3 text-gray-600 text-xs max-w-[150px] truncate" title={row.notes}>{row.notes || '\u2014'}</td>}
                           <td className="py-2 px-3 text-center">
                             <button
                               onClick={() => handleEditRow(row, i)}

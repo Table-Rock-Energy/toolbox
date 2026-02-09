@@ -1,7 +1,6 @@
 """Pydantic models for Revenue PDF extraction tool."""
 
 from datetime import date
-from decimal import Decimal
 from enum import Enum
 from typing import Optional
 
@@ -24,18 +23,18 @@ class RevenueRow(BaseModel):
     sales_date: Optional[date] = None
     product_code: Optional[str] = None
     product_description: Optional[str] = None
-    decimal_interest: Optional[Decimal] = None
+    decimal_interest: Optional[float] = None
     interest_type: Optional[str] = None
-    avg_price: Optional[Decimal] = None
-    property_gross_volume: Optional[Decimal] = None
-    property_gross_revenue: Optional[Decimal] = None
-    owner_volume: Optional[Decimal] = None
-    owner_value: Optional[Decimal] = None
-    owner_tax_amount: Optional[Decimal] = None
+    avg_price: Optional[float] = None
+    property_gross_volume: Optional[float] = None
+    property_gross_revenue: Optional[float] = None
+    owner_volume: Optional[float] = None
+    owner_value: Optional[float] = None
+    owner_tax_amount: Optional[float] = None
     tax_type: Optional[str] = None
-    owner_deduct_amount: Optional[Decimal] = None
+    owner_deduct_amount: Optional[float] = None
     deduct_code: Optional[str] = None
-    owner_net_revenue: Optional[Decimal] = None
+    owner_net_revenue: Optional[float] = None
 
 
 class RevenueStatement(BaseModel):
@@ -45,7 +44,7 @@ class RevenueStatement(BaseModel):
     format: StatementFormat
     payor: Optional[str] = None
     check_number: Optional[str] = None
-    check_amount: Optional[Decimal] = None
+    check_amount: Optional[float] = None
     check_date: Optional[date] = None
     operator_name: Optional[str] = None
     owner_number: Optional[str] = None
