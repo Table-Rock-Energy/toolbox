@@ -15,6 +15,7 @@ from app.models.extract import (
     UploadResponse,
 )
 from app.services.extract.export_service import to_csv, to_excel
+from app.services.extract.name_parser import parse_name
 from app.services.extract.parser import parse_exhibit_a
 from app.services.extract.pdf_extractor import extract_party_list, extract_text_from_pdf
 
@@ -96,6 +97,15 @@ async def upload_pdf(
                     source_filename=file.filename,
                 ),
             )
+
+        # Populate parsed name fields for individuals
+        for entry in entries:
+            parsed = parse_name(entry.primary_name, entry.entity_type.value)
+            if parsed.is_person:
+                entry.first_name = parsed.first_name or None
+                entry.middle_name = parsed.middle_name or None
+                entry.last_name = parsed.last_name or None
+                entry.suffix = parsed.suffix or None
 
         # Count flagged entries
         flagged_count = sum(1 for e in entries if e.flagged)

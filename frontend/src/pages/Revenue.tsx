@@ -95,12 +95,13 @@ const DEFAULT_VISIBLE = new Set([
   'owner_volume', 'owner_value', 'owner_tax_amount', 'owner_net_revenue', 'edit',
 ])
 
-const STORAGE_KEY = 'revenue-visible-columns'
+const STORAGE_KEY_PREFIX = 'revenue-visible-columns'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Revenue() {
   const { user } = useAuth()
+  const storageKey = `${STORAGE_KEY_PREFIX}-${user?.uid || 'anon'}`
   const [jobs, setJobs] = useState<RevenueJob[]>([])
   const [activeJob, setActiveJob] = useState<RevenueJob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -114,10 +115,10 @@ export default function Revenue() {
   // Edit modal state
   const [editingRow, setEditingRow] = useState<{ statementIdx: number; rowIdx: number; row: RevenueRow } | null>(null)
 
-  // Column visibility (persisted in localStorage)
+  // Column visibility (persisted in localStorage per user)
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY)
+      const saved = localStorage.getItem(storageKey)
       if (saved) return new Set(JSON.parse(saved))
     } catch { /* use defaults */ }
     return new Set(DEFAULT_VISIBLE)
@@ -127,8 +128,8 @@ export default function Revenue() {
 
   // Persist column visibility to localStorage
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...visibleColumns]))
-  }, [visibleColumns])
+    localStorage.setItem(storageKey, JSON.stringify([...visibleColumns]))
+  }, [visibleColumns, storageKey])
 
   // Close column picker on outside click
   useEffect(() => {

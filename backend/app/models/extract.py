@@ -36,6 +36,18 @@ class PartyEntry(BaseModel):
     city: Optional[str] = Field(None, description="City name")
     state: Optional[str] = Field(None, description="2-letter state abbreviation")
     zip_code: Optional[str] = Field(None, description="ZIP or ZIP+4 code")
+    first_name: Optional[str] = Field(
+        None, description="First name (individuals only)"
+    )
+    middle_name: Optional[str] = Field(
+        None, description="Middle name or initial (individuals only)"
+    )
+    last_name: Optional[str] = Field(
+        None, description="Last name (individuals only)"
+    )
+    suffix: Optional[str] = Field(
+        None, description="Name suffix (Jr., Sr., III, etc.)"
+    )
     notes: Optional[str] = Field(
         None,
         description="All a/k/a, f/k/a, c/o, trustee info, trust dates, etc.",

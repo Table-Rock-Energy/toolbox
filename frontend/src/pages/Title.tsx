@@ -56,15 +56,30 @@ interface ColumnConfig {
 
 const COLUMNS: ColumnConfig[] = [
   { key: 'checkbox', label: 'Select', alwaysVisible: true },
-  { key: 'full_name', label: 'Name' },
-  { key: 'entity_type', label: 'Type' },
+  { key: 'full_name', label: 'Full Name' },
+  { key: 'first_name', label: 'First Name' },
+  { key: 'middle_name', label: 'Middle Name' },
+  { key: 'last_name', label: 'Last Name' },
+  { key: 'entity_type', label: 'Entity Type' },
   { key: 'address', label: 'Address' },
+  { key: 'address_line_2', label: 'Address 2' },
+  { key: 'city', label: 'City' },
+  { key: 'state', label: 'State' },
+  { key: 'zip_code', label: 'ZIP' },
   { key: 'legal_description', label: 'Legal Desc' },
+  { key: 'notes', label: 'Notes' },
+  { key: 'duplicate_flag', label: 'Duplicate' },
+  { key: 'has_address', label: 'Has Address' },
   { key: 'status', label: 'Status' },
   { key: 'edit', label: 'Edit', alwaysVisible: true },
 ]
 
-const STORAGE_KEY = 'title-visible-columns'
+const DEFAULT_TITLE_VISIBLE = new Set([
+  'checkbox', 'full_name', 'entity_type', 'address', 'city', 'state',
+  'zip_code', 'legal_description', 'status', 'edit',
+])
+
+const STORAGE_KEY_PREFIX = 'title-visible-columns'
 
 const ENTITY_TYPE_OPTIONS = [
   'INDIVIDUAL',
@@ -82,6 +97,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Title() {
   const { user } = useAuth()
+  const storageKey = `${STORAGE_KEY_PREFIX}-${user?.uid || 'anon'}`
   const [jobs, setJobs] = useState<TitleJob[]>([])
   const [activeJob, setActiveJob] = useState<TitleJob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -104,21 +120,21 @@ export default function Title() {
   const [editingEntry, setEditingEntry] = useState<OwnerEntry | null>(null)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
 
-  // Column visibility state (persisted in localStorage)
+  // Column visibility state (persisted in localStorage per user)
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY)
+      const saved = localStorage.getItem(storageKey)
       if (saved) return new Set(JSON.parse(saved))
     } catch { /* use defaults */ }
-    return new Set(COLUMNS.map((c) => c.key))
+    return new Set(DEFAULT_TITLE_VISIBLE)
   })
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const columnPickerRef = useRef<HTMLDivElement>(null)
 
   // Persist column visibility to localStorage
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...visibleColumns]))
-  }, [visibleColumns])
+    localStorage.setItem(storageKey, JSON.stringify([...visibleColumns]))
+  }, [visibleColumns, storageKey])
 
   // Click-outside handler for column picker
   useEffect(() => {
@@ -413,15 +429,6 @@ export default function Title() {
     setShowIndividualsOnly(false)
     setSelectedSection('')
     setExcludedIndices(new Set())
-  }
-
-  const formatAddress = (entry: OwnerEntry): string => {
-    const parts = []
-    if (entry.address) parts.push(entry.address)
-    if (entry.city) parts.push(entry.city)
-    if (entry.state) parts.push(entry.state)
-    if (entry.zip_code) parts.push(entry.zip_code)
-    return parts.join(', ')
   }
 
   const handleEditEntry = (entry: OwnerEntry, index: number) => {
@@ -724,16 +731,46 @@ export default function Title() {
                           </th>
                         )}
                         {isColumnVisible('full_name') && (
-                          <th className="text-left py-2 px-3 font-medium text-gray-600">Name</th>
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Full Name</th>
+                        )}
+                        {isColumnVisible('first_name') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">First Name</th>
+                        )}
+                        {isColumnVisible('middle_name') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Middle Name</th>
+                        )}
+                        {isColumnVisible('last_name') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Last Name</th>
                         )}
                         {isColumnVisible('entity_type') && (
-                          <th className="text-left py-2 px-3 font-medium text-gray-600">Type</th>
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Entity Type</th>
                         )}
                         {isColumnVisible('address') && (
                           <th className="text-left py-2 px-3 font-medium text-gray-600">Address</th>
                         )}
+                        {isColumnVisible('address_line_2') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Address 2</th>
+                        )}
+                        {isColumnVisible('city') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">City</th>
+                        )}
+                        {isColumnVisible('state') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">State</th>
+                        )}
+                        {isColumnVisible('zip_code') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">ZIP</th>
+                        )}
                         {isColumnVisible('legal_description') && (
                           <th className="text-left py-2 px-3 font-medium text-gray-600">Legal Desc</th>
+                        )}
+                        {isColumnVisible('notes') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Notes</th>
+                        )}
+                        {isColumnVisible('duplicate_flag') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Duplicate</th>
+                        )}
+                        {isColumnVisible('has_address') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Has Address</th>
                         )}
                         {isColumnVisible('status') && (
                           <th className="text-left py-2 px-3 font-medium text-gray-600">Status</th>
@@ -772,19 +809,46 @@ export default function Title() {
                                 {entry.full_name.length > 30 ? entry.full_name.substring(0, 30) + '...' : entry.full_name}
                               </td>
                             )}
+                            {isColumnVisible('first_name') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.first_name || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                            )}
+                            {isColumnVisible('middle_name') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.middle_name || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                            )}
+                            {isColumnVisible('last_name') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.last_name || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                            )}
                             {isColumnVisible('entity_type') && (
                               <td className="py-2 px-3 text-gray-600 text-xs">{entry.entity_type}</td>
                             )}
                             {isColumnVisible('address') && (
                               <td className="py-2 px-3 text-gray-600 text-xs">
-                                {entry.has_address
-                                  ? formatAddress(entry)
-                                  : <span className="text-red-500">—</span>
-                                }
+                                {entry.address || <span className="text-gray-400">{'\u2014'}</span>}
                               </td>
+                            )}
+                            {isColumnVisible('address_line_2') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.address_line_2 || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                            )}
+                            {isColumnVisible('city') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.city || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                            )}
+                            {isColumnVisible('state') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.state || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                            )}
+                            {isColumnVisible('zip_code') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.zip_code || <span className="text-gray-400">{'\u2014'}</span>}</td>
                             )}
                             {isColumnVisible('legal_description') && (
                               <td className="py-2 px-3 text-gray-600 text-xs">{entry.legal_description}</td>
+                            )}
+                            {isColumnVisible('notes') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs max-w-[200px] truncate" title={entry.notes}>{entry.notes || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                            )}
+                            {isColumnVisible('duplicate_flag') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.duplicate_flag ? 'Yes' : 'No'}</td>
+                            )}
+                            {isColumnVisible('has_address') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.has_address ? 'Yes' : 'No'}</td>
                             )}
                             {isColumnVisible('status') && (
                               <td className="py-2 px-3">

@@ -8,6 +8,10 @@ import { useAuth } from '../contexts/AuthContext'
 interface PartyEntry {
   entry_number: string
   primary_name: string
+  first_name?: string
+  middle_name?: string
+  last_name?: string
+  suffix?: string
   entity_type: string
   mailing_address?: string
   mailing_address_2?: string
@@ -52,21 +56,34 @@ interface ColumnConfig {
 const COLUMNS: ColumnConfig[] = [
   { key: 'checkbox', label: '', alwaysVisible: true },
   { key: 'entry_number', label: '#' },
-  { key: 'primary_name', label: 'Name' },
-  { key: 'entity_type', label: 'Type' },
-  { key: 'mailing_address', label: 'Address' },
-  { key: 'city_state_zip', label: 'City/State/ZIP' },
+  { key: 'primary_name', label: 'Full Name' },
+  { key: 'first_name', label: 'First Name' },
+  { key: 'middle_name', label: 'Middle Name' },
+  { key: 'last_name', label: 'Last Name' },
+  { key: 'suffix', label: 'Suffix' },
+  { key: 'entity_type', label: 'Owner Type' },
+  { key: 'mailing_address', label: 'Address 1' },
+  { key: 'mailing_address_2', label: 'Address 2' },
+  { key: 'city', label: 'City' },
+  { key: 'state', label: 'State' },
+  { key: 'zip_code', label: 'ZIP' },
   { key: 'notes', label: 'Notes' },
   { key: 'status', label: 'Status' },
   { key: 'edit', label: '', alwaysVisible: true },
 ]
 
-const STORAGE_KEY = 'extract-visible-columns'
+const DEFAULT_EXTRACT_VISIBLE = new Set([
+  'checkbox', 'entry_number', 'primary_name', 'entity_type',
+  'mailing_address', 'city', 'state', 'zip_code', 'status', 'edit',
+])
+
+const STORAGE_KEY_PREFIX = 'extract-visible-columns'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Extract() {
   const { user } = useAuth()
+  const storageKey = `${STORAGE_KEY_PREFIX}-${user?.uid || 'anon'}`
   const [jobs, setJobs] = useState<ExtractJob[]>([])
   const [activeJob, setActiveJob] = useState<ExtractJob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -87,21 +104,21 @@ export default function Extract() {
   // Edit modal state
   const [editingEntry, setEditingEntry] = useState<PartyEntry | null>(null)
 
-  // Column visibility (persisted in localStorage)
+  // Column visibility (persisted in localStorage per user)
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY)
+      const saved = localStorage.getItem(storageKey)
       if (saved) return new Set(JSON.parse(saved))
     } catch { /* use defaults */ }
-    return new Set(COLUMNS.map((c) => c.key))
+    return new Set(DEFAULT_EXTRACT_VISIBLE)
   })
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const columnPickerRef = useRef<HTMLDivElement>(null)
 
   // Persist column visibility to localStorage
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...visibleColumns]))
-  }, [visibleColumns])
+    localStorage.setItem(storageKey, JSON.stringify([...visibleColumns]))
+  }, [visibleColumns, storageKey])
 
   // Close column picker on outside click
   useEffect(() => {
@@ -275,14 +292,6 @@ export default function Extract() {
         // Failed to load, non-critical
       }
     }
-  }
-
-  const formatAddress = (entry: PartyEntry): string => {
-    const parts = []
-    if (entry.city) parts.push(entry.city)
-    if (entry.state) parts.push(entry.state)
-    if (entry.zip_code) parts.push(entry.zip_code)
-    return parts.length > 0 ? parts.join(', ') : ''
   }
 
   // Get filtered entries based on filter state
@@ -605,10 +614,17 @@ export default function Extract() {
                           />
                         </th>
                         {isColVisible('entry_number') && <th className="text-left py-2 px-3 font-medium text-gray-600">#</th>}
-                        {isColVisible('primary_name') && <th className="text-left py-2 px-3 font-medium text-gray-600">Name</th>}
-                        {isColVisible('entity_type') && <th className="text-left py-2 px-3 font-medium text-gray-600">Type</th>}
-                        {isColVisible('mailing_address') && <th className="text-left py-2 px-3 font-medium text-gray-600">Address</th>}
-                        {isColVisible('city_state_zip') && <th className="text-left py-2 px-3 font-medium text-gray-600">City/State/ZIP</th>}
+                        {isColVisible('primary_name') && <th className="text-left py-2 px-3 font-medium text-gray-600">Full Name</th>}
+                        {isColVisible('first_name') && <th className="text-left py-2 px-3 font-medium text-gray-600">First Name</th>}
+                        {isColVisible('middle_name') && <th className="text-left py-2 px-3 font-medium text-gray-600">Middle Name</th>}
+                        {isColVisible('last_name') && <th className="text-left py-2 px-3 font-medium text-gray-600">Last Name</th>}
+                        {isColVisible('suffix') && <th className="text-left py-2 px-3 font-medium text-gray-600">Suffix</th>}
+                        {isColVisible('entity_type') && <th className="text-left py-2 px-3 font-medium text-gray-600">Owner Type</th>}
+                        {isColVisible('mailing_address') && <th className="text-left py-2 px-3 font-medium text-gray-600">Address 1</th>}
+                        {isColVisible('mailing_address_2') && <th className="text-left py-2 px-3 font-medium text-gray-600">Address 2</th>}
+                        {isColVisible('city') && <th className="text-left py-2 px-3 font-medium text-gray-600">City</th>}
+                        {isColVisible('state') && <th className="text-left py-2 px-3 font-medium text-gray-600">State</th>}
+                        {isColVisible('zip_code') && <th className="text-left py-2 px-3 font-medium text-gray-600">ZIP</th>}
                         {isColVisible('notes') && <th className="text-left py-2 px-3 font-medium text-gray-600">Notes</th>}
                         {isColVisible('status') && <th className="text-left py-2 px-3 font-medium text-gray-600">Status</th>}
                         <th className="text-left py-2 px-3 font-medium text-gray-600 w-10"></th>
@@ -645,22 +661,49 @@ export default function Extract() {
                                   : entry.primary_name}
                               </td>
                             )}
+                            {isColVisible('first_name') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.first_name || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                            )}
+                            {isColVisible('middle_name') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.middle_name || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                            )}
+                            {isColVisible('last_name') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.last_name || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                            )}
+                            {isColVisible('suffix') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.suffix || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                            )}
                             {isColVisible('entity_type') && (
                               <td className="py-2 px-3 text-gray-600 text-xs">{entry.entity_type}</td>
                             )}
                             {isColVisible('mailing_address') && (
                               <td className="py-2 px-3 text-gray-600 text-xs">
-                                {entry.mailing_address || <span className="text-gray-400">—</span>}
+                                {entry.mailing_address || <span className="text-gray-400">{'\u2014'}</span>}
                               </td>
                             )}
-                            {isColVisible('city_state_zip') && (
+                            {isColVisible('mailing_address_2') && (
                               <td className="py-2 px-3 text-gray-600 text-xs">
-                                {formatAddress(entry) || <span className="text-gray-400">—</span>}
+                                {entry.mailing_address_2 || <span className="text-gray-400">{'\u2014'}</span>}
+                              </td>
+                            )}
+                            {isColVisible('city') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">
+                                {entry.city || <span className="text-gray-400">{'\u2014'}</span>}
+                              </td>
+                            )}
+                            {isColVisible('state') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">
+                                {entry.state || <span className="text-gray-400">{'\u2014'}</span>}
+                              </td>
+                            )}
+                            {isColVisible('zip_code') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">
+                                {entry.zip_code || <span className="text-gray-400">{'\u2014'}</span>}
                               </td>
                             )}
                             {isColVisible('notes') && (
                               <td className="py-2 px-3 text-gray-600 text-xs max-w-[200px] truncate" title={entry.notes}>
-                                {entry.notes || <span className="text-gray-400">—</span>}
+                                {entry.notes || <span className="text-gray-400">{'\u2014'}</span>}
                               </td>
                             )}
                             {isColVisible('status') && (

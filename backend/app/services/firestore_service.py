@@ -174,8 +174,17 @@ async def get_user_jobs(
     if tool:
         query = query.where("tool", "==", tool)
 
-    query = query.order_by("created_at", direction=firestore.Query.DESCENDING).limit(limit)
-    docs = await query.get()
+    try:
+        query = query.order_by("created_at", direction=firestore.Query.DESCENDING).limit(limit)
+        docs = await query.get()
+    except Exception:
+        # Composite index may not exist; query without ordering and sort in Python
+        logger.warning("Firestore composite index missing for get_user_jobs, falling back to client-side sort")
+        base_query = db.collection(JOBS_COLLECTION).where("user_id", "==", user_id)
+        if tool:
+            base_query = base_query.where("tool", "==", tool)
+        docs = await base_query.limit(limit).get()
+        docs = sorted(docs, key=lambda d: d.to_dict().get("created_at", ""), reverse=True)
     return [doc.to_dict() for doc in docs]
 
 
@@ -190,8 +199,17 @@ async def get_recent_jobs(
     if tool:
         query = query.where("tool", "==", tool)
 
-    query = query.order_by("created_at", direction=firestore.Query.DESCENDING).limit(limit)
-    docs = await query.get()
+    try:
+        query = query.order_by("created_at", direction=firestore.Query.DESCENDING).limit(limit)
+        docs = await query.get()
+    except Exception:
+        # Composite index may not exist; query without ordering and sort in Python
+        logger.warning("Firestore composite index missing for get_recent_jobs, falling back to client-side sort")
+        base_query = db.collection(JOBS_COLLECTION)
+        if tool:
+            base_query = base_query.where("tool", "==", tool)
+        docs = await base_query.limit(limit).get()
+        docs = sorted(docs, key=lambda d: d.to_dict().get("created_at", ""), reverse=True)
     return [doc.to_dict() for doc in docs]
 
 
