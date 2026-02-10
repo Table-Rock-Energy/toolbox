@@ -25,6 +25,7 @@ from app.api.revenue import router as revenue_router
 from app.api.admin import router as admin_router
 from app.api.history import router as history_router
 from app.api.ai_validation import router as ai_router
+from app.api.enrichment import router as enrichment_router
 from app.core.config import settings
 
 # Configure logging
@@ -71,6 +72,7 @@ app.include_router(revenue_router, prefix="/api/revenue", tags=["revenue"])
 app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
 app.include_router(history_router, prefix="/api/history", tags=["history"])
 app.include_router(ai_router, prefix="/api/ai", tags=["ai"])
+app.include_router(enrichment_router, prefix="/api/enrichment", tags=["enrichment"])
 
 
 @app.exception_handler(404)
@@ -100,6 +102,13 @@ async def startup_event() -> None:
     """Application startup event."""
     global _scheduler
     logger.info(f"{settings.app_name} v{settings.version} starting up")
+
+    # Load enrichment config from Firestore
+    try:
+        from app.api.enrichment import load_enrichment_config_from_firestore
+        await load_enrichment_config_from_firestore()
+    except Exception as e:
+        logger.warning(f"Could not load enrichment config: {e}")
 
     # Initialize database if enabled
     if settings.use_database:

@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Wand2 } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel } from '../components'
+import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Wand2, Search } from 'lucide-react'
+import { FileUpload, Modal, AiReviewPanel, EnrichmentPanel } from '../components'
 import EnrichmentProgress, { DEFAULT_STEPS, type EnrichmentStep, type EnrichmentSummary } from '../components/EnrichmentProgress'
-import { aiApi } from '../utils/api'
+import { aiApi, enrichmentApi } from '../utils/api'
 import type { AiSuggestion } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
@@ -117,6 +117,7 @@ export default function Extract() {
   const [enrichSteps, setEnrichSteps] = useState<EnrichmentStep[]>([])
   const [enrichSummary, setEnrichSummary] = useState<EnrichmentSummary | null>(null)
   const [enrichComplete, setEnrichComplete] = useState(false)
+  const [enrichmentEnabled, setEnrichmentEnabled] = useState(false)
 
   // Edit modal state
   const [editingEntry, setEditingEntry] = useState<PartyEntry | null>(null)
@@ -192,6 +193,9 @@ export default function Extract() {
   useEffect(() => {
     aiApi.getStatus().then(res => {
       if (res.data?.enabled) setAiEnabled(true)
+    })
+    enrichmentApi.getStatus().then(res => {
+      if (res.data?.enabled) setEnrichmentEnabled(true)
     })
   }, [])
 
@@ -670,6 +674,16 @@ export default function Extract() {
                         AI Review
                       </button>
                     )}
+                    {enrichmentEnabled && (
+                      <button
+                        onClick={() => setShowEnrichment(true)}
+                        disabled={entriesToExport.length === 0}
+                        className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm disabled:opacity-50"
+                      >
+                        <Search className="w-4 h-4" />
+                        Enrich ({entriesToExport.length})
+                      </button>
+                    )}
                     <button
                       onClick={() => handleExport('excel')}
                       className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
@@ -984,6 +998,18 @@ export default function Extract() {
                 onClose={() => setShowAiReview(false)}
               />
             )}
+            {/* Enrichment Panel */}
+            <EnrichmentPanel
+              isOpen={showEnrichment}
+              onClose={() => setShowEnrichment(false)}
+              persons={entriesToExport.map((e) => ({
+                name: e.primary_name,
+                address: e.mailing_address || undefined,
+                city: e.city || undefined,
+                state: e.state || undefined,
+                zip_code: e.zip_code || undefined,
+              }))}
+            />
             </>
           ) : activeJob?.result?.error_message ? (
             <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">

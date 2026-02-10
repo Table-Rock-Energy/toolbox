@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     google_maps_api_key: Optional[str] = None
     google_maps_enabled: bool = False
 
+    # Data enrichment settings (People Data Labs + SearchBug)
+    pdl_api_key: Optional[str] = None
+    searchbug_api_key: Optional[str] = None
+    enrichment_enabled: bool = False
+
     @property
     def use_gcs(self) -> bool:
         """Check if GCS should be used for storage."""
@@ -74,6 +79,11 @@ class Settings(BaseSettings):
     def use_google_maps(self) -> bool:
         """Check if Google Maps address validation should be used."""
         return self.google_maps_enabled and bool(self.google_maps_api_key)
+
+    @property
+    def use_enrichment(self) -> bool:
+        """Check if data enrichment should be used."""
+        return self.enrichment_enabled and (bool(self.pdl_api_key) or bool(self.searchbug_api_key))
 
 
 settings = Settings()
