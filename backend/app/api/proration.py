@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from typing import Annotated, Optional
@@ -69,23 +68,24 @@ async def download_rrc_data() -> RRCDownloadResponse:
 
     success, message, stats = rrc_data_service.download_all_data()
 
-    # Fire-and-forget database sync so the response returns quickly
+    # Sync to database inline so Firestore is populated before we return
+    sync_message = ""
     if success:
-        async def _background_sync():
-            try:
-                sync_result = await rrc_data_service.sync_to_database("both")
-                if sync_result.get("success"):
-                    logger.info(f"Background DB sync complete: {sync_result['message']}")
-                else:
-                    logger.warning(f"Background DB sync failed: {sync_result.get('message')}")
-            except Exception as e:
-                logger.warning(f"Background DB sync failed (non-critical): {e}")
-
-        asyncio.create_task(_background_sync())
+        try:
+            sync_result = await rrc_data_service.sync_to_database("both")
+            if sync_result.get("success"):
+                sync_message = f" | DB sync: {sync_result['message']}"
+                logger.info(f"DB sync complete: {sync_result['message']}")
+            else:
+                sync_message = " | DB sync failed (CSV data still available)"
+                logger.warning(f"DB sync failed: {sync_result.get('message')}")
+        except Exception as e:
+            sync_message = " | DB sync failed (CSV data still available)"
+            logger.warning(f"DB sync failed (non-critical): {e}")
 
     return RRCDownloadResponse(
         success=success,
-        message=message,
+        message=message + sync_message,
         oil_rows=stats.get("oil_rows", 0),
         gas_rows=stats.get("gas_rows", 0),
     )

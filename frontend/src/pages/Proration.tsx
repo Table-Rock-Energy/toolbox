@@ -473,6 +473,13 @@ export default function Proration() {
   const hasCSVData = rrcStatus?.oil_available || rrcStatus?.gas_available
   const hasRRCData = hasDBData || hasCSVData
 
+  // Use DB counts when available, fall back to CSV counts
+  const totalRecords = hasDBData
+    ? (rrcStatus?.db_oil_rows || 0) + (rrcStatus?.db_gas_rows || 0)
+    : (rrcStatus?.oil_rows || 0) + (rrcStatus?.gas_rows || 0)
+  const oilRecords = hasDBData ? (rrcStatus?.db_oil_rows || 0) : (rrcStatus?.oil_rows || 0)
+  const gasRecords = hasDBData ? (rrcStatus?.db_gas_rows || 0) : (rrcStatus?.gas_rows || 0)
+
   // Check if monthly update is needed: last sync is before the 1st of the current month
   const isDataExpired = (): boolean => {
     const syncDate = rrcStatus?.last_sync?.completed_at || rrcStatus?.oil_modified
@@ -486,7 +493,6 @@ export default function Proration() {
 
   const dataExpired = hasRRCData && isDataExpired()
   const showDownloadButton = dataExpired || !hasRRCData
-  const totalDBRecords = (rrcStatus?.db_oil_rows || 0) + (rrcStatus?.db_gas_rows || 0)
 
   return (
     <div className="space-y-6">
@@ -533,8 +539,8 @@ export default function Proration() {
                   {hasRRCData ? (
                     <>
                       <div className={dataExpired ? 'text-orange-700' : 'text-green-700'}>
-                        <span className="font-medium">{totalDBRecords.toLocaleString()}</span> records
-                        ({(rrcStatus.db_oil_rows || 0).toLocaleString()} oil, {(rrcStatus.db_gas_rows || 0).toLocaleString()} gas)
+                        <span className="font-medium">{totalRecords.toLocaleString()}</span> records
+                        ({oilRecords.toLocaleString()} oil, {gasRecords.toLocaleString()} gas)
                       </div>
                       <div className="text-gray-500 text-xs">
                         Last synced: {rrcStatus.last_sync?.completed_at
