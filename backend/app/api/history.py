@@ -58,6 +58,27 @@ async def get_jobs(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
+@router.delete("/jobs/{job_id}")
+async def delete_job(job_id: str):
+    """Delete a job and all its associated entries."""
+    if not settings.firestore_enabled:
+        raise HTTPException(status_code=503, detail="Database not enabled")
+
+    try:
+        from app.services import firestore_service as db
+
+        deleted = await db.delete_job(job_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        return {"success": True, "message": f"Job {job_id} deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error deleting job: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
 @router.get("/jobs/{job_id}")
 async def get_job(job_id: str):
     """Get a specific job by ID."""

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, Sparkles } from 'lucide-react'
+import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, Sparkles, X } from 'lucide-react'
 import { FileUpload, Modal, AiReviewPanel } from '../components'
 import { aiApi } from '../utils/api'
 import type { AiSuggestion } from '../utils/api'
@@ -87,6 +87,7 @@ export default function Extract() {
   const [jobs, setJobs] = useState<ExtractJob[]>([])
   const [activeJob, setActiveJob] = useState<ExtractJob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isLoadingEntries, setIsLoadingEntries] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Filter states
@@ -272,6 +273,7 @@ export default function Extract() {
 
     // Lazy-load entries if not already loaded
     if (!job.result && job.job_id) {
+      setIsLoadingEntries(true)
       try {
         const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}/entries`)
         if (response.ok) {
@@ -290,8 +292,24 @@ export default function Extract() {
         }
       } catch {
         // Failed to load, non-critical
+      } finally {
+        setIsLoadingEntries(false)
       }
     }
+  }
+
+  const handleDeleteJob = async (e: React.MouseEvent, job: ExtractJob) => {
+    e.stopPropagation()
+    if (!job.job_id) {
+      setJobs((prev) => prev.filter((j) => j.id !== job.id))
+      if (activeJob?.id === job.id) setActiveJob(null)
+      return
+    }
+    try {
+      await fetch(`${API_BASE}/history/jobs/${job.job_id}`, { method: 'DELETE' })
+    } catch { /* best-effort */ }
+    setJobs((prev) => prev.filter((j) => j.id !== job.id))
+    if (activeJob?.id === job.id) setActiveJob(null)
   }
 
   // Get filtered entries based on filter state
@@ -423,7 +441,7 @@ export default function Extract() {
                   <button
                     key={job.id}
                     onClick={() => handleSelectJob(job)}
-                    className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${
+                    className={`group w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${
                       activeJob?.id === job.id ? 'bg-tre-teal/5 border-l-2 border-tre-teal' : ''
                     }`}
                   >
@@ -435,11 +453,21 @@ export default function Extract() {
                         <p className="text-xs text-gray-500">{job.user}</p>
                         <p className="text-xs text-gray-400">{job.timestamp}</p>
                       </div>
-                      {job.result?.success ? (
-                        <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
-                      ) : job.result?.error_message ? (
-                        <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                      ) : null}
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {job.result?.success ? (
+                          <CheckCircle className="w-4 h-4 text-green-500" />
+                        ) : job.result?.error_message ? (
+                          <AlertCircle className="w-4 h-4 text-red-500" />
+                        ) : null}
+                        <span
+                          role="button"
+                          onClick={(e) => handleDeleteJob(e, job)}
+                          className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-100 text-gray-400 hover:text-red-500 transition-all"
+                          title="Delete job"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </span>
+                      </div>
                     </div>
                   </button>
                 ))}
@@ -457,7 +485,12 @@ export default function Extract() {
             </div>
           )}
 
-          {activeJob?.result?.success ? (
+          {isLoadingEntries ? (
+            <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-tre-teal mx-auto mb-3"></div>
+              <p className="font-medium">Loading results...</p>
+            </div>
+          ) : activeJob?.result?.success ? (
             <>
             <div className="bg-white rounded-xl border border-gray-200">
               {/* Results Header */}

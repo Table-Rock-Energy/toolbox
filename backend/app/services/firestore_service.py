@@ -162,6 +162,44 @@ async def get_job(job_id: str) -> Optional[dict]:
     return job_doc.to_dict() if job_doc.exists else None
 
 
+async def delete_job(job_id: str) -> bool:
+    """Delete a job and all its associated entries."""
+    db = get_firestore_client()
+    job_doc = await db.collection(JOBS_COLLECTION).document(job_id).get()
+    if not job_doc.exists:
+        return False
+
+    tool = job_doc.to_dict().get("tool")
+
+    # Map tool to its entries collection
+    entries_collection = {
+        "extract": EXTRACT_ENTRIES_COLLECTION,
+        "title": TITLE_ENTRIES_COLLECTION,
+        "proration": PRORATION_ROWS_COLLECTION,
+        "revenue": REVENUE_STATEMENTS_COLLECTION,
+    }.get(tool)
+
+    # Delete related entries
+    if entries_collection:
+        docs = await db.collection(entries_collection).where("job_id", "==", job_id).get()
+        batch = db.batch()
+        count = 0
+        for doc in docs:
+            batch.delete(doc.reference)
+            count += 1
+            if count % 500 == 0:
+                await batch.commit()
+                batch = db.batch()
+        if count % 500 != 0:
+            await batch.commit()
+        logger.info(f"Deleted {count} entries from {entries_collection} for job {job_id}")
+
+    # Delete the job document
+    await db.collection(JOBS_COLLECTION).document(job_id).delete()
+    logger.info(f"Deleted job {job_id} ({tool})")
+    return True
+
+
 async def get_user_jobs(
     user_id: str,
     tool: Optional[str] = None,
