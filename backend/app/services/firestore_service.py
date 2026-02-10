@@ -368,7 +368,13 @@ async def get_proration_rows(job_id: str) -> list[dict]:
 
 
 async def save_revenue_statement(job_id: str, statement_data: dict) -> dict:
-    """Save a revenue statement with its rows."""
+    """Save a revenue statement with its rows.
+
+    Uses a deterministic document ID from check_number + owner so
+    re-uploading the same PDF overwrites rather than duplicates.
+    """
+    import hashlib
+
     db = get_firestore_client()
 
     # Calculate totals from rows
@@ -378,7 +384,20 @@ async def save_revenue_statement(job_id: str, statement_data: dict) -> dict:
     total_deductions = sum(r.get("owner_deduct_amount", 0) or 0 for r in rows)
     total_net = sum(r.get("owner_net_revenue", 0) or 0 for r in rows)
 
-    statement_id = str(uuid4())
+    # Build deterministic ID from natural key (check + owner)
+    key_parts = [
+        statement_data.get("check_number") or "",
+        statement_data.get("owner_number") or "",
+        statement_data.get("owner_name") or "",
+        statement_data.get("filename") or "",
+    ]
+    composite = "|".join(str(p).lower() for p in key_parts)
+    statement_id = hashlib.sha256(composite.encode()).hexdigest()[:20]
+
+    # Preserve created_at if overwriting an existing doc
+    existing = await db.collection(REVENUE_STATEMENTS_COLLECTION).document(statement_id).get()
+    created_at = existing.to_dict().get("created_at", datetime.utcnow()) if existing.exists else datetime.utcnow()
+
     statement_doc = {
         "id": statement_id,
         "job_id": job_id,
@@ -397,12 +416,14 @@ async def save_revenue_statement(job_id: str, statement_data: dict) -> dict:
         "total_deductions": total_deductions,
         "total_net": total_net,
         "errors": statement_data.get("errors", []),
-        "rows": rows,  # Store rows as subcollection or embedded
-        "created_at": datetime.utcnow(),
+        "rows": rows,
+        "created_at": created_at,
+        "updated_at": datetime.utcnow(),
     }
 
     await db.collection(REVENUE_STATEMENTS_COLLECTION).document(statement_id).set(statement_doc)
-    logger.info(f"Saved revenue statement with {len(rows)} rows for job {job_id}")
+    action = "Updated" if existing.exists else "Created"
+    logger.info(f"{action} revenue statement {statement_id} with {len(rows)} rows for job {job_id}")
     return statement_doc
 
 

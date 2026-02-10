@@ -364,18 +364,43 @@ async def get_relationship_count() -> int:
 
 
 async def create_ownership_record(record: OwnershipRecord) -> OwnershipRecord:
-    """Create a new ownership history record."""
+    """Create or update an ownership history record.
+
+    Uses a deterministic document ID derived from entity_id + property key
+    so re-uploading the same data overwrites rather than duplicates.
+    """
+    import hashlib
+
     db = _get_db()
-    record_id = record.id or str(uuid4())
     now = datetime.utcnow()
 
+    # Build a deterministic key from the natural composite key
+    key_parts = [
+        record.entity_id,
+        record.property_id or "",
+        record.property_name or "",
+        record.rrc_lease or "",
+        record.county or "",
+        record.interest_type or "",
+    ]
+    composite = "|".join(key_parts).lower()
+    record_id = hashlib.sha256(composite.encode()).hexdigest()[:20]
+
+    # Check if existing — preserve created_at, update the rest
+    existing_doc = await db.collection(OWNERSHIP_RECORDS_COLLECTION).document(record_id).get()
+
     record.id = record_id
-    record.created_at = now
     record.updated_at = now
+    if existing_doc.exists:
+        record.created_at = existing_doc.to_dict().get("created_at", now)
+    else:
+        record.created_at = now
 
     doc_data = record.model_dump(mode="json")
     await db.collection(OWNERSHIP_RECORDS_COLLECTION).document(record_id).set(doc_data)
-    logger.info(f"Created ownership record {record_id} for entity {record.entity_id}")
+
+    action = "Updated" if existing_doc.exists else "Created"
+    logger.info(f"{action} ownership record {record_id} for entity {record.entity_id}")
     return record
 
 
