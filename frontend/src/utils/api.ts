@@ -113,18 +113,6 @@ class ApiClient {
     return this.request<T>(endpoint, { ...options, method: 'POST', body })
   }
 
-  async put<T>(endpoint: string, body?: unknown, options?: Omit<ApiRequestOptions, 'method' | 'body'>) {
-    return this.request<T>(endpoint, { ...options, method: 'PUT', body })
-  }
-
-  async patch<T>(endpoint: string, body?: unknown, options?: Omit<ApiRequestOptions, 'method' | 'body'>) {
-    return this.request<T>(endpoint, { ...options, method: 'PATCH', body })
-  }
-
-  async delete<T>(endpoint: string, options?: Omit<ApiRequestOptions, 'method' | 'body'>) {
-    return this.request<T>(endpoint, { ...options, method: 'DELETE' })
-  }
-
   async uploadFile<T>(
     endpoint: string,
     file: File,
@@ -176,32 +164,6 @@ class ApiClient {
 
 // Create and export a singleton instance
 export const api = new ApiClient(API_BASE_URL)
-
-// Export specific API functions for each tool
-export const extractApi = {
-  uploadDocument: (file: File) => api.uploadFile('/extract/upload', file),
-  getExtractionStatus: (jobId: string) => api.get(`/extract/status/${jobId}`),
-  getExtractionResult: (jobId: string) => api.get(`/extract/result/${jobId}`),
-  listExtractions: () => api.get('/extract/list'),
-}
-
-export const titleApi = {
-  uploadDocument: (file: File) => api.uploadFile('/title/upload', file),
-  searchTitle: (query: string) => api.get(`/title/search?q=${encodeURIComponent(query)}`),
-  getTitleDetails: (id: string) => api.get(`/title/${id}`),
-}
-
-export const prorationApi = {
-  calculate: (data: unknown) => api.post('/proration/calculate', data),
-  getHistory: () => api.get('/proration/history'),
-  getCalculation: (id: string) => api.get(`/proration/${id}`),
-}
-
-export const revenueApi = {
-  uploadStatement: (file: File) => api.uploadFile('/revenue/upload', file),
-  getAnalysis: (jobId: string) => api.get(`/revenue/analysis/${jobId}`),
-  listStatements: () => api.get('/revenue/statements'),
-}
 
 // AI validation types
 export interface AiSuggestion {

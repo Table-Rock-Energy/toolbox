@@ -7,13 +7,11 @@ import logging
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import Response
 
+from app.core.ingestion import file_response, persist_job_result, validate_upload
 from app.models.proration import (
     ExportRequest,
     ProcessingOptions,
-    ProcessingResult,
-    RRCDataStatus,
     RRCDownloadResponse,
     UploadResponse,
 )
@@ -37,7 +35,6 @@ async def get_rrc_status() -> dict:
     """Get status of RRC proration data from CSV files and database."""
     status = rrc_data_service.get_data_status()
 
-    # Try to get database status too
     try:
         from app.services.firestore_service import get_rrc_data_status
         db_status = await get_rrc_data_status()
@@ -46,7 +43,7 @@ async def get_rrc_status() -> dict:
         status["last_sync"] = db_status.get("last_sync")
         status["db_available"] = db_status.get("oil_rows", 0) > 0 or db_status.get("gas_rows", 0) > 0
     except Exception as e:
-        logger.debug(f"Could not get database status: {e}")
+        logger.debug("Could not get database status: %s", e)
         status["db_oil_rows"] = 0
         status["db_gas_rows"] = 0
         status["last_sync"] = None
@@ -57,31 +54,24 @@ async def get_rrc_status() -> dict:
 
 @router.post("/rrc/download", response_model=RRCDownloadResponse)
 async def download_rrc_data() -> RRCDownloadResponse:
-    """
-    Download latest RRC proration data (oil and gas).
-
-    This downloads the full proration schedules from the Texas Railroad Commission.
-    The download may take 1-2 minutes depending on connection speed.
-    After download, data is synced to the database for persistent storage.
-    """
+    """Download latest RRC proration data (oil and gas)."""
     logger.info("Starting RRC data download...")
 
     success, message, stats = rrc_data_service.download_all_data()
 
-    # Sync to database inline so Firestore is populated before we return
     sync_message = ""
     if success:
         try:
             sync_result = await rrc_data_service.sync_to_database("both")
             if sync_result.get("success"):
                 sync_message = f" | DB sync: {sync_result['message']}"
-                logger.info(f"DB sync complete: {sync_result['message']}")
+                logger.info("DB sync complete: %s", sync_result["message"])
             else:
                 sync_message = " | DB sync failed (CSV data still available)"
-                logger.warning(f"DB sync failed: {sync_result.get('message')}")
+                logger.warning("DB sync failed: %s", sync_result.get("message"))
         except Exception as e:
             sync_message = " | DB sync failed (CSV data still available)"
-            logger.warning(f"DB sync failed (non-critical): {e}")
+            logger.warning("DB sync failed (non-critical): %s", e)
 
     return RRCDownloadResponse(
         success=success,
@@ -117,19 +107,15 @@ async def download_gas_data() -> RRCDownloadResponse:
 
 @router.post("/rrc/sync")
 async def sync_rrc_to_database() -> dict:
-    """
-    Manually sync existing CSV data to the database.
-
-    Use this if CSV data was downloaded but the database sync failed or was skipped.
-    """
+    """Manually sync existing CSV data to the database."""
     try:
         result = await rrc_data_service.sync_to_database("both")
         return result
     except Exception as e:
-        logger.exception(f"Database sync failed: {e}")
+        logger.exception("Database sync failed: %s", e)
         raise HTTPException(
             status_code=500,
-            detail=f"Database sync failed: {str(e)}",
+            detail=f"Database sync failed: {e!s}",
         ) from e
 
 
@@ -138,118 +124,69 @@ async def upload_csv(
     file: Annotated[UploadFile, File(description="CSV file from mineralholders.com")],
     options_json: Annotated[Optional[str], Form(description="Processing options as JSON")] = None,
 ) -> UploadResponse:
-    """
-    Upload a CSV file and process mineral holder data.
-
-    Args:
-        file: CSV file upload
-        options_json: Processing options as JSON string (filters, RRC query settings, etc.)
-
-    Returns:
-        UploadResponse with processing results
-    """
-    # Validate file type
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No file provided")
-
-    if not file.filename.lower().endswith(".csv"):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid file type. Please upload a CSV file.",
-        )
-
-    # Validate content type
-    if file.content_type and "csv" not in file.content_type.lower():
-        if file.content_type not in ["text/csv", "application/csv", "text/plain"]:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid content type. Please upload a CSV file.",
-            )
+    """Upload a CSV file and process mineral holder data."""
+    file_bytes = await validate_upload(file, allowed_extensions=[".csv"])
 
     try:
-        # Read file bytes
-        file_bytes = await file.read()
-
-        if len(file_bytes) == 0:
-            raise HTTPException(status_code=400, detail="Empty file uploaded")
-
         # Parse options from JSON
         if options_json:
             try:
                 options_dict = json.loads(options_json)
-                # Convert empty string well_type_override to None
                 if options_dict.get("well_type_override") == "":
                     options_dict["well_type_override"] = None
-                # Disable RRC query by default (we use local data now)
                 options_dict["query_rrc"] = False
                 options = ProcessingOptions(**options_dict)
             except (json.JSONDecodeError, ValueError) as e:
-                logger.warning(f"Invalid options JSON: {e}, using defaults")
+                logger.warning("Invalid options JSON: %s, using defaults", e)
                 options = ProcessingOptions(query_rrc=False)
         else:
             options = ProcessingOptions(query_rrc=False)
 
-        # Process CSV
-        logger.info(f"Processing CSV: {file.filename}")
+        logger.info("Processing CSV: %s", file.filename)
         result = await process_csv(file_bytes, file.filename, options)
 
         if not result.success:
-            return UploadResponse(
-                message="Processing failed",
-                result=result,
-            )
+            return UploadResponse(message="Processing failed", result=result)
 
         logger.info(
-            f"Processed {result.processed_rows} rows "
-            f"({result.matched_rows} matched, {result.failed_rows} failed) from {file.filename}"
+            "Processed %d rows (%d matched, %d failed) from %s",
+            result.processed_rows, result.matched_rows, result.failed_rows,
+            file.filename,
         )
 
-        # Persist to Firestore (non-blocking, failure doesn't break upload)
-        try:
-            from app.services.firestore_service import (
-                create_job,
-                save_proration_rows,
-                update_job_status,
-            )
-
-            job = await create_job(
-                tool="proration",
-                source_filename=file.filename,
-                source_file_size=len(file_bytes),
-            )
-            job_id = job["id"]
+        # Persist to Firestore (non-blocking)
+        job_id = await persist_job_result(
+            tool="proration",
+            filename=file.filename,
+            file_size=len(file_bytes),
+            entries=[r.model_dump() for r in result.rows],
+            total=result.total_rows,
+            success=result.matched_rows,
+            errors=result.failed_rows,
+        )
+        if job_id:
             result.job_id = job_id
 
-            await save_proration_rows(
-                job_id, [r.model_dump() for r in result.rows]
-            )
-            await update_job_status(
-                job_id,
-                status="completed",
-                total_count=result.total_rows,
-                success_count=result.matched_rows,
-                error_count=result.failed_rows,
-            )
-        except Exception as fs_err:
-            logger.warning(f"Firestore persistence failed (non-critical): {fs_err}")
-
         return UploadResponse(
-            message=f"Successfully processed {result.processed_rows} rows ({result.matched_rows} matched with RRC data)",
+            message=(
+                f"Successfully processed {result.processed_rows} rows "
+                f"({result.matched_rows} matched with RRC data)"
+            ),
             result=result,
         )
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"Error processing CSV: {e}")
+        logger.exception("Error processing CSV: %s", e)
         raise HTTPException(
             status_code=500,
-            detail=f"Error processing CSV: {str(e)}",
+            detail=f"Error processing CSV: {e!s}",
         ) from e
 
 
 @router.post("/export/csv")
-async def export_csv(request: ExportRequest) -> Response:
+async def export_csv(request: ExportRequest):
     """Export mineral holder rows to CSV format."""
     if not request.rows:
         raise HTTPException(status_code=400, detail="No rows provided for export")
@@ -257,86 +194,37 @@ async def export_csv(request: ExportRequest) -> Response:
     try:
         csv_bytes = to_csv(request.rows)
         filename = f"{request.filename or 'proration_export'}.csv"
-
-        return Response(
-            content=csv_bytes,
-            media_type="text/csv",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
-            },
-        )
-
+        return file_response(csv_bytes, filename)
     except Exception as e:
-        logger.exception(f"Error generating CSV: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error generating CSV: {str(e)}",
-        ) from e
+        logger.exception("Error generating CSV: %s", e)
+        raise HTTPException(status_code=500, detail=f"Error generating CSV: {e!s}") from e
 
 
 @router.post("/export/excel")
-async def export_excel(request: ExportRequest) -> Response:
-    """
-    Export mineral holder rows to Excel format.
-
-    Args:
-        request: ExportRequest with rows to export
-
-    Returns:
-        Excel file download
-    """
+async def export_excel(request: ExportRequest):
+    """Export mineral holder rows to Excel format."""
     if not request.rows:
         raise HTTPException(status_code=400, detail="No rows provided for export")
 
     try:
         excel_bytes = to_excel(request.rows)
         filename = f"{request.filename or 'proration_export'}.xlsx"
-
-        return Response(
-            content=excel_bytes,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
-            },
-        )
-
+        return file_response(excel_bytes, filename)
     except Exception as e:
-        logger.exception(f"Error generating Excel: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error generating Excel: {str(e)}",
-        ) from e
+        logger.exception("Error generating Excel: %s", e)
+        raise HTTPException(status_code=500, detail=f"Error generating Excel: {e!s}") from e
 
 
 @router.post("/export/pdf")
-async def export_pdf(request: ExportRequest) -> Response:
-    """
-    Export mineral holder rows to PDF format.
-
-    Args:
-        request: ExportRequest with rows to export
-
-    Returns:
-        PDF file download
-    """
+async def export_pdf(request: ExportRequest):
+    """Export mineral holder rows to PDF format."""
     if not request.rows:
         raise HTTPException(status_code=400, detail="No rows provided for export")
 
     try:
         pdf_bytes = to_pdf(request.rows)
         filename = f"{request.filename or 'proration_export'}.pdf"
-
-        return Response(
-            content=pdf_bytes,
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
-            },
-        )
-
+        return file_response(pdf_bytes, filename)
     except Exception as e:
-        logger.exception(f"Error generating PDF: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error generating PDF: {str(e)}",
-        ) from e
+        logger.exception("Error generating PDF: %s", e)
+        raise HTTPException(status_code=500, detail=f"Error generating PDF: {e!s}") from e

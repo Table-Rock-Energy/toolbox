@@ -6,8 +6,8 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from fastapi.responses import Response
 
+from app.core.ingestion import file_response, persist_job_result, validate_upload
 from app.models.extract import (
     ExportRequest,
     ExtractionResult,
@@ -34,41 +34,12 @@ async def health_check() -> dict:
 async def upload_pdf(
     file: Annotated[UploadFile, File(description="PDF file containing Exhibit A")],
 ) -> UploadResponse:
-    """
-    Upload a PDF file and extract party entries from Exhibit A.
-
-    Args:
-        file: PDF file upload
-
-    Returns:
-        UploadResponse with extraction results
-    """
-    # Validate file type
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No file provided")
-
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid file type. Please upload a PDF file.",
-        )
-
-    # Validate content type
-    if file.content_type and "pdf" not in file.content_type.lower():
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid content type. Please upload a PDF file.",
-        )
+    """Upload a PDF file and extract party entries from Exhibit A."""
+    file_bytes = await validate_upload(file, allowed_extensions=[".pdf"])
 
     try:
-        # Read file bytes
-        file_bytes = await file.read()
-
-        if len(file_bytes) == 0:
-            raise HTTPException(status_code=400, detail="Empty file uploaded")
-
         # Extract text from PDF
-        logger.info(f"Processing PDF: {file.filename}")
+        logger.info("Processing PDF: %s", file.filename)
         full_text = extract_text_from_pdf(file_bytes)
 
         if not full_text or len(full_text.strip()) < 50:
@@ -84,8 +55,6 @@ async def upload_pdf(
 
         # Extract party list section (or full text if no section found)
         party_text = extract_party_list(full_text)
-
-        # Parse entries from the extracted text
         entries = parse_exhibit_a(party_text)
 
         if not entries:
@@ -93,7 +62,8 @@ async def upload_pdf(
                 message="No party entries found",
                 result=ExtractionResult(
                     success=False,
-                    error_message="Could not find numbered party entries (e.g., '1. Name, Address') in the document.",
+                    error_message="Could not find numbered party entries "
+                    "(e.g., '1. Name, Address') in the document.",
                     source_filename=file.filename,
                 ),
             )
@@ -107,12 +77,11 @@ async def upload_pdf(
                 entry.last_name = parsed.last_name or None
                 entry.suffix = parsed.suffix or None
 
-        # Count flagged entries
         flagged_count = sum(1 for e in entries if e.flagged)
 
         logger.info(
-            f"Extracted {len(entries)} entries ({flagged_count} flagged) "
-            f"from {file.filename}"
+            "Extracted %d entries (%d flagged) from %s",
+            len(entries), flagged_count, file.filename,
         )
 
         result = ExtractionResult(
@@ -123,34 +92,18 @@ async def upload_pdf(
             source_filename=file.filename,
         )
 
-        # Persist to Firestore (non-blocking, failure doesn't break upload)
-        try:
-            from app.services.firestore_service import (
-                create_job,
-                save_extract_entries,
-                update_job_status,
-            )
-
-            job = await create_job(
-                tool="extract",
-                source_filename=file.filename,
-                source_file_size=len(file_bytes),
-            )
-            job_id = job["id"]
+        # Persist to Firestore (non-blocking)
+        job_id = await persist_job_result(
+            tool="extract",
+            filename=file.filename,
+            file_size=len(file_bytes),
+            entries=[e.model_dump() for e in entries],
+            total=len(entries),
+            success=len(entries),
+            errors=flagged_count,
+        )
+        if job_id:
             result.job_id = job_id
-
-            await save_extract_entries(
-                job_id, [e.model_dump() for e in entries]
-            )
-            await update_job_status(
-                job_id,
-                status="completed",
-                total_count=len(entries),
-                success_count=len(entries),
-                error_count=flagged_count,
-            )
-        except Exception as fs_err:
-            logger.warning(f"Firestore persistence failed (non-critical): {fs_err}")
 
         return UploadResponse(
             message=f"Successfully extracted {len(entries)} entries",
@@ -160,105 +113,52 @@ async def upload_pdf(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"Error processing PDF: {e}")
+        logger.exception("Error processing PDF: %s", e)
         raise HTTPException(
             status_code=500,
-            detail=f"Error processing PDF: {str(e)}",
+            detail=f"Error processing PDF: {e!s}",
         ) from e
 
 
 @router.post("/export/csv")
-async def export_csv(request: ExportRequest) -> Response:
-    """
-    Export party entries to CSV format.
-
-    Args:
-        request: ExportRequest with entries to export
-
-    Returns:
-        CSV file download
-    """
+async def export_csv(request: ExportRequest):
+    """Export party entries to CSV format."""
     if not request.entries:
         raise HTTPException(status_code=400, detail="No entries provided for export")
 
     try:
         csv_bytes = to_csv(request.entries)
         filename = f"{request.filename or 'exhibit_a_export'}.csv"
-
-        return Response(
-            content=csv_bytes,
-            media_type="text/csv",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
-            },
-        )
-
+        return file_response(csv_bytes, filename)
     except Exception as e:
-        logger.exception(f"Error generating CSV: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error generating CSV: {str(e)}",
-        ) from e
+        logger.exception("Error generating CSV: %s", e)
+        raise HTTPException(status_code=500, detail=f"Error generating CSV: {e!s}") from e
 
 
 @router.post("/export/excel")
-async def export_excel(request: ExportRequest) -> Response:
-    """
-    Export party entries to Excel format.
-
-    Args:
-        request: ExportRequest with entries to export
-
-    Returns:
-        Excel file download
-    """
+async def export_excel(request: ExportRequest):
+    """Export party entries to Excel format."""
     if not request.entries:
         raise HTTPException(status_code=400, detail="No entries provided for export")
 
     try:
         excel_bytes = to_excel(request.entries)
         filename = f"{request.filename or 'exhibit_a_export'}.xlsx"
-
-        return Response(
-            content=excel_bytes,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
-            },
-        )
-
+        return file_response(excel_bytes, filename)
     except Exception as e:
-        logger.exception(f"Error generating Excel: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error generating Excel: {str(e)}",
-        ) from e
+        logger.exception("Error generating Excel: %s", e)
+        raise HTTPException(status_code=500, detail=f"Error generating Excel: {e!s}") from e
 
 
 @router.post("/parse-entries", response_model=list[PartyEntry])
 async def parse_entries(text: str) -> list[PartyEntry]:
-    """
-    Parse raw Exhibit A text into party entries.
-
-    This endpoint is useful for debugging or when text has been
-    extracted by other means.
-
-    Args:
-        text: Raw Exhibit A text
-
-    Returns:
-        List of parsed PartyEntry objects
-    """
+    """Parse raw Exhibit A text into party entries."""
     if not text or len(text.strip()) < 10:
         raise HTTPException(status_code=400, detail="Text is too short to parse")
 
     try:
         entries = parse_exhibit_a(text)
         return entries
-
     except Exception as e:
-        logger.exception(f"Error parsing text: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error parsing text: {str(e)}",
-        ) from e
+        logger.exception("Error parsing text: %s", e)
+        raise HTTPException(status_code=500, detail=f"Error parsing text: {e!s}") from e

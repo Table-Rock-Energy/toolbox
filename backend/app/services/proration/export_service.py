@@ -4,157 +4,88 @@ from __future__ import annotations
 
 import csv
 import io
-from typing import TYPE_CHECKING
 
-import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Font
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
 
 from app.models.proration import MineralHolderRow
 
-if TYPE_CHECKING:
-    pass
+HEADERS = [
+    "Owner",
+    "Year",
+    "Appraisal Value",
+    "Interest Type",
+    "County",
+    "Legal Description",
+    "Property",
+    "Operator",
+    "Raw RRC",
+    "New Record",
+    "Estimated Monthly Revenue",
+    "Interest",
+    "Block",
+    "Section",
+    "Abstract",
+    "RRC Acres",
+    "Est NRA",
+    "$/NRA",
+    "Notes",
+]
+
+
+def _row_values(row: MineralHolderRow) -> list:
+    """Extract export values from a MineralHolderRow."""
+    return [
+        row.owner,
+        row.year,
+        row.appraisal_value,
+        row.interest_type,
+        row.county,
+        row.legal_description,
+        row.property,
+        row.operator,
+        row.raw_rrc,
+        row.new_record,
+        row.estimated_monthly_revenue,
+        row.interest,
+        row.block,
+        row.section,
+        row.abstract,
+        row.rrc_acres,
+        row.est_nra,
+        row.dollars_per_nra,
+        row.notes,
+    ]
 
 
 def to_csv(rows: list[MineralHolderRow]) -> bytes:
-    """
-    Export mineral holder rows to CSV format.
-
-    Args:
-        rows: List of MineralHolderRow objects
-
-    Returns:
-        CSV file as bytes
-    """
+    """Export mineral holder rows to CSV format."""
     output = io.StringIO()
     writer = csv.writer(output)
-
-    headers = [
-        "Owner",
-        "Year",
-        "Appraisal Value",
-        "Interest Type",
-        "County",
-        "Legal Description",
-        "Property",
-        "Operator",
-        "Raw RRC",
-        "New Record",
-        "Estimated Monthly Revenue",
-        "Interest",
-        "Block",
-        "Section",
-        "Abstract",
-        "RRC Acres",
-        "Est NRA",
-        "$/NRA",
-        "Notes",
-    ]
-    writer.writerow(headers)
-
+    writer.writerow(HEADERS)
     for row in rows:
-        writer.writerow([
-            row.owner,
-            row.year,
-            row.appraisal_value,
-            row.interest_type,
-            row.county,
-            row.legal_description,
-            row.property,
-            row.operator,
-            row.raw_rrc,
-            row.new_record,
-            row.estimated_monthly_revenue,
-            row.interest,
-            row.block,
-            row.section,
-            row.abstract,
-            row.rrc_acres,
-            row.est_nra,
-            row.dollars_per_nra,
-            row.notes,
-        ])
-
+        writer.writerow(_row_values(row))
     return output.getvalue().encode("utf-8")
 
 
 def to_excel(rows: list[MineralHolderRow]) -> bytes:
-    """
-    Export mineral holder rows to Excel format.
-
-    Args:
-        rows: List of MineralHolderRow objects
-
-    Returns:
-        Excel file as bytes
-    """
-    # Create workbook
+    """Export mineral holder rows to Excel format."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Mineral Holders"
 
-    # Define headers
-    headers = [
-        "Owner",
-        "Year",
-        "Appraisal Value",
-        "Interest Type",
-        "County",
-        "Legal Description",
-        "Property",
-        "Operator",
-        "Raw RRC",
-        "New Record",
-        "Estimated Monthly Revenue",
-        "Interest",
-        "Block",
-        "Section",
-        "Abstract",
-        "RRC Acres",
-        "Est NRA",
-        "$/NRA",
-        "Notes",
-    ]
+    ws.append(HEADERS)
 
-    # Write headers
-    ws.append(headers)
-
-    # Style header row
     header_font = Font(bold=True)
     for cell in ws[1]:
         cell.font = header_font
 
-    # Write data rows
     for row in rows:
-        ws.append(
-            [
-                row.owner,
-                row.year,
-                row.appraisal_value,
-                row.interest_type,
-                row.county,
-                row.legal_description,
-                row.property,
-                row.operator,
-                row.raw_rrc,
-                row.new_record,
-                row.estimated_monthly_revenue,
-                row.interest,
-                row.block,
-                row.section,
-                row.abstract,
-                row.rrc_acres,
-                row.est_nra,
-                row.dollars_per_nra,
-                row.notes,
-            ]
-        )
+        ws.append(_row_values(row))
 
-    # Save to bytes
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
@@ -162,23 +93,11 @@ def to_excel(rows: list[MineralHolderRow]) -> bytes:
 
 
 def to_pdf(rows: list[MineralHolderRow]) -> bytes:
-    """
-    Export mineral holder rows to PDF format.
-
-    Args:
-        rows: List of MineralHolderRow objects
-
-    Returns:
-        PDF file as bytes
-    """
+    """Export mineral holder rows to PDF format."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     elements = []
 
-    # Get styles
-    styles = getSampleStyleSheet()
-
-    # Prepare data for table
     data = [
         [
             "Owner",
@@ -204,7 +123,6 @@ def to_pdf(rows: list[MineralHolderRow]) -> bytes:
             ]
         )
 
-    # Create table
     table = Table(data)
     table.setStyle(
         TableStyle(
@@ -222,8 +140,6 @@ def to_pdf(rows: list[MineralHolderRow]) -> bytes:
     )
 
     elements.append(table)
-
-    # Build PDF
     doc.build(elements)
 
     buffer.seek(0)
