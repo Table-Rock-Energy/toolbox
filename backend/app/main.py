@@ -105,6 +105,19 @@ async def startup_event() -> None:
     global _scheduler
     logger.info(f"{settings.app_name} v{settings.version} starting up")
 
+    # Load persistent config from Firestore (allowlist + app settings)
+    try:
+        from app.core.auth import init_allowlist_from_firestore
+        await init_allowlist_from_firestore()
+    except Exception as e:
+        logger.warning(f"Could not load allowlist from Firestore: {e}")
+
+    try:
+        from app.api.admin import init_app_settings_from_firestore
+        await init_app_settings_from_firestore()
+    except Exception as e:
+        logger.warning(f"Could not load app settings from Firestore: {e}")
+
     # Load enrichment config from Firestore
     try:
         from app.api.enrichment import load_enrichment_config_from_firestore

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -30,12 +31,12 @@ from app.services.storage_service import profile_storage, storage_service
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# App settings file
+# App settings file (local cache, source of truth is Firestore)
 APP_SETTINGS_FILE = Path(__file__).parent.parent.parent / "data" / "app_settings.json"
 
 
 def load_app_settings() -> dict:
-    """Load app settings from file."""
+    """Load app settings from local file cache."""
     if APP_SETTINGS_FILE.exists():
         try:
             with open(APP_SETTINGS_FILE, "r") as f:
@@ -45,17 +46,82 @@ def load_app_settings() -> dict:
     return {}
 
 
-def save_app_settings(settings: dict) -> None:
-    """Save app settings to file."""
+def save_app_settings(settings_data: dict) -> None:
+    """Save app settings to local file and schedule Firestore persist."""
     APP_SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(APP_SETTINGS_FILE, "w") as f:
-        json.dump(settings, f, indent=2)
+        json.dump(settings_data, f, indent=2)
+
+    # Fire-and-forget Firestore persist
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_persist_app_settings_to_firestore(settings_data))
+    except RuntimeError:
+        pass  # No event loop running
+
+
+async def _persist_app_settings_to_firestore(settings_data: dict) -> None:
+    """Async: save app settings to Firestore."""
+    try:
+        from app.services.firestore_service import set_config_doc
+        await set_config_doc("app_settings", settings_data)
+        logger.info("Persisted app settings to Firestore")
+    except Exception as e:
+        logger.warning(f"Failed to persist app settings to Firestore: {e}")
+
+
+async def init_app_settings_from_firestore() -> None:
+    """Load app settings from Firestore on startup. Seeds Firestore if empty."""
+    try:
+        from app.services.firestore_service import get_config_doc, set_config_doc
+        data = await get_config_doc("app_settings")
+        if data:
+            # Remove internal Firestore fields before saving locally
+            clean = {k: v for k, v in data.items() if not k.startswith("_")}
+            # Write to local file cache
+            APP_SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(APP_SETTINGS_FILE, "w") as f:
+                json.dump(clean, f, indent=2)
+
+            # Update runtime config
+            _apply_settings_to_runtime(clean)
+            logger.info("Loaded app settings from Firestore")
+        else:
+            # Seed Firestore from local file
+            local = load_app_settings()
+            if local:
+                await set_config_doc("app_settings", local)
+                logger.info("Seeded Firestore with local app settings")
+    except Exception as e:
+        logger.warning(f"Could not load app settings from Firestore: {e}")
+
+
+def _apply_settings_to_runtime(settings_data: dict) -> None:
+    """Apply loaded settings to the runtime config object."""
+    from app.core.config import settings as runtime_settings
+
+    gemini = settings_data.get("gemini", {})
+    if gemini.get("api_key"):
+        runtime_settings.gemini_api_key = gemini["api_key"]
+    if "enabled" in gemini:
+        runtime_settings.gemini_enabled = gemini["enabled"]
+    if "model" in gemini:
+        runtime_settings.gemini_model = gemini["model"]
+    if "monthly_budget" in gemini:
+        runtime_settings.gemini_monthly_budget = gemini["monthly_budget"]
+
+    gmaps = settings_data.get("google_maps", {})
+    if gmaps.get("api_key"):
+        runtime_settings.google_maps_api_key = gmaps["api_key"]
+    if "enabled" in gmaps:
+        runtime_settings.google_maps_enabled = gmaps["enabled"]
 
 
 class AddUserRequest(BaseModel):
     """Request to add a user to the allowlist."""
     email: EmailStr
-    name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     role: str = "user"
     scope: str = "all"
     tools: list[str] = AVAILABLE_TOOLS.copy()
@@ -64,7 +130,8 @@ class AddUserRequest(BaseModel):
 
 class UpdateUserRequest(BaseModel):
     """Request to update a user in the allowlist."""
-    name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     role: Optional[str] = None
     scope: Optional[str] = None
     tools: Optional[list[str]] = None
@@ -79,7 +146,8 @@ class RemoveUserRequest(BaseModel):
 class UserResponse(BaseModel):
     """User in the allowlist."""
     email: str
-    name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     added_by: Optional[str] = None
     role: str = "user"
     scope: str = "all"
@@ -152,7 +220,8 @@ async def add_user(request: AddUserRequest, user: dict = Depends(require_admin))
     """Add a user to the allowlist."""
     success = add_allowed_user(
         email=request.email,
-        name=request.name,
+        first_name=request.first_name,
+        last_name=request.last_name,
         added_by="admin",
         role=request.role,
         scope=request.scope,
@@ -175,7 +244,8 @@ async def add_user(request: AddUserRequest, user: dict = Depends(require_admin))
     logger.info(f"Added user to allowlist: {request.email}")
     return UserResponse(
         email=request.email.lower(),
-        name=request.name,
+        first_name=request.first_name,
+        last_name=request.last_name,
         added_by="admin",
         role=request.role,
         scope=request.scope,
@@ -188,7 +258,8 @@ async def update_user(email: str, request: UpdateUserRequest, user: dict = Depen
     """Update a user in the allowlist."""
     success = update_allowed_user(
         email=email,
-        name=request.name,
+        first_name=request.first_name,
+        last_name=request.last_name,
         role=request.role,
         scope=request.scope,
         tools=request.tools,

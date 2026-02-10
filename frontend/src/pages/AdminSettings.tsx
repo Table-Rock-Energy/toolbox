@@ -26,7 +26,8 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 interface UserEntry {
   email: string
-  name: string | null
+  first_name: string | null
+  last_name: string | null
   added_by: string | null
   role: string
   scope: string
@@ -72,7 +73,8 @@ export default function AdminSettings() {
   const [showModal, setShowModal] = useState(false)
   const [editingUser, setEditingUser] = useState<UserEntry | null>(null)
   const [formEmail, setFormEmail] = useState('')
-  const [formName, setFormName] = useState('')
+  const [formFirstName, setFormFirstName] = useState('')
+  const [formLastName, setFormLastName] = useState('')
   const [formRole, setFormRole] = useState('user')
   const [formScope, setFormScope] = useState('all')
   const [formTools, setFormTools] = useState<string[]>([])
@@ -261,7 +263,8 @@ export default function AdminSettings() {
   const openAddModal = () => {
     setEditingUser(null)
     setFormEmail('')
-    setFormName('')
+    setFormFirstName('')
+    setFormLastName('')
     setFormRole('user')
     setFormScope('all')
     setFormTools(options.tools.length > 0 ? [...options.tools] : ['extract', 'title', 'proration', 'revenue'])
@@ -275,7 +278,8 @@ export default function AdminSettings() {
   const openEditModal = (u: UserEntry) => {
     setEditingUser(u)
     setFormEmail(u.email)
-    setFormName(u.name || '')
+    setFormFirstName(u.first_name || '')
+    setFormLastName(u.last_name || '')
     setFormRole(u.role)
     setFormScope(u.scope)
     setFormTools([...u.tools])
@@ -319,7 +323,8 @@ export default function AdminSettings() {
       if (editingUser) {
         // Update existing user
         const updateBody: Record<string, unknown> = {
-            name: formName || null,
+            first_name: formFirstName || null,
+            last_name: formLastName || null,
             role: formRole,
             scope: formScope,
             tools: formTools,
@@ -348,7 +353,8 @@ export default function AdminSettings() {
 
         const addBody: Record<string, unknown> = {
             email: formEmail,
-            name: formName || null,
+            first_name: formFirstName || null,
+            last_name: formLastName || null,
             role: formRole,
             scope: formScope,
             tools: formTools,
@@ -516,7 +522,9 @@ export default function AdminSettings() {
                   <tr key={u.email} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-3 px-4">
                       <div>
-                        <p className="font-medium text-gray-900">{u.name || u.email}</p>
+                        <p className="font-medium text-gray-900">
+                          {[u.first_name, u.last_name].filter(Boolean).join(' ') || u.email}
+                        </p>
                         <p className="text-gray-500 text-xs">{u.email}</p>
                       </div>
                     </td>
@@ -975,17 +983,31 @@ export default function AdminSettings() {
                 </div>
 
                 {/* Name */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Display Name
-                  </label>
-                  <input
-                    type="text"
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                    placeholder="Full name"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      First Name
+                    </label>
+                    <input
+                      type="text"
+                      value={formFirstName}
+                      onChange={(e) => setFormFirstName(e.target.value)}
+                      placeholder="First name"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Last Name
+                    </label>
+                    <input
+                      type="text"
+                      value={formLastName}
+                      onChange={(e) => setFormLastName(e.target.value)}
+                      placeholder="Last name"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
+                    />
+                  </div>
                 </div>
 
                 {/* Role */}

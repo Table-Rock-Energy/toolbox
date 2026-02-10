@@ -2,12 +2,13 @@
 
 This module provides:
 - Firebase token verification
-- User allowlist management
+- User allowlist management (persisted to Firestore)
 - Protected route middleware
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -19,7 +20,7 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-# Path to allowlist file
+# Path to allowlist file (local cache, source of truth is Firestore)
 ALLOWLIST_FILE = Path(__file__).parent.parent.parent / "data" / "allowed_users.json"
 
 # Default allowed users
@@ -38,7 +39,8 @@ AVAILABLE_SCOPES = ["all", "land", "revenue", "operations"]
 class AllowedUser(BaseModel):
     """Allowed user entry."""
     email: str
-    name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     added_by: Optional[str] = None
     role: str = "user"
     scope: str = "all"
@@ -58,10 +60,52 @@ def load_allowlist() -> list[str]:
 
 
 def save_allowlist(users: list[dict]) -> None:
-    """Save allowed users to file."""
+    """Save allowed users to local file and schedule Firestore persist."""
     ALLOWLIST_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(ALLOWLIST_FILE, "w") as f:
         json.dump(users, f, indent=2)
+
+    # Fire-and-forget Firestore persist
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_persist_allowlist_to_firestore(users))
+    except RuntimeError:
+        pass  # No event loop running
+
+
+async def _persist_allowlist_to_firestore(users: list[dict]) -> None:
+    """Async: save allowlist to Firestore."""
+    try:
+        from app.services.firestore_service import set_config_doc
+        await set_config_doc("allowed_users", {"users": users})
+        logger.info(f"Persisted {len(users)} users to Firestore")
+    except Exception as e:
+        logger.warning(f"Failed to persist allowlist to Firestore: {e}")
+
+
+async def init_allowlist_from_firestore() -> None:
+    """Load allowlist from Firestore on startup. Seeds Firestore if empty."""
+    try:
+        from app.services.firestore_service import get_config_doc, set_config_doc
+        data = await get_config_doc("allowed_users")
+        if data and "users" in data:
+            users = data["users"]
+            # Migrate old 'name' field to first_name/last_name
+            for u in users:
+                if "name" in u and "first_name" not in u:
+                    old_name = u.pop("name", None) or ""
+                    parts = old_name.strip().split(" ", 1)
+                    u["first_name"] = parts[0] if parts[0] else None
+                    u["last_name"] = parts[1] if len(parts) > 1 else None
+            save_allowlist(users)
+            logger.info(f"Loaded {len(users)} users from Firestore")
+        else:
+            # Seed Firestore from local file
+            users = get_full_allowlist()
+            await set_config_doc("allowed_users", {"users": users})
+            logger.info(f"Seeded Firestore with {len(users)} users from local file")
+    except Exception as e:
+        logger.warning(f"Could not load allowlist from Firestore: {e}")
 
 
 def get_full_allowlist() -> list[dict]:
@@ -70,11 +114,19 @@ def get_full_allowlist() -> list[dict]:
         try:
             with open(ALLOWLIST_FILE, "r") as f:
                 data = json.load(f)
-                # Normalize to dict format
-                return [
-                    u if isinstance(u, dict) else {"email": u}
-                    for u in data
-                ]
+                result = []
+                for u in data:
+                    if isinstance(u, dict):
+                        # Migrate old 'name' field if present
+                        if "name" in u and "first_name" not in u:
+                            old_name = u.pop("name", None) or ""
+                            parts = old_name.strip().split(" ", 1)
+                            u["first_name"] = parts[0] if parts[0] else None
+                            u["last_name"] = parts[1] if len(parts) > 1 else None
+                        result.append(u)
+                    else:
+                        result.append({"email": u})
+                return result
         except Exception as e:
             logger.error(f"Error loading allowlist: {e}")
     return [{"email": e} for e in DEFAULT_ALLOWED_USERS]
@@ -82,7 +134,8 @@ def get_full_allowlist() -> list[dict]:
 
 def add_allowed_user(
     email: str,
-    name: Optional[str] = None,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
     added_by: Optional[str] = None,
     role: str = "user",
     scope: str = "all",
@@ -97,7 +150,8 @@ def add_allowed_user(
 
     users.append({
         "email": email.lower(),
-        "name": name,
+        "first_name": first_name,
+        "last_name": last_name,
         "added_by": added_by,
         "role": role,
         "scope": scope,
@@ -109,7 +163,8 @@ def add_allowed_user(
 
 def update_allowed_user(
     email: str,
-    name: Optional[str] = None,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
     role: Optional[str] = None,
     scope: Optional[str] = None,
     tools: Optional[list[str]] = None,
@@ -120,8 +175,10 @@ def update_allowed_user(
 
     for u in users:
         if u.get("email", "").lower() == email.lower():
-            if name is not None:
-                u["name"] = name
+            if first_name is not None:
+                u["first_name"] = first_name
+            if last_name is not None:
+                u["last_name"] = last_name
             if role is not None:
                 u["role"] = role
             if scope is not None:

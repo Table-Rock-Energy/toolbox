@@ -138,6 +138,7 @@ export default function Proration() {
     } catch { /* ignore */ }
     return null
   })
+  const [rrcLoading, setRrcLoading] = useState(!rrcStatus)
   const [isDownloadingRRC, setIsDownloadingRRC] = useState(false)
   const [rrcMessage, setRrcMessage] = useState<string | null>(null)
 
@@ -273,6 +274,8 @@ export default function Proration() {
       }
     } catch (err) {
       console.error('Failed to check RRC status:', err)
+    } finally {
+      setRrcLoading(false)
     }
   }
 
@@ -568,7 +571,12 @@ export default function Proration() {
       </div>
 
       {/* RRC Data Status Banner */}
-      {hasRRCData && !dataExpired ? (
+      {rrcLoading ? (
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-gray-50 border border-gray-200">
+          <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm text-gray-500">Checking RRC data status...</span>
+        </div>
+      ) : hasRRCData && !dataExpired ? (
         /* Compact green info line when data is loaded and current */
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-green-50 border border-green-200">
           <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />

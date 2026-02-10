@@ -43,6 +43,7 @@ RRC_OIL_COLLECTION = "rrc_oil_proration"
 RRC_GAS_COLLECTION = "rrc_gas_proration"
 RRC_SYNC_COLLECTION = "rrc_data_syncs"
 AUDIT_LOGS_COLLECTION = "audit_logs"
+APP_CONFIG_COLLECTION = "app_config"
 
 
 # =============================================================================
@@ -765,3 +766,22 @@ async def create_audit_log(
 
     await db.collection(AUDIT_LOGS_COLLECTION).add(log_data)
     return log_data
+
+
+# =============================================================================
+# App Config Operations (persistent settings)
+# =============================================================================
+
+
+async def get_config_doc(doc_id: str) -> Optional[dict]:
+    """Get a config document from Firestore."""
+    db = get_firestore_client()
+    doc = await db.collection(APP_CONFIG_COLLECTION).document(doc_id).get()
+    return doc.to_dict() if doc.exists else None
+
+
+async def set_config_doc(doc_id: str, data: dict) -> None:
+    """Set a config document in Firestore."""
+    db = get_firestore_client()
+    data["_updated_at"] = datetime.utcnow()
+    await db.collection(APP_CONFIG_COLLECTION).document(doc_id).set(data)
