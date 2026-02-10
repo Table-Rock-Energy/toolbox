@@ -6,6 +6,7 @@ import {
   FileText,
   Calculator,
   DollarSign,
+  GitBranch,
   LogOut,
   ChevronRight,
   User,
@@ -18,6 +19,7 @@ const toolNavItems = [
   { name: 'Title', path: '/title', icon: FileText },
   { name: 'Proration', path: '/proration', icon: Calculator },
   { name: 'Revenue', path: '/revenue', icon: DollarSign },
+  { name: 'Mineral Rights', path: '/mineral-rights', icon: GitBranch },
 ]
 
 export default function Sidebar() {

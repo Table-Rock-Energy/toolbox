@@ -25,6 +25,7 @@ from app.api.revenue import router as revenue_router
 from app.api.admin import router as admin_router
 from app.api.history import router as history_router
 from app.api.ai_validation import router as ai_router
+from app.api.etl import router as etl_router
 from app.core.config import settings
 
 # Configure logging
@@ -59,7 +60,7 @@ async def health_check() -> dict:
         "status": "healthy",
         "service": "table-rock-toolbox",
         "version": settings.version,
-        "tools": ["extract", "title", "proration", "revenue"],
+        "tools": ["extract", "title", "proration", "revenue", "etl"],
     }
 
 
@@ -71,6 +72,7 @@ app.include_router(revenue_router, prefix="/api/revenue", tags=["revenue"])
 app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
 app.include_router(history_router, prefix="/api/history", tags=["history"])
 app.include_router(ai_router, prefix="/api/ai", tags=["ai"])
+app.include_router(etl_router, prefix="/api/etl", tags=["etl"])
 
 
 @app.exception_handler(404)
