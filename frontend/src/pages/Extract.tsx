@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, Sparkles, X, Search } from 'lucide-react'
 import { FileUpload, Modal, AiReviewPanel, EnrichmentPanel } from '../components'
-import { aiApi } from '../utils/api'
+import { aiApi, enrichmentApi } from '../utils/api'
 import type { AiSuggestion } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -104,6 +104,7 @@ export default function Extract() {
 
   // Enrichment state
   const [showEnrichment, setShowEnrichment] = useState(false)
+  const [enrichmentEnabled, setEnrichmentEnabled] = useState(false)
 
   // Edit modal state
   const [editingEntry, setEditingEntry] = useState<PartyEntry | null>(null)
@@ -165,6 +166,9 @@ export default function Extract() {
   useEffect(() => {
     aiApi.getStatus().then(res => {
       if (res.data?.enabled) setAiEnabled(true)
+    })
+    enrichmentApi.getStatus().then(res => {
+      if (res.data?.enabled) setEnrichmentEnabled(true)
     })
   }, [])
 
@@ -521,14 +525,16 @@ export default function Extract() {
                         AI Review
                       </button>
                     )}
-                    <button
-                      onClick={() => setShowEnrichment(true)}
-                      disabled={entriesToExport.length === 0}
-                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm disabled:opacity-50"
-                    >
-                      <Search className="w-4 h-4" />
-                      Enrich ({entriesToExport.length})
-                    </button>
+                    {enrichmentEnabled && (
+                      <button
+                        onClick={() => setShowEnrichment(true)}
+                        disabled={entriesToExport.length === 0}
+                        className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm disabled:opacity-50"
+                      >
+                        <Search className="w-4 h-4" />
+                        Enrich ({entriesToExport.length})
+                      </button>
+                    )}
                     <button
                       onClick={() => handleExport('excel')}
                       className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
