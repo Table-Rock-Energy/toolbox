@@ -244,7 +244,8 @@ async def export_excel(request: ExportRequest):
         raise HTTPException(status_code=400, detail="No rows provided for export")
 
     try:
-        excel_bytes = to_excel(request.rows)
+        sheet_name = (request.filename or "MH").replace("_proration_export", "").replace("_export", "")
+        excel_bytes = to_excel(request.rows, sheet_name=sheet_name)
         filename = f"{request.filename or 'proration_export'}.xlsx"
         return file_response(excel_bytes, filename)
     except Exception as e:

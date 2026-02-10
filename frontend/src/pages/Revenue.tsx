@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
-import { DollarSign, Download, Upload, FileText, AlertCircle, CheckCircle, ChevronDown, ChevronRight, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Bug } from 'lucide-react'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import { DollarSign, Download, Upload, AlertCircle, CheckCircle, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Edit2, Bug, ChevronDown, ChevronRight, RotateCcw, Filter } from 'lucide-react'
 import { FileUpload, Modal, AiReviewPanel } from '../components'
 import { aiApi } from '../utils/api'
 import type { AiSuggestion } from '../utils/api'
@@ -94,6 +94,39 @@ interface DebugResult {
   error?: string
 }
 
+// A flattened row that includes statement-level fields
+interface FlatRow {
+  _id: string // unique key for selection
+  _statementIdx: number
+  _rowIdx: number
+  // Statement-level
+  payor?: string
+  check_number?: string
+  check_amount?: number
+  check_date?: string
+  operator_name?: string
+  owner_name?: string
+  owner_number?: string
+  // Row-level
+  property_name?: string
+  property_number?: string
+  sales_date?: string
+  product_code?: string
+  product_description?: string
+  decimal_interest?: number
+  interest_type?: string
+  avg_price?: number
+  property_gross_volume?: number
+  property_gross_revenue?: number
+  owner_volume?: number
+  owner_value?: number
+  owner_tax_amount?: number
+  tax_type?: string
+  owner_deduct_amount?: number
+  deduct_code?: string
+  owner_net_revenue?: number
+}
+
 interface ColumnConfig {
   key: string
   label: string
@@ -101,6 +134,7 @@ interface ColumnConfig {
 }
 
 const COLUMNS: ColumnConfig[] = [
+  { key: 'checkbox', label: '', alwaysVisible: true },
   { key: 'payor', label: 'Payor' },
   { key: 'check_number', label: 'Check #' },
   { key: 'check_amount', label: 'Check Amt' },
@@ -129,7 +163,7 @@ const COLUMNS: ColumnConfig[] = [
 ]
 
 const DEFAULT_VISIBLE = new Set([
-  'property_name', 'sales_date', 'product_code', 'decimal_interest',
+  'checkbox', 'property_name', 'sales_date', 'product_code', 'decimal_interest',
   'owner_volume', 'owner_value', 'owner_tax_amount', 'owner_net_revenue', 'edit',
 ])
 
@@ -145,11 +179,13 @@ export default function Revenue() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [isLoadingEntries, setIsLoadingEntries] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [expandedStatement, setExpandedStatement] = useState<number | null>(null)
 
   // AI Review state
   const [showAiReview, setShowAiReview] = useState(false)
   const [aiEnabled, setAiEnabled] = useState(false)
+
+  // Row selection state (set of excluded row IDs)
+  const [excludedRows, setExcludedRows] = useState<Set<string>>(new Set())
 
   // Edit modal state
   const [editingRow, setEditingRow] = useState<{ statementIdx: number; rowIdx: number; row: RevenueRow } | null>(null)
@@ -158,6 +194,10 @@ export default function Revenue() {
   const [showDebug, setShowDebug] = useState(false)
   const [debugResult, setDebugResult] = useState<DebugResult | null>(null)
   const [debugLoading, setDebugLoading] = useState(false)
+
+  // Filter state
+  const [filterProduct, setFilterProduct] = useState<string>('')
+  const [filterProperty, setFilterProperty] = useState<string>('')
 
   // Column visibility (persisted in localStorage per user, separate keys for narrow/wide)
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
@@ -233,12 +273,83 @@ export default function Revenue() {
     })
   }, [])
 
+  // Flatten all statements into a single row list
+  const flatRows = useMemo((): FlatRow[] => {
+    if (!activeJob?.result?.statements) return []
+    const rows: FlatRow[] = []
+    activeJob.result.statements.forEach((stmt, si) => {
+      stmt.rows.forEach((row, ri) => {
+        rows.push({
+          _id: `${si}-${ri}`,
+          _statementIdx: si,
+          _rowIdx: ri,
+          payor: stmt.payor,
+          check_number: stmt.check_number,
+          check_amount: stmt.check_amount,
+          check_date: stmt.check_date,
+          operator_name: stmt.operator_name,
+          owner_name: stmt.owner_name,
+          owner_number: stmt.owner_number,
+          ...row,
+        })
+      })
+    })
+    return rows
+  }, [activeJob?.result?.statements])
+
+  // Apply filters
+  const filteredRows = useMemo(() => {
+    return flatRows.filter((row) => {
+      if (filterProduct && row.product_code !== filterProduct) return false
+      if (filterProperty && !(row.property_name || '').toLowerCase().includes(filterProperty.toLowerCase())) return false
+      return true
+    })
+  }, [flatRows, filterProduct, filterProperty])
+
+  // Rows selected for export
+  const rowsToExport = useMemo(() => {
+    return filteredRows.filter((r) => !excludedRows.has(r._id))
+  }, [filteredRows, excludedRows])
+
+  // Unique product codes for filter dropdown
+  const productCodes = useMemo(() => {
+    const codes = new Set<string>()
+    flatRows.forEach((r) => { if (r.product_code) codes.add(r.product_code) })
+    return Array.from(codes).sort()
+  }, [flatRows])
+
+  // Selection helpers
+  const isAllSelected = filteredRows.length > 0 &&
+    filteredRows.every((r) => !excludedRows.has(r._id))
+  const isSomeSelected = filteredRows.some((r) => !excludedRows.has(r._id)) && !isAllSelected
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setExcludedRows(new Set(filteredRows.map((r) => r._id)))
+    } else {
+      const newExcluded = new Set(excludedRows)
+      filteredRows.forEach((r) => newExcluded.delete(r._id))
+      setExcludedRows(newExcluded)
+    }
+  }
+
+  const toggleRow = (id: string) => {
+    const next = new Set(excludedRows)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setExcludedRows(next)
+  }
+
+  const resetFilters = () => {
+    setFilterProduct('')
+    setFilterProperty('')
+    setExcludedRows(new Set())
+  }
+
   const handleApplySuggestions = (accepted: AiSuggestion[]) => {
     if (!activeJob?.result?.statements) return
 
     const updatedStatements = [...activeJob.result.statements]
-    // Revenue entries are flattened rows across all statements
-    // entry_index maps to the flat row index
     let flatIdx = 0
     for (let si = 0; si < updatedStatements.length; si++) {
       const stmt = { ...updatedStatements[si] }
@@ -304,7 +415,7 @@ export default function Revenue() {
 
       setJobs((prev) => [newJob, ...prev])
       setActiveJob(newJob)
-      setExpandedStatement(null)
+      setExcludedRows(new Set())
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to process files')
       newJob.result = {
@@ -320,6 +431,18 @@ export default function Revenue() {
   const handleExport = async () => {
     if (!activeJob?.result?.statements) return
 
+    // Build filtered statements with only selected rows
+    const selectedIds = new Set(rowsToExport.map((r) => r._id))
+    const filteredStatements = activeJob.result.statements.map((stmt, si) => ({
+      ...stmt,
+      rows: stmt.rows.filter((_row, ri) => selectedIds.has(`${si}-${ri}`)),
+    })).filter((stmt) => stmt.rows.length > 0)
+
+    if (filteredStatements.length === 0) {
+      setError('No rows selected for export')
+      return
+    }
+
     try {
       const response = await fetch(`${API_BASE}/revenue/export/csv`, {
         method: 'POST',
@@ -327,7 +450,7 @@ export default function Revenue() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          statements: activeJob.result.statements,
+          statements: filteredStatements,
         }),
       })
 
@@ -350,8 +473,8 @@ export default function Revenue() {
   const handleSelectJob = async (job: RevenueJob) => {
     setActiveJob(job)
     setError(null)
+    setExcludedRows(new Set())
 
-    // Lazy-load entries if not already loaded
     if (!job.result && job.job_id) {
       setIsLoadingEntries(true)
       try {
@@ -414,7 +537,6 @@ export default function Revenue() {
     }
   }
 
-  // Safely coerce to number (handles old Firestore data stored as strings)
   const toNum = (v: unknown): number | undefined => {
     if (v === undefined || v === null) return undefined
     const n = Number(v)
@@ -430,13 +552,8 @@ export default function Revenue() {
     }).format(n)
   }
 
-  const getAllRows = (): RevenueRow[] => {
-    if (!activeJob?.result?.statements) return []
-    return activeJob.result.statements.flatMap(s => s.rows)
-  }
-
   const getTotals = () => {
-    const rows = getAllRows()
+    const rows = rowsToExport
     return {
       gross: rows.reduce((sum, r) => sum + (toNum(r.owner_value) || 0), 0),
       tax: rows.reduce((sum, r) => sum + (toNum(r.owner_tax_amount) || 0), 0),
@@ -477,6 +594,11 @@ export default function Revenue() {
   }
 
   const isColVisible = (key: string) => visibleColumns.has(key)
+
+  const getAllRows = (): RevenueRow[] => {
+    if (!activeJob?.result?.statements) return []
+    return activeJob.result.statements.flatMap(s => s.rows)
+  }
 
   return (
     <div className="space-y-6">
@@ -637,12 +759,57 @@ export default function Revenue() {
                     )}
                     <button
                       onClick={handleExport}
-                      className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
+                      disabled={rowsToExport.length === 0}
+                      className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm disabled:opacity-50"
                     >
                       <Download className="w-4 h-4" />
-                      M1 CSV
+                      Mineral
                     </button>
                   </div>
+                </div>
+              </div>
+
+              {/* Filter Controls */}
+              <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <Filter className="w-4 h-4" />
+                    <span className="text-sm font-medium">Filters:</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Product:</span>
+                    <select
+                      value={filterProduct}
+                      onChange={(e) => setFilterProduct(e.target.value)}
+                      className="text-sm border border-gray-300 rounded px-2 py-1 focus:ring-tre-teal focus:border-tre-teal"
+                    >
+                      <option value="">All Products</option>
+                      {productCodes.map((code) => (
+                        <option key={code} value={code}>{code}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Property:</span>
+                    <input
+                      type="text"
+                      placeholder="Search..."
+                      value={filterProperty}
+                      onChange={(e) => setFilterProperty(e.target.value)}
+                      className="w-36 text-sm border border-gray-300 rounded px-2 py-1 focus:ring-tre-teal focus:border-tre-teal"
+                    />
+                  </div>
+                  <button
+                    onClick={resetFilters}
+                    className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Reset
+                  </button>
+                </div>
+                <div className="mt-2 text-xs text-gray-500">
+                  Showing {filteredRows.length} of {flatRows.length} rows
+                  ({rowsToExport.length} selected for export)
                 </div>
               </div>
 
@@ -650,21 +817,21 @@ export default function Revenue() {
               <div className="grid grid-cols-4 gap-4 p-6 border-b border-gray-100">
                 <div className="text-center">
                   <p className="text-2xl font-oswald font-semibold text-tre-navy">
-                    {activeJob.result.statements?.length || 0}
+                    {rowsToExport.length}
                   </p>
-                  <p className="text-sm text-gray-500">Statements</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-oswald font-semibold text-tre-navy">
-                    {activeJob.result.total_rows || getAllRows().length}
-                  </p>
-                  <p className="text-sm text-gray-500">Total Rows</p>
+                  <p className="text-sm text-gray-500">Selected Rows</p>
                 </div>
                 <div className="text-center">
                   <p className="text-lg font-oswald font-semibold text-green-600">
                     {formatCurrency(getTotals().gross)}
                   </p>
                   <p className="text-sm text-gray-500">Gross Value</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-oswald font-semibold text-red-600">
+                    -{formatCurrency(Math.abs(getTotals().tax))}
+                  </p>
+                  <p className="text-sm text-gray-500">Taxes</p>
                 </div>
                 <div className="text-center">
                   <p className="text-lg font-oswald font-semibold text-tre-teal">
@@ -674,236 +841,168 @@ export default function Revenue() {
                 </div>
               </div>
 
-              {/* Statements List */}
-              {activeJob.result.statements && activeJob.result.statements.length > 0 && (
-                <div className="p-6 border-b border-gray-100">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-medium text-gray-900 flex items-center gap-2">
-                      <FileText className="w-4 h-4" />
-                      Statements ({activeJob.result.statements.length})
-                    </h4>
-                    <div className="relative" ref={columnPickerRef}>
-                      <button
-                        onClick={() => setShowColumnPicker(!showColumnPicker)}
-                        className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100"
-                      >
-                        <Columns className="w-4 h-4" />
-                        Columns
-                      </button>
-                      {showColumnPicker && (
-                        <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-2">
-                          {COLUMNS.filter((c) => !c.alwaysVisible).map((col) => (
-                            <label key={col.key} className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={visibleColumns.has(col.key)}
-                                onChange={() => toggleColumn(col.key)}
-                                className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
-                              />
-                              {col.label}
-                            </label>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    {activeJob.result.statements.map((statement, idx) => (
-                      <div key={idx} className="border border-gray-200 rounded-lg overflow-hidden">
-                        <button
-                          onClick={() => setExpandedStatement(expandedStatement === idx ? null : idx)}
-                          className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
-                        >
-                          <div className="flex items-center gap-4 text-sm">
-                            {expandedStatement === idx ? (
-                              <ChevronDown className="w-4 h-4 text-gray-500" />
-                            ) : (
-                              <ChevronRight className="w-4 h-4 text-gray-500" />
-                            )}
-                            <span className="font-medium text-gray-900">{statement.filename}</span>
-                            <span className="text-gray-500">|</span>
-                            <span className="text-gray-600">{statement.format}</span>
-                            {statement.payor && (
-                              <>
-                                <span className="text-gray-500">|</span>
-                                <span className="text-gray-600">{statement.payor}</span>
-                              </>
-                            )}
-                            {statement.check_number && (
-                              <>
-                                <span className="text-gray-500">|</span>
-                                <span className="text-gray-600">Check #{statement.check_number}</span>
-                              </>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="text-gray-600">{statement.rows.length} rows</span>
-                            {statement.errors.length > 0 ? (
-                              <span className="text-yellow-600 flex items-center gap-1">
-                                <AlertCircle className="w-4 h-4" />
-                                {statement.errors.length} warnings
-                              </span>
-                            ) : (
-                              <span className="text-green-600 flex items-center gap-1">
-                                <CheckCircle className="w-4 h-4" />
-                                Success
-                              </span>
-                            )}
-                          </div>
-                        </button>
-
-                        {expandedStatement === idx && (
-                          <div className="p-4 bg-white">
-                            <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-4 pb-3 border-b border-gray-100">
-                              {statement.check_date && (
-                                <span><strong>Check Date:</strong> {statement.check_date}</span>
-                              )}
-                              {statement.check_amount && (
-                                <span><strong>Check Amount:</strong> {formatCurrency(statement.check_amount)}</span>
-                              )}
-                              {statement.owner_name && (
-                                <span><strong>Owner:</strong> {statement.owner_name}</span>
-                              )}
-                            </div>
-
-                            <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
-                              <table className="w-full text-sm">
-                                <thead className="sticky top-0 bg-white z-10">
-                                  <tr className="border-b border-gray-200">
-                                    {isColVisible('payor') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Payor</th>}
-                                    {isColVisible('check_number') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Check #</th>}
-                                    {isColVisible('check_amount') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Check Amt</th>}
-                                    {isColVisible('check_date') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Check Date</th>}
-                                    {isColVisible('property_name') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Property</th>}
-                                    {isColVisible('property_number') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Prop #</th>}
-                                    {isColVisible('operator_name') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Operator</th>}
-                                    {isColVisible('owner_name') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Owner</th>}
-                                    {isColVisible('owner_number') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Owner #</th>}
-                                    {isColVisible('sales_date') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Sales Date</th>}
-                                    {isColVisible('product_code') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Prod Code</th>}
-                                    {isColVisible('product_description') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Prod Desc</th>}
-                                    {isColVisible('decimal_interest') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Interest</th>}
-                                    {isColVisible('interest_type') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Int Type</th>}
-                                    {isColVisible('avg_price') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Avg Price</th>}
-                                    {isColVisible('property_gross_volume') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Prop Vol</th>}
-                                    {isColVisible('property_gross_revenue') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Prop Rev</th>}
-                                    {isColVisible('owner_volume') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Owner Vol</th>}
-                                    {isColVisible('owner_value') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Owner Val</th>}
-                                    {isColVisible('owner_tax_amount') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Tax</th>}
-                                    {isColVisible('tax_type') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Tax Type</th>}
-                                    {isColVisible('owner_deduct_amount') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Deductions</th>}
-                                    {isColVisible('deduct_code') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Deduct Code</th>}
-                                    {isColVisible('owner_net_revenue') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Net Revenue</th>}
-                                    <th className="text-left py-2 px-2 font-medium text-gray-600 w-8"></th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                  {statement.rows.map((row, rowIdx) => (
-                                    <tr key={rowIdx}>
-                                      {isColVisible('payor') && <td className="py-2 px-2 text-gray-600 text-xs whitespace-nowrap">{statement.payor || '\u2014'}</td>}
-                                      {isColVisible('check_number') && <td className="py-2 px-2 text-gray-600 text-xs">{statement.check_number || '\u2014'}</td>}
-                                      {isColVisible('check_amount') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{formatCurrency(statement.check_amount)}</td>}
-                                      {isColVisible('check_date') && <td className="py-2 px-2 text-gray-600 text-xs">{statement.check_date || '\u2014'}</td>}
-                                      {isColVisible('property_name') && <td className="py-2 px-2 text-gray-900 text-xs whitespace-nowrap">{row.property_name || '\u2014'}</td>}
-                                      {isColVisible('property_number') && <td className="py-2 px-2 text-gray-600 text-xs">{row.property_number || '\u2014'}</td>}
-                                      {isColVisible('operator_name') && <td className="py-2 px-2 text-gray-600 text-xs whitespace-nowrap">{statement.operator_name || '\u2014'}</td>}
-                                      {isColVisible('owner_name') && <td className="py-2 px-2 text-gray-600 text-xs whitespace-nowrap">{statement.owner_name || '\u2014'}</td>}
-                                      {isColVisible('owner_number') && <td className="py-2 px-2 text-gray-600 text-xs">{statement.owner_number || '\u2014'}</td>}
-                                      {isColVisible('sales_date') && <td className="py-2 px-2 text-gray-600 text-xs">{row.sales_date || '\u2014'}</td>}
-                                      {isColVisible('product_code') && <td className="py-2 px-2 text-gray-600 text-xs">{row.product_code || '\u2014'}</td>}
-                                      {isColVisible('product_description') && <td className="py-2 px-2 text-gray-600 text-xs">{row.product_description || '\u2014'}</td>}
-                                      {isColVisible('decimal_interest') && (
-                                        <td className="py-2 px-2 text-gray-600 text-right text-xs">
-                                          {toNum(row.decimal_interest) !== undefined ? `${(toNum(row.decimal_interest)! * 100).toFixed(6)}%` : '\u2014'}
-                                        </td>
-                                      )}
-                                      {isColVisible('interest_type') && <td className="py-2 px-2 text-gray-600 text-xs">{row.interest_type || '\u2014'}</td>}
-                                      {isColVisible('avg_price') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{formatCurrency(row.avg_price)}</td>}
-                                      {isColVisible('property_gross_volume') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{toNum(row.property_gross_volume)?.toFixed(2) ?? '\u2014'}</td>}
-                                      {isColVisible('property_gross_revenue') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{formatCurrency(row.property_gross_revenue)}</td>}
-                                      {isColVisible('owner_volume') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{toNum(row.owner_volume)?.toFixed(2) ?? '\u2014'}</td>}
-                                      {isColVisible('owner_value') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{formatCurrency(row.owner_value)}</td>}
-                                      {isColVisible('owner_tax_amount') && (
-                                        <td className="py-2 px-2 text-red-600 text-right text-xs">
-                                          {toNum(row.owner_tax_amount) !== undefined ? `-${formatCurrency(Math.abs(toNum(row.owner_tax_amount)!))}` : '\u2014'}
-                                        </td>
-                                      )}
-                                      {isColVisible('tax_type') && <td className="py-2 px-2 text-gray-600 text-xs">{row.tax_type || '\u2014'}</td>}
-                                      {isColVisible('owner_deduct_amount') && (
-                                        <td className="py-2 px-2 text-orange-600 text-right text-xs">
-                                          {toNum(row.owner_deduct_amount) !== undefined ? `-${formatCurrency(Math.abs(toNum(row.owner_deduct_amount)!))}` : '\u2014'}
-                                        </td>
-                                      )}
-                                      {isColVisible('deduct_code') && <td className="py-2 px-2 text-gray-600 text-xs">{row.deduct_code || '\u2014'}</td>}
-                                      {isColVisible('owner_net_revenue') && (
-                                        <td className="py-2 px-2 text-green-600 font-medium text-right text-xs">
-                                          {formatCurrency(row.owner_net_revenue)}
-                                        </td>
-                                      )}
-                                      <td className="py-2 px-2">
-                                        <button
-                                          onClick={() => handleEditRow(idx, rowIdx, row)}
-                                          className="text-gray-400 hover:text-tre-teal"
-                                          title="Edit row"
-                                        >
-                                          <Edit2 className="w-3.5 h-3.5" />
-                                        </button>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-
-                            {statement.errors.length > 0 && (
-                              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                                <p className="text-sm font-medium text-yellow-800 mb-1">Warnings:</p>
-                                <ul className="text-xs text-yellow-700 list-disc list-inside">
-                                  {statement.errors.map((err, errIdx) => (
-                                    <li key={errIdx}>{err}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                          </div>
-                        )}
+              {/* Data Table */}
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                    <DollarSign className="w-4 h-4" />
+                    Revenue Rows
+                  </h4>
+                  <div className="relative" ref={columnPickerRef}>
+                    <button
+                      onClick={() => setShowColumnPicker(!showColumnPicker)}
+                      className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100"
+                    >
+                      <Columns className="w-4 h-4" />
+                      Columns
+                    </button>
+                    {showColumnPicker && (
+                      <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-2">
+                        {COLUMNS.filter((c) => !c.alwaysVisible).map((col) => (
+                          <label key={col.key} className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={visibleColumns.has(col.key)}
+                              onChange={() => toggleColumn(col.key)}
+                              className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                            />
+                            {col.label}
+                          </label>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
                 </div>
-              )}
-
-              {/* Summary Totals */}
-              <div className="p-6">
-                <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-                  <DollarSign className="w-4 h-4" />
-                  Financial Summary
-                </h4>
-                <div className="grid grid-cols-4 gap-4">
-                  <div className="p-3 bg-gray-50 rounded-lg text-center">
-                    <p className="text-lg font-oswald font-semibold text-gray-900">
-                      {formatCurrency(getTotals().gross)}
-                    </p>
-                    <p className="text-xs text-gray-500">Gross Value</p>
-                  </div>
-                  <div className="p-3 bg-red-50 rounded-lg text-center">
-                    <p className="text-lg font-oswald font-semibold text-red-600">
-                      -{formatCurrency(Math.abs(getTotals().tax))}
-                    </p>
-                    <p className="text-xs text-gray-500">Taxes</p>
-                  </div>
-                  <div className="p-3 bg-orange-50 rounded-lg text-center">
-                    <p className="text-lg font-oswald font-semibold text-orange-600">
-                      -{formatCurrency(Math.abs(getTotals().deductions))}
-                    </p>
-                    <p className="text-xs text-gray-500">Deductions</p>
-                  </div>
-                  <div className="p-3 bg-green-50 rounded-lg text-center">
-                    <p className="text-lg font-oswald font-semibold text-green-600">
-                      {formatCurrency(getTotals().net)}
-                    </p>
-                    <p className="text-xs text-gray-500">Net Revenue</p>
-                  </div>
+                <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-white z-10">
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-2 px-2 font-medium text-gray-600 w-10">
+                          <input
+                            type="checkbox"
+                            checked={isAllSelected}
+                            ref={(el) => {
+                              if (el) el.indeterminate = isSomeSelected
+                            }}
+                            onChange={toggleSelectAll}
+                            className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                          />
+                        </th>
+                        {isColVisible('payor') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Payor</th>}
+                        {isColVisible('check_number') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Check #</th>}
+                        {isColVisible('check_amount') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Check Amt</th>}
+                        {isColVisible('check_date') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Check Date</th>}
+                        {isColVisible('property_name') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Property</th>}
+                        {isColVisible('property_number') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Prop #</th>}
+                        {isColVisible('operator_name') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Operator</th>}
+                        {isColVisible('owner_name') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Owner</th>}
+                        {isColVisible('owner_number') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Owner #</th>}
+                        {isColVisible('sales_date') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Sales Date</th>}
+                        {isColVisible('product_code') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Prod Code</th>}
+                        {isColVisible('product_description') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Prod Desc</th>}
+                        {isColVisible('decimal_interest') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Interest</th>}
+                        {isColVisible('interest_type') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Int Type</th>}
+                        {isColVisible('avg_price') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Avg Price</th>}
+                        {isColVisible('property_gross_volume') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Prop Vol</th>}
+                        {isColVisible('property_gross_revenue') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Prop Rev</th>}
+                        {isColVisible('owner_volume') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Owner Vol</th>}
+                        {isColVisible('owner_value') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Owner Val</th>}
+                        {isColVisible('owner_tax_amount') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Tax</th>}
+                        {isColVisible('tax_type') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Tax Type</th>}
+                        {isColVisible('owner_deduct_amount') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Deductions</th>}
+                        {isColVisible('deduct_code') && <th className="text-left py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Deduct Code</th>}
+                        {isColVisible('owner_net_revenue') && <th className="text-right py-2 px-2 font-medium text-gray-600 whitespace-nowrap">Net Revenue</th>}
+                        <th className="text-left py-2 px-2 font-medium text-gray-600 w-8"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {filteredRows.map((row) => {
+                        const isExcluded = excludedRows.has(row._id)
+                        return (
+                          <tr
+                            key={row._id}
+                            className={isExcluded ? 'opacity-50 bg-gray-100' : ''}
+                          >
+                            <td className="py-2 px-2">
+                              <input
+                                type="checkbox"
+                                checked={!isExcluded}
+                                onChange={() => toggleRow(row._id)}
+                                className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                              />
+                            </td>
+                            {isColVisible('payor') && <td className="py-2 px-2 text-gray-600 text-xs whitespace-nowrap">{row.payor || '\u2014'}</td>}
+                            {isColVisible('check_number') && <td className="py-2 px-2 text-gray-600 text-xs">{row.check_number || '\u2014'}</td>}
+                            {isColVisible('check_amount') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{formatCurrency(row.check_amount)}</td>}
+                            {isColVisible('check_date') && <td className="py-2 px-2 text-gray-600 text-xs">{row.check_date || '\u2014'}</td>}
+                            {isColVisible('property_name') && <td className="py-2 px-2 text-gray-900 text-xs whitespace-nowrap">{row.property_name || '\u2014'}</td>}
+                            {isColVisible('property_number') && <td className="py-2 px-2 text-gray-600 text-xs">{row.property_number || '\u2014'}</td>}
+                            {isColVisible('operator_name') && <td className="py-2 px-2 text-gray-600 text-xs whitespace-nowrap">{row.operator_name || '\u2014'}</td>}
+                            {isColVisible('owner_name') && <td className="py-2 px-2 text-gray-600 text-xs whitespace-nowrap">{row.owner_name || '\u2014'}</td>}
+                            {isColVisible('owner_number') && <td className="py-2 px-2 text-gray-600 text-xs">{row.owner_number || '\u2014'}</td>}
+                            {isColVisible('sales_date') && <td className="py-2 px-2 text-gray-600 text-xs">{row.sales_date || '\u2014'}</td>}
+                            {isColVisible('product_code') && <td className="py-2 px-2 text-gray-600 text-xs">{row.product_code || '\u2014'}</td>}
+                            {isColVisible('product_description') && <td className="py-2 px-2 text-gray-600 text-xs">{row.product_description || '\u2014'}</td>}
+                            {isColVisible('decimal_interest') && (
+                              <td className="py-2 px-2 text-gray-600 text-right text-xs">
+                                {toNum(row.decimal_interest) !== undefined ? `${(toNum(row.decimal_interest)! * 100).toFixed(6)}%` : '\u2014'}
+                              </td>
+                            )}
+                            {isColVisible('interest_type') && <td className="py-2 px-2 text-gray-600 text-xs">{row.interest_type || '\u2014'}</td>}
+                            {isColVisible('avg_price') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{formatCurrency(row.avg_price)}</td>}
+                            {isColVisible('property_gross_volume') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{toNum(row.property_gross_volume)?.toFixed(2) ?? '\u2014'}</td>}
+                            {isColVisible('property_gross_revenue') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{formatCurrency(row.property_gross_revenue)}</td>}
+                            {isColVisible('owner_volume') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{toNum(row.owner_volume)?.toFixed(2) ?? '\u2014'}</td>}
+                            {isColVisible('owner_value') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{formatCurrency(row.owner_value)}</td>}
+                            {isColVisible('owner_tax_amount') && (
+                              <td className="py-2 px-2 text-red-600 text-right text-xs">
+                                {toNum(row.owner_tax_amount) !== undefined ? `-${formatCurrency(Math.abs(toNum(row.owner_tax_amount)!))}` : '\u2014'}
+                              </td>
+                            )}
+                            {isColVisible('tax_type') && <td className="py-2 px-2 text-gray-600 text-xs">{row.tax_type || '\u2014'}</td>}
+                            {isColVisible('owner_deduct_amount') && (
+                              <td className="py-2 px-2 text-orange-600 text-right text-xs">
+                                {toNum(row.owner_deduct_amount) !== undefined ? `-${formatCurrency(Math.abs(toNum(row.owner_deduct_amount)!))}` : '\u2014'}
+                              </td>
+                            )}
+                            {isColVisible('deduct_code') && <td className="py-2 px-2 text-gray-600 text-xs">{row.deduct_code || '\u2014'}</td>}
+                            {isColVisible('owner_net_revenue') && (
+                              <td className="py-2 px-2 text-green-600 font-medium text-right text-xs">
+                                {formatCurrency(row.owner_net_revenue)}
+                              </td>
+                            )}
+                            <td className="py-2 px-2">
+                              <button
+                                onClick={() => handleEditRow(row._statementIdx, row._rowIdx, {
+                                  property_name: row.property_name,
+                                  property_number: row.property_number,
+                                  sales_date: row.sales_date,
+                                  product_code: row.product_code,
+                                  product_description: row.product_description,
+                                  decimal_interest: row.decimal_interest,
+                                  interest_type: row.interest_type,
+                                  avg_price: row.avg_price,
+                                  property_gross_volume: row.property_gross_volume,
+                                  property_gross_revenue: row.property_gross_revenue,
+                                  owner_volume: row.owner_volume,
+                                  owner_value: row.owner_value,
+                                  owner_tax_amount: row.owner_tax_amount,
+                                  tax_type: row.tax_type,
+                                  owner_deduct_amount: row.owner_deduct_amount,
+                                  deduct_code: row.deduct_code,
+                                  owner_net_revenue: row.owner_net_revenue,
+                                })}
+                                className="text-gray-400 hover:text-tre-teal"
+                                title="Edit row"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>

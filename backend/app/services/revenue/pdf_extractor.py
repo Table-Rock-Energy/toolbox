@@ -3,10 +3,23 @@
 import io
 import re
 from collections import Counter
+from dataclasses import dataclass
 from typing import Optional
 
 import fitz  # pymupdf
 import pdfplumber
+
+
+@dataclass
+class TextSpan:
+    """A text span with bounding box coordinates from PDF extraction."""
+
+    text: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    page_num: int
 
 # OCR imports - optional, gracefully handle if not available
 try:
@@ -280,3 +293,37 @@ def extract_structured_text(pdf_bytes: bytes) -> Optional[dict]:
 def is_ocr_available() -> bool:
     """Check if OCR is available."""
     return OCR_AVAILABLE
+
+
+def extract_spans_by_page(pdf_bytes: bytes) -> dict[int, list[TextSpan]]:
+    """Extract all text spans with bounding boxes from each page using PyMuPDF dict mode.
+
+    Returns:
+        Dict mapping page number (0-indexed) to list of TextSpan objects.
+    """
+    pages: dict[int, list[TextSpan]] = {}
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    for page_num in range(len(doc)):
+        page = doc.load_page(page_num)
+        blocks = page.get_text("dict")["blocks"]
+        spans: list[TextSpan] = []
+        for block in blocks:
+            if "lines" not in block:
+                continue
+            for line in block["lines"]:
+                for span in line["spans"]:
+                    text = span["text"].strip()
+                    if not text:
+                        continue
+                    bbox = span["bbox"]
+                    spans.append(TextSpan(
+                        text=text,
+                        x0=bbox[0],
+                        y0=bbox[1],
+                        x1=bbox[2],
+                        y1=bbox[3],
+                        page_num=page_num,
+                    ))
+        pages[page_num] = spans
+    doc.close()
+    return pages

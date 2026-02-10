@@ -49,6 +49,35 @@ def parse_date(date_str: str) -> Optional[date]:
         full_year = 2000 + int(year) if int(year) < 50 else 1900 + int(year)
         return date(full_year, int(month), 1)
 
+    # Format: "Nov 25" or "Dec 25" (Mon YY → first of month)
+    mon_yy_pattern = r"^([A-Za-z]{3})\s+(\d{2})$"
+    match = re.match(mon_yy_pattern, date_str)
+    if match:
+        month_str, year_str = match.groups()
+        months = {
+            "jan": 1, "feb": 2, "mar": 3, "apr": 4,
+            "may": 5, "jun": 6, "jul": 7, "aug": 8,
+            "sep": 9, "oct": 10, "nov": 11, "dec": 12
+        }
+        month = months.get(month_str.lower())
+        if month:
+            full_year = 2000 + int(year_str) if int(year_str) < 50 else 1900 + int(year_str)
+            return date(full_year, month, 1)
+
+    # Format: "January 26, 2026" (full month name with day)
+    full_month_pattern = r"^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})$"
+    match = re.match(full_month_pattern, date_str)
+    if match:
+        month_str, day_str, year_str = match.groups()
+        months = {
+            "january": 1, "february": 2, "march": 3, "april": 4,
+            "may": 5, "june": 6, "july": 7, "august": 8,
+            "september": 9, "october": 10, "november": 11, "december": 12
+        }
+        month = months.get(month_str.lower())
+        if month:
+            return date(int(year_str), month, int(day_str))
+
     return None
 
 
@@ -117,7 +146,7 @@ def generate_uid(check_number: str, property_number: str, line_number: int) -> s
 
 
 def map_product_code(code: str) -> str:
-    """Map product code to standard description."""
+    """Map product code or text name to standard description."""
     product_map = {
         "101": "Oil",
         "201": "Gas",
@@ -125,7 +154,19 @@ def map_product_code(code: str) -> str:
         "O": "Oil",
         "G": "Gas",
     }
-    return product_map.get(code, code)
+    result = product_map.get(code)
+    if result:
+        return result
+
+    # Text-based product names from Enverus web PDFs
+    text_map = {
+        "oil": "Oil",
+        "gas": "Gas",
+        "plant products": "NGL",
+        "condensate": "Condensate",
+        "ngl": "NGL",
+    }
+    return text_map.get(code.lower().strip(), code)
 
 
 def map_interest_type(code: str) -> str:

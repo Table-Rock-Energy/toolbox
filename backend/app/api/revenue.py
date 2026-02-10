@@ -72,11 +72,17 @@ async def upload_pdfs(files: list[UploadFile] = File(...)):
             if parser is None:
                 errors.append(
                     f"Unknown statement format for {file.filename}. "
-                    "Text was extracted but did not match EnergyLink or Energy Transfer format."
+                    "Text was extracted but did not match EnergyLink, Enverus, "
+                    "or Energy Transfer format."
                 )
                 continue
 
-            statement = parser(text, file.filename)
+            # Enverus parser needs raw PDF bytes for positional extraction
+            if parser == "enverus":
+                from app.services.revenue.enverus_parser import parse_enverus_statement
+                statement = parse_enverus_statement(content, file.filename)
+            else:
+                statement = parser(text, file.filename)
             statements.append(statement)
             total_rows += len(statement.rows)
 

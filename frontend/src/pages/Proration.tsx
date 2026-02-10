@@ -992,11 +992,11 @@ export default function Proration() {
                       </button>
                     )}
                     <button
-                      onClick={() => handleExport('csv')}
+                      onClick={() => handleExport('excel')}
                       className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
                     >
                       <Download className="w-4 h-4" />
-                      CSV
+                      Export
                     </button>
                   </div>
                 </div>

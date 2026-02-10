@@ -19,6 +19,9 @@ HEADERS = [
     "Appraisal Value",
     "Interest Type",
     "County",
+    "Block",
+    "Section",
+    "Abstract",
     "Legal Description",
     "Property",
     "Operator",
@@ -26,14 +29,14 @@ HEADERS = [
     "New Record",
     "Estimated Monthly Revenue",
     "Interest",
-    "Block",
-    "Section",
-    "Abstract",
     "RRC Acres",
     "Est NRA",
-    "$/NRA",
     "Notes",
 ]
+
+# Column indices (1-based) for SUBTOTAL formulas
+_COL_EST_MONTHLY_REV = 14  # "Estimated Monthly Revenue" is column N
+_COL_EST_NRA = 17  # "Est NRA" is column Q
 
 
 def _row_values(row: MineralHolderRow) -> list:
@@ -44,6 +47,9 @@ def _row_values(row: MineralHolderRow) -> list:
         row.appraisal_value,
         row.interest_type,
         row.county,
+        row.block,
+        row.section,
+        row.abstract,
         row.legal_description,
         row.property,
         row.operator,
@@ -51,12 +57,8 @@ def _row_values(row: MineralHolderRow) -> list:
         row.new_record,
         row.estimated_monthly_revenue,
         row.interest,
-        row.block,
-        row.section,
-        row.abstract,
         row.rrc_acres,
         row.est_nra,
-        row.dollars_per_nra,
         row.notes,
     ]
 
@@ -71,11 +73,21 @@ def to_csv(rows: list[MineralHolderRow]) -> bytes:
     return output.getvalue().encode("utf-8")
 
 
-def to_excel(rows: list[MineralHolderRow]) -> bytes:
-    """Export mineral holder rows to Excel format."""
+def to_excel(rows: list[MineralHolderRow], sheet_name: str = "MH") -> bytes:
+    """Export mineral holder rows to Excel format.
+
+    Matches the standard Mineral Holder export layout:
+    - Column order: Owner, Year, Appraisal Value, Interest Type, County,
+      Block, Section, Abstract, Legal Description, Property, Operator,
+      Raw RRC, New Record, Estimated Monthly Revenue, Interest, RRC Acres,
+      Est NRA, Notes
+    - SUBTOTAL formulas for Estimated Monthly Revenue and Est NRA
+    """
+    from openpyxl.utils import get_column_letter
+
     wb = Workbook()
     ws = wb.active
-    ws.title = "Mineral Holders"
+    ws.title = sheet_name[:31]  # Excel sheet name limit
 
     ws.append(HEADERS)
 
@@ -85,6 +97,28 @@ def to_excel(rows: list[MineralHolderRow]) -> bytes:
 
     for row in rows:
         ws.append(_row_values(row))
+
+    # Add SUBTOTAL row (SUBTOTAL function 9 = SUM ignoring hidden rows)
+    if rows:
+        data_last_row = len(rows) + 1  # +1 for header row
+        subtotal_row_idx = data_last_row + 1
+
+        rev_col = get_column_letter(_COL_EST_MONTHLY_REV)
+        nra_col = get_column_letter(_COL_EST_NRA)
+
+        # Estimated Monthly Revenue subtotal
+        rev_cell = ws.cell(
+            row=subtotal_row_idx, column=_COL_EST_MONTHLY_REV,
+            value=f"=SUBTOTAL(9,{rev_col}2:{rev_col}{data_last_row})",
+        )
+        rev_cell.font = Font(bold=True)
+
+        # Est NRA subtotal
+        nra_cell = ws.cell(
+            row=subtotal_row_idx, column=_COL_EST_NRA,
+            value=f"=SUBTOTAL(9,{nra_col}2:{nra_col}{data_last_row})",
+        )
+        nra_cell.font = Font(bold=True)
 
     output = io.BytesIO()
     wb.save(output)

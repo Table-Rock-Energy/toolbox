@@ -7,14 +7,19 @@ def detect_format(text: str) -> StatementFormat:
     """
     Detect the statement format based on text patterns.
 
+    Detection priority: Enverus → EnergyLink (Hibernia) → Energy Transfer → Unknown.
+
     Returns:
-        StatementFormat.ENERGYLINK - Multi-page detailed statements
+        StatementFormat.ENVERUS - Web-generated Enverus/EnergyLink tabular format
+        StatementFormat.ENERGYLINK - Old Hibernia colon-delimited format
         StatementFormat.ENERGY_TRANSFER - Simple tabular format
         StatementFormat.UNKNOWN - Unable to determine format
     """
     text_lower = text.lower()
+    # Use first 3000 chars for detection to avoid false matches in data rows
+    text_head = text_lower[:3000]
 
-    # Check for Energy Transfer format
+    # Check for Energy Transfer format first (most distinctive)
     energy_transfer_patterns = [
         "energy transfer crude marketing",
         "energy transfer crude",
@@ -28,21 +33,33 @@ def detect_format(text: str) -> StatementFormat:
         if pattern in text_lower:
             return StatementFormat.ENERGY_TRANSFER
 
-    # Check for EnergyLink format
+    # Check for Enverus web-generated format (Magnolia, Oxyrock, Petro-Hunt)
+    # The Enverus copyright notice is the most reliable marker. Column headers
+    # like "Owner Interest" often span multiple lines in extracted text so we
+    # also check for "Check Amount" (Enverus-specific) and "Copyright Notice".
+    enverus_markers = [
+        "enverus",              # copyright notice: "© 2026 Enverus"
+        "copyright notice",     # label before copyright text
+        "check amount",         # Enverus-specific header label
+        "revenue statement",    # page title in Enverus PDFs
+    ]
+    enverus_matches = sum(1 for m in enverus_markers if m in text_head)
+    # Need "enverus" + at least one other marker to be confident
+    if "enverus" in text_head and enverus_matches >= 2:
+        return StatementFormat.ENVERUS
+
+    # Check for old EnergyLink/Hibernia format (colon-delimited, token-per-line)
+    # Key distinguishers: uses colon-delimited labels ("Check Date:", "Owner Code:"),
+    # "Prd." / "Int." column abbreviations, 10-digit property numbers
     energylink_patterns = [
-        "energylink",
-        "www.energylink.com",
-        "hibernia resources",
-        "magnolia oil",
-        "oxyrock operating",
-        "petro-hunt",
-        "check date:",
-        "check number:",
-        "owner code:",
+        "owner code:",          # Hibernia-specific (Enverus doesn't use colons)
+        "check date:",          # colon variant unique to old format
+        "check number:",        # colon variant unique to old format
         "product codes",
         "interest codes",
         "tax codes",
         "deduct codes",
+        "hibernia resources",
     ]
 
     energylink_matches = sum(1 for p in energylink_patterns if p in text_lower)
@@ -56,15 +73,28 @@ def detect_format(text: str) -> StatementFormat:
     if "sales date" in text_lower and "mm/yy" in text_lower and "product" in text_lower:
         return StatementFormat.ENERGY_TRANSFER
 
+    # Fallback: operators that use Enverus but didn't match column headers
+    enverus_operators = ["magnolia oil", "oxyrock operating", "petro-hunt"]
+    for op in enverus_operators:
+        if op in text_lower:
+            return StatementFormat.ENVERUS
+
     return StatementFormat.UNKNOWN
 
 
 def get_parser_for_format(format_type: StatementFormat):
-    """Get the appropriate parser for a statement format."""
+    """Get the appropriate parser for a statement format.
+
+    Note: ENVERUS format returns a sentinel string 'enverus' instead of a
+    callable, because EnverusParser needs raw pdf_bytes, not extracted text.
+    The API layer handles this case specially.
+    """
     from app.services.revenue.energylink_parser import parse_energylink_statement
     from app.services.revenue.energytransfer_parser import parse_energy_transfer_statement
 
-    if format_type == StatementFormat.ENERGYLINK:
+    if format_type == StatementFormat.ENVERUS:
+        return "enverus"
+    elif format_type == StatementFormat.ENERGYLINK:
         return parse_energylink_statement
     elif format_type == StatementFormat.ENERGY_TRANSFER:
         return parse_energy_transfer_statement

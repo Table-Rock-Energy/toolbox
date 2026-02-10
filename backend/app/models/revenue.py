@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 class StatementFormat(str, Enum):
     """Supported statement formats."""
 
+    ENVERUS = "enverus"
     ENERGYLINK = "energylink"
     ENERGY_TRANSFER = "energy_transfer"
     UNKNOWN = "unknown"
