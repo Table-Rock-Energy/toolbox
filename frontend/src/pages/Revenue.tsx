@@ -57,6 +57,43 @@ interface RevenueJob {
   result?: UploadResponse
 }
 
+interface DebugGarbledAnalysis {
+  garbled: boolean
+  score: number
+  indicators: string[]
+}
+
+interface DebugExtractorResult {
+  success: boolean
+  char_count: number
+  text: string
+  garbled_analysis?: DebugGarbledAnalysis
+  error?: string
+}
+
+interface DebugFontInfo {
+  page: number
+  xref: number
+  ext: string
+  type: string
+  basefont: string
+  name: string
+  encoding: string | null
+}
+
+interface DebugResult {
+  filename: string
+  size_bytes: number
+  pymupdf?: DebugExtractorResult
+  pdfplumber?: DebugExtractorResult
+  pdfplumber_tables?: { success: boolean; table_count: number; tables: unknown[] }
+  structured?: unknown
+  fonts?: DebugFontInfo[]
+  detected_format?: string
+  recommendation?: string
+  error?: string
+}
+
 interface ColumnConfig {
   key: string
   label: string
@@ -119,7 +156,7 @@ export default function Revenue() {
 
   // Debug panel state
   const [showDebug, setShowDebug] = useState(false)
-  const [debugResult, setDebugResult] = useState<Record<string, unknown> | null>(null)
+  const [debugResult, setDebugResult] = useState<DebugResult | null>(null)
   const [debugLoading, setDebugLoading] = useState(false)
 
   // Column visibility (persisted in localStorage per user, separate keys for narrow/wide)
@@ -370,7 +407,7 @@ export default function Revenue() {
       const data = await response.json()
       setDebugResult(data)
     } catch (err) {
-      setDebugResult({ error: err instanceof Error ? err.message : 'Debug request failed' })
+      setDebugResult({ filename: '', size_bytes: 0, error: err instanceof Error ? err.message : 'Debug request failed' })
     } finally {
       setDebugLoading(false)
       e.target.value = ''
@@ -985,27 +1022,24 @@ export default function Revenue() {
             </div>
             {debugResult && (
               <div className="space-y-3">
-                {/* Recommendation */}
                 {debugResult.recommendation && (
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
-                    {debugResult.recommendation as string}
+                    {debugResult.recommendation}
                   </div>
                 )}
 
-                {/* Garbled Analysis */}
-                {[
-                  { key: 'pymupdf', label: 'PyMuPDF' },
-                  { key: 'pdfplumber', label: 'pdfplumber' },
-                ].map(({ key, label }) => {
-                  const data = debugResult[key] as Record<string, unknown> | undefined
+                {([
+                  { data: debugResult.pymupdf, label: 'PyMuPDF' },
+                  { data: debugResult.pdfplumber, label: 'pdfplumber' },
+                ] as const).map(({ data, label }) => {
                   if (!data) return null
-                  const garbled = data.garbled_analysis as Record<string, unknown> | undefined
+                  const garbled = data.garbled_analysis
                   return (
-                    <div key={key} className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div key={label} className="border border-gray-200 rounded-lg overflow-hidden">
                       <div className="px-3 py-2 bg-gray-50 flex items-center justify-between">
                         <span className="text-sm font-medium text-gray-700">{label}</span>
                         <div className="flex items-center gap-2 text-xs">
-                          <span className="text-gray-500">{data.char_count as number} chars</span>
+                          <span className="text-gray-500">{data.char_count} chars</span>
                           {garbled && (
                             <span className={`px-2 py-0.5 rounded-full ${
                               garbled.garbled ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
@@ -1015,43 +1049,41 @@ export default function Revenue() {
                           )}
                         </div>
                       </div>
-                      {garbled?.indicators && (garbled.indicators as string[]).length > 0 && (
+                      {garbled && garbled.indicators.length > 0 && (
                         <div className="px-3 py-2 bg-yellow-50 border-b border-gray-200">
                           <ul className="text-xs text-yellow-800 space-y-0.5">
-                            {(garbled.indicators as string[]).map((ind, i) => (
+                            {garbled.indicators.map((ind, i) => (
                               <li key={i}>{ind}</li>
                             ))}
                           </ul>
                         </div>
                       )}
                       <pre className="px-3 py-2 text-xs text-gray-700 max-h-60 overflow-auto whitespace-pre-wrap font-mono bg-gray-50/50">
-                        {(data.text as string)?.substring(0, 3000) || 'No text extracted'}
-                        {(data.text as string)?.length > 3000 && '\n... (truncated)'}
+                        {data.text?.substring(0, 3000) || 'No text extracted'}
+                        {data.text?.length > 3000 && '\n... (truncated)'}
                       </pre>
                     </div>
                   )
                 })}
 
-                {/* pdfplumber Tables */}
                 {debugResult.pdfplumber_tables && (
                   <div className="border border-gray-200 rounded-lg overflow-hidden">
                     <div className="px-3 py-2 bg-gray-50">
                       <span className="text-sm font-medium text-gray-700">
-                        pdfplumber Tables ({(debugResult.pdfplumber_tables as Record<string, unknown>).table_count as number} found)
+                        pdfplumber Tables ({debugResult.pdfplumber_tables.table_count} found)
                       </span>
                     </div>
                     <pre className="px-3 py-2 text-xs text-gray-700 max-h-60 overflow-auto whitespace-pre-wrap font-mono bg-gray-50/50">
-                      {JSON.stringify((debugResult.pdfplumber_tables as Record<string, unknown>).tables, null, 2)?.substring(0, 3000) || 'No tables'}
+                      {JSON.stringify(debugResult.pdfplumber_tables.tables, null, 2)?.substring(0, 3000) || 'No tables'}
                     </pre>
                   </div>
                 )}
 
-                {/* Font Info */}
-                {debugResult.fonts && Array.isArray(debugResult.fonts) && (
+                {debugResult.fonts && debugResult.fonts.length > 0 && (
                   <div className="border border-gray-200 rounded-lg overflow-hidden">
                     <div className="px-3 py-2 bg-gray-50">
                       <span className="text-sm font-medium text-gray-700">
-                        Fonts ({(debugResult.fonts as unknown[]).length})
+                        Fonts ({debugResult.fonts.length})
                       </span>
                     </div>
                     <div className="px-3 py-2 text-xs">
@@ -1065,12 +1097,12 @@ export default function Revenue() {
                           </tr>
                         </thead>
                         <tbody className="text-gray-700">
-                          {(debugResult.fonts as Array<Record<string, unknown>>).map((f, i) => (
+                          {debugResult.fonts.map((f, i) => (
                             <tr key={i}>
-                              <td className="py-0.5">{f.name as string}</td>
-                              <td className="py-0.5">{f.type as string}</td>
-                              <td className="py-0.5">{f.basefont as string}</td>
-                              <td className="py-0.5">{(f.encoding as string) || '—'}</td>
+                              <td className="py-0.5">{f.name}</td>
+                              <td className="py-0.5">{f.type}</td>
+                              <td className="py-0.5">{f.basefont}</td>
+                              <td className="py-0.5">{f.encoding || '\u2014'}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1079,10 +1111,9 @@ export default function Revenue() {
                   </div>
                 )}
 
-                {/* Detected Format */}
                 {debugResult.detected_format && (
                   <div className="text-sm text-gray-600">
-                    Detected format: <span className="font-medium">{debugResult.detected_format as string}</span>
+                    Detected format: <span className="font-medium">{debugResult.detected_format}</span>
                   </div>
                 )}
               </div>
