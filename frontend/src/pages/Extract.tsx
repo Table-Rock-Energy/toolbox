@@ -462,10 +462,10 @@ export default function Extract() {
                         <span
                           role="button"
                           onClick={(e) => handleDeleteJob(e, job)}
-                          className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-100 text-gray-400 hover:text-red-500 transition-all"
+                          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 text-gray-400 hover:text-red-500 transition-all"
                           title="Delete job"
                         >
-                          <X className="w-3.5 h-3.5" />
+                          <X className="w-4 h-4" />
                         </span>
                       </div>
                     </div>
