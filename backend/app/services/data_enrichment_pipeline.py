@@ -113,9 +113,13 @@ async def _validate_addresses_step(
         )
 
         if result.confidence in ("high", "partial"):
-            # Always store property type from geocoding
+            # Store property type and coordinates from geocoding
             if result.property_type:
                 entries[idx]["property_type"] = result.property_type
+            if result.latitude is not None:
+                entries[idx]["latitude"] = result.latitude
+            if result.longitude is not None:
+                entries[idx]["longitude"] = result.longitude
 
             if result.changed:
                 if result.validated_street:

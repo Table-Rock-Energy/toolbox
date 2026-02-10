@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     searchbug_api_key: Optional[str] = None
     enrichment_enabled: bool = False
 
+    # Encryption key for sensitive data (Fernet key, generate with: python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+    encryption_key: Optional[str] = None
+
+    # Entity matching threshold (0.0 - 1.0)
+    entity_match_threshold: float = 0.85
+
     @property
     def use_gcs(self) -> bool:
         """Check if GCS should be used for storage."""

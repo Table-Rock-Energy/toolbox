@@ -45,24 +45,27 @@ async def enrich_person_searchbug(
         params["zip"] = zip_code
 
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.get(
-                f"{SEARCHBUG_BASE_URL}/search.aspx",
-                params=params,
-            )
+        from app.services.shared.http_retry import async_request_with_retry
 
-            if response.status_code == 200:
-                data = response.json()
-                results = data.get("results") or data.get("Records") or []
-                if results:
-                    logger.info(f"SearchBug match found for '{first_name} {last_name}' ({len(results)} results)")
-                    return data
-                else:
-                    logger.info(f"SearchBug: no match for '{first_name} {last_name}'")
-                    return None
+        response = await async_request_with_retry(
+            "GET",
+            f"{SEARCHBUG_BASE_URL}/search.aspx",
+            params=params,
+            timeout=20.0,
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            results = data.get("results") or data.get("Records") or []
+            if results:
+                logger.info(f"SearchBug match found for '{first_name} {last_name}' ({len(results)} results)")
+                return data
             else:
-                logger.warning(f"SearchBug API error {response.status_code}: {response.text[:200]}")
+                logger.info(f"SearchBug: no match for '{first_name} {last_name}'")
                 return None
+        else:
+            logger.warning(f"SearchBug API error {response.status_code}: {response.text[:200]}")
+            return None
 
     except httpx.TimeoutException:
         logger.warning(f"SearchBug API timeout for '{first_name} {last_name}'")

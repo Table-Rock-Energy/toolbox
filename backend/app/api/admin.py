@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr
 
@@ -22,6 +22,7 @@ from app.core.auth import (
     is_user_allowed,
     is_user_admin,
     get_user_by_email,
+    require_admin,
 )
 from app.services.storage_service import profile_storage, storage_service
 
@@ -144,7 +145,7 @@ async def list_allowed_users():
 
 
 @router.post("/users", response_model=UserResponse)
-async def add_user(request: AddUserRequest):
+async def add_user(request: AddUserRequest, user: dict = Depends(require_admin)):
     """Add a user to the allowlist."""
     success = add_allowed_user(
         email=request.email,
@@ -173,7 +174,7 @@ async def add_user(request: AddUserRequest):
 
 
 @router.put("/users/{email}", response_model=UserResponse)
-async def update_user(email: str, request: UpdateUserRequest):
+async def update_user(email: str, request: UpdateUserRequest, user: dict = Depends(require_admin)):
     """Update a user in the allowlist."""
     success = update_allowed_user(
         email=email,
@@ -195,7 +196,7 @@ async def update_user(email: str, request: UpdateUserRequest):
 
 
 @router.delete("/users/{email}")
-async def remove_user(email: str):
+async def remove_user(email: str, user: dict = Depends(require_admin)):
     """Remove a user from the allowlist."""
     # Prevent removing the primary admin
     if email.lower() == "james@tablerocktx.com":
@@ -247,7 +248,7 @@ async def get_gemini_settings():
 
 
 @router.put("/settings/gemini", response_model=GeminiSettingsResponse)
-async def update_gemini_settings(request: GeminiSettingsRequest):
+async def update_gemini_settings(request: GeminiSettingsRequest, user: dict = Depends(require_admin)):
     """Update Gemini AI settings including API key."""
     app_settings = load_app_settings()
 
@@ -292,7 +293,7 @@ async def get_google_maps_settings():
 
 
 @router.put("/settings/google-maps", response_model=GoogleMapsSettingsResponse)
-async def update_google_maps_settings(request: GoogleMapsSettingsRequest):
+async def update_google_maps_settings(request: GoogleMapsSettingsRequest, user: dict = Depends(require_admin)):
     """Update Google Maps API settings."""
     app_settings = load_app_settings()
 

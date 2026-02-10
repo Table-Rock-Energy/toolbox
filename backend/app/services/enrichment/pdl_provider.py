@@ -51,23 +51,26 @@ async def enrich_person_pdl(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(
-                f"{PDL_BASE_URL}/person/enrich",
-                params=params,
-                headers=headers,
-            )
+        from app.services.shared.http_retry import async_request_with_retry
 
-            if response.status_code == 200:
-                data = response.json()
-                logger.info(f"PDL match found for '{name}' (likelihood={data.get('likelihood', 'N/A')})")
-                return data
-            elif response.status_code == 404:
-                logger.info(f"PDL: no match for '{name}'")
-                return None
-            else:
-                logger.warning(f"PDL API error {response.status_code}: {response.text[:200]}")
-                return None
+        response = await async_request_with_retry(
+            "GET",
+            f"{PDL_BASE_URL}/person/enrich",
+            params=params,
+            headers=headers,
+            timeout=15.0,
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            logger.info(f"PDL match found for '{name}' (likelihood={data.get('likelihood', 'N/A')})")
+            return data
+        elif response.status_code == 404:
+            logger.info(f"PDL: no match for '{name}'")
+            return None
+        else:
+            logger.warning(f"PDL API error {response.status_code}: {response.text[:200]}")
+            return None
 
     except httpx.TimeoutException:
         logger.warning(f"PDL API timeout for '{name}'")

@@ -265,3 +265,19 @@ async def require_auth(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user
+
+
+async def require_admin(
+    user: dict = Depends(require_auth),
+) -> dict:
+    """Require admin role for a route.
+
+    Chains on require_auth, then checks if the user has admin role.
+    """
+    email = user.get("email", "")
+    if not is_user_admin(email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return user

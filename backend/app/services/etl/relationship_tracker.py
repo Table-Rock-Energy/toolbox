@@ -32,49 +32,49 @@ logger = logging.getLogger(__name__)
 
 # "Heir of John Smith" or "Heirs of John Smith"
 HEIR_OF_PATTERN = re.compile(
-    r"\b[Hh]eirs?\s+of\s+([A-Z][A-Za-z\s.,'-]+?)(?:\s*,|\s*$|\s*\()",
-    re.MULTILINE,
+    r"\bHeirs?\s+of\s+([A-Za-z][A-Za-z\s.,'-]+?)(?:\s*,|\s*$|\s*\()",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 # "Estate of Mary Jones"
 ESTATE_OF_PATTERN = re.compile(
-    r"\bEstate\s+of\s+([A-Z][A-Za-z\s.,'-]+?)(?:\s*,|\s*$|\s*\()",
+    r"\bEstate\s+of\s+([A-Za-z][A-Za-z\s.,'-]+?)(?:\s*,|\s*$|\s*\()",
     re.IGNORECASE,
 )
 
 # "Unknown Heirs of Robert Brown"
 UNKNOWN_HEIRS_PATTERN = re.compile(
-    r"\bUnknown\s+Heirs?\s+(?:of\s+)?([A-Z][A-Za-z\s.,'-]+?)(?:\s*,|\s*$|\s*\()",
+    r"\bUnknown\s+Heirs?\s+(?:of\s+)?([A-Za-z][A-Za-z\s.,'-]+?)(?:\s*,|\s*$|\s*\()",
     re.IGNORECASE,
 )
 
 # "a/k/a Jane Doe" or "aka Jane Doe"
 AKA_PATTERN = re.compile(
-    r"\ba/?k/?a\b\s*:?\s*([A-Z][A-Za-z\s.,'-]+?)(?:\s*,|\s*$|\s*\()",
+    r"\ba/?k/?a\b\s*:?\s*([A-Za-z][A-Za-z\s.,'-]+?)(?:\s*,|\s*$|\s*\()",
     re.IGNORECASE,
 )
 
 # "f/k/a Old Name LLC" or "fka Old Name"
 FKA_PATTERN = re.compile(
-    r"\bf/?k/?a\b\s*:?\s*([A-Z][A-Za-z\s.,'-]+?)(?:\s*,|\s*$|\s*\()",
+    r"\bf/?k/?a\b\s*:?\s*([A-Za-z][A-Za-z\s.,'-]+?)(?:\s*,|\s*$|\s*\()",
     re.IGNORECASE,
 )
 
 # "Trustee of The Smith Family Trust" or "as Trustee"
 TRUSTEE_OF_PATTERN = re.compile(
-    r"(?:as\s+)?(?:Successor\s+)?Trustee(?:s)?\s+of\s+([A-Z][A-Za-z\s.,'-]+?)(?:\s*,|\s*$|\s*\()",
+    r"(?:as\s+)?(?:Successor\s+)?Trustee(?:s)?\s+of\s+([A-Za-z][A-Za-z\s.,'-]+?)(?:\s*,|\s*$|\s*\()",
     re.IGNORECASE,
 )
 
 # "c/o James Smith" (care of — suggests organizational relationship)
 CARE_OF_PATTERN = re.compile(
-    r"\bc/?o\b\s*:?\s*([A-Z][A-Za-z\s.,'-]+?)(?:\s*,|\s*$|\s*\()",
+    r"\bc/?o\b\s*:?\s*([A-Za-z][A-Za-z\s.,'-]+?)(?:\s*,|\s*$|\s*\()",
     re.IGNORECASE,
 )
 
 # "FBO John Smith" (for benefit of — trust beneficiary)
 FBO_PATTERN = re.compile(
-    r"\bFBO\s+([A-Z][A-Za-z\s.,'-]+?)(?:\s*,|\s*$|\s*\()",
+    r"\bFBO\s+([A-Za-z][A-Za-z\s.,'-]+?)(?:\s*,|\s*$|\s*\()",
     re.IGNORECASE,
 )
 

@@ -55,5 +55,8 @@ pytest>=7.4.0
 pytest-asyncio>=0.23.0
 httpx>=0.26.0
 
+# Encryption (API key storage)
+cryptography>=42.0.0
+
 # Linting (dev only)
 ruff>=0.1.0

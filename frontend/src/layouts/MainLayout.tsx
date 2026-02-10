@@ -41,7 +41,7 @@ export default function MainLayout() {
             {/* Close button */}
             <button
               onClick={() => setMobileOpen(false)}
-              className="absolute top-4 right-[-44px] w-8 h-8 bg-tre-navy rounded-full flex items-center justify-center text-white"
+              className="absolute top-4 right-4 w-8 h-8 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white"
             >
               <X className="w-4 h-4" />
             </button>

@@ -6,7 +6,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.core.auth import require_auth
+from app.core.auth import require_admin, require_auth
 
 from app.models.enrichment import (
     EnrichmentConfigUpdateRequest,
@@ -29,7 +29,7 @@ async def enrichment_status() -> EnrichmentStatusResponse:
 
 
 @router.post("/config")
-async def update_enrichment_config(request: EnrichmentConfigUpdateRequest, user: dict = Depends(require_auth)) -> dict:
+async def update_enrichment_config(request: EnrichmentConfigUpdateRequest, user: dict = Depends(require_admin)) -> dict:
     """
     Update enrichment API keys and enabled state.
 
@@ -121,11 +121,13 @@ async def _save_enrichment_config(request: EnrichmentConfigUpdateRequest) -> Non
         db = get_firestore_client()
         doc_ref = db.collection("app_config").document("enrichment")
 
+        from app.services.shared.encryption import encrypt_value
+
         update_data: dict = {}
         if request.pdl_api_key is not None:
-            update_data["pdl_api_key"] = request.pdl_api_key
+            update_data["pdl_api_key"] = encrypt_value(request.pdl_api_key)
         if request.searchbug_api_key is not None:
-            update_data["searchbug_api_key"] = request.searchbug_api_key
+            update_data["searchbug_api_key"] = encrypt_value(request.searchbug_api_key)
         if request.enabled is not None:
             update_data["enabled"] = request.enabled
 
@@ -153,10 +155,14 @@ async def load_enrichment_config_from_firestore() -> None:
         doc = await db.collection("app_config").document("enrichment").get()
 
         if doc.exists:
+            from app.services.shared.encryption import decrypt_value
+
             data = doc.to_dict()
+            pdl_key = data.get("pdl_api_key")
+            sb_key = data.get("searchbug_api_key")
             set_runtime_config(
-                pdl_api_key=data.get("pdl_api_key"),
-                searchbug_api_key=data.get("searchbug_api_key"),
+                pdl_api_key=decrypt_value(pdl_key) if pdl_key else None,
+                searchbug_api_key=decrypt_value(sb_key) if sb_key else None,
                 enabled=data.get("enabled"),
             )
             logger.info("Loaded enrichment config from Firestore")

@@ -136,15 +136,18 @@ def validate_address(
         return result
 
     try:
+        from app.services.shared.http_retry import sync_request_with_retry
+
         _rate_limit()
 
-        response = requests.get(
+        response = sync_request_with_retry(
+            "GET",
             "https://maps.googleapis.com/maps/api/geocode/json",
             params={
                 "address": address_string,
                 "key": settings.google_maps_api_key,
             },
-            timeout=10,
+            timeout=10.0,
         )
         response.raise_for_status()
         data = response.json()

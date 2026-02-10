@@ -35,8 +35,10 @@ from app.services.etl.entity_registry import (
 
 logger = logging.getLogger(__name__)
 
-# Minimum score to consider a match
-MATCH_THRESHOLD = 0.70
+# Minimum score to consider a match (configurable via settings.entity_match_threshold)
+from app.core.config import settings as _settings
+
+MATCH_THRESHOLD = _settings.entity_match_threshold
 
 # Weights for different matching signals
 NAME_WEIGHT = 0.50
@@ -49,12 +51,10 @@ TYPE_WEIGHT = 0.10
 # Name normalization
 # =============================================================================
 
-# Words to strip when comparing names
-NOISE_WORDS = {
-    "the", "of", "and", "a", "an", "inc", "llc", "lp", "ltd", "co",
-    "corp", "corporation", "company", "partnership", "limited",
-    "incorporated", "trust", "estate", "heirs", "unknown",
-}
+# Grammatical filler words to strip when comparing names.
+# Business suffixes (llc, inc, trust, estate, etc.) are intentionally
+# excluded so that "Smith LLC" and "Smith Trust" are NOT treated as the same entity.
+NOISE_WORDS = {"the", "of", "and", "a", "an"}
 
 SUFFIX_PATTERN = re.compile(
     r"\b(jr\.?|sr\.?|ii|iii|iv|v|md|m\.d\.|phd|ph\.d\.|esq\.?)\b",
