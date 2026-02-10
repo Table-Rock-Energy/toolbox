@@ -24,6 +24,7 @@ from app.services.title.export_service import (
     generate_filename,
     to_csv,
     to_excel,
+    to_mineral_csv,
     to_mineral_excel,
 )
 
@@ -142,8 +143,14 @@ async def export_csv(request: ExportRequest):
         raise HTTPException(status_code=400, detail="No entries provided for export")
 
     try:
-        csv_bytes = to_csv(request.entries, request.filters)
-        filename = generate_filename(request.filename or "title_export", "csv")
+        if request.format_type == "mineral":
+            csv_bytes = to_mineral_csv(request.entries, request.filters)
+            filename = generate_filename(
+                (request.filename or "title_export") + "_mineral", "csv"
+            )
+        else:
+            csv_bytes = to_csv(request.entries, request.filters)
+            filename = generate_filename(request.filename or "title_export", "csv")
         return file_response(csv_bytes, filename)
     except Exception as e:
         logger.exception("Error generating CSV: %s", e)

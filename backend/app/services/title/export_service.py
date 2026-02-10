@@ -203,6 +203,15 @@ def entries_to_mineral_dataframe(entries: list[OwnerEntry]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=MINERAL_EXPORT_COLUMNS)
 
 
+def to_mineral_csv(
+    entries: list[OwnerEntry], filters: Optional[FilterOptions] = None
+) -> bytes:
+    """Export owner entries to CSV format in CRM mineral format."""
+    filtered_entries = apply_filters(entries, filters)
+    df = entries_to_mineral_dataframe(filtered_entries)
+    return dataframe_to_csv_bytes(df)
+
+
 def to_mineral_excel(
     entries: list[OwnerEntry], filters: Optional[FilterOptions] = None
 ) -> bytes:

@@ -15,6 +15,9 @@ import {
   Plug,
   Eye,
   EyeOff,
+  RefreshCw,
+  Copy,
+  Lock,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { enrichmentApi } from '../utils/api'
@@ -73,6 +76,9 @@ export default function AdminSettings() {
   const [formRole, setFormRole] = useState('user')
   const [formScope, setFormScope] = useState('all')
   const [formTools, setFormTools] = useState<string[]>([])
+  const [formPassword, setFormPassword] = useState('')
+  const [showFormPassword, setShowFormPassword] = useState(false)
+  const [passwordCopied, setPasswordCopied] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
 
   // Gemini state
@@ -259,6 +265,9 @@ export default function AdminSettings() {
     setFormRole('user')
     setFormScope('all')
     setFormTools(options.tools.length > 0 ? [...options.tools] : ['extract', 'title', 'proration', 'revenue'])
+    setFormPassword('')
+    setShowFormPassword(false)
+    setPasswordCopied(false)
     setShowModal(true)
     setError('')
   }
@@ -270,6 +279,9 @@ export default function AdminSettings() {
     setFormRole(u.role)
     setFormScope(u.scope)
     setFormTools([...u.tools])
+    setFormPassword('')
+    setShowFormPassword(false)
+    setPasswordCopied(false)
     setShowModal(true)
     setError('')
   }
@@ -282,6 +294,22 @@ export default function AdminSettings() {
     )
   }
 
+  const generatePassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&*'
+    const array = new Uint8Array(16)
+    crypto.getRandomValues(array)
+    const password = Array.from(array, b => chars[b % chars.length]).join('')
+    setFormPassword(password)
+    setShowFormPassword(true)
+  }
+
+  const copyPassword = async () => {
+    if (!formPassword) return
+    await navigator.clipboard.writeText(formPassword)
+    setPasswordCopied(true)
+    setTimeout(() => setPasswordCopied(false), 2000)
+  }
+
   const handleSaveUser = async () => {
     setIsSaving(true)
     setError('')
@@ -290,15 +318,18 @@ export default function AdminSettings() {
     try {
       if (editingUser) {
         // Update existing user
-        const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(editingUser.email)}`, {
-          method: 'PUT',
-          headers: await authHeaders(),
-          body: JSON.stringify({
+        const updateBody: Record<string, unknown> = {
             name: formName || null,
             role: formRole,
             scope: formScope,
             tools: formTools,
-          }),
+        }
+        if (formPassword) updateBody.password = formPassword
+
+        const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(editingUser.email)}`, {
+          method: 'PUT',
+          headers: await authHeaders(),
+          body: JSON.stringify(updateBody),
         })
 
         if (!res.ok) {
@@ -315,16 +346,19 @@ export default function AdminSettings() {
           return
         }
 
-        const res = await fetch(`${API_BASE}/admin/users`, {
-          method: 'POST',
-          headers: await authHeaders(),
-          body: JSON.stringify({
+        const addBody: Record<string, unknown> = {
             email: formEmail,
             name: formName || null,
             role: formRole,
             scope: formScope,
             tools: formTools,
-          }),
+        }
+        if (formPassword) addBody.password = formPassword
+
+        const res = await fetch(`${API_BASE}/admin/users`, {
+          method: 'POST',
+          headers: await authHeaders(),
+          body: JSON.stringify(addBody),
         })
 
         if (!res.ok) {
@@ -1021,6 +1055,61 @@ export default function AdminSettings() {
                       </label>
                     ))}
                   </div>
+                </div>
+
+                {/* Password */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <Lock className="w-4 h-4 inline mr-1" />
+                    {editingUser ? 'Set New Password' : 'Initial Password'}
+                  </label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type={showFormPassword ? 'text' : 'password'}
+                        value={formPassword}
+                        onChange={(e) => setFormPassword(e.target.value)}
+                        placeholder={editingUser ? 'Leave blank to keep current' : 'Optional initial password'}
+                        className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal font-mono text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowFormPassword(v => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        {showFormPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={generatePassword}
+                      className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm text-gray-700"
+                      title="Generate password"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      Generate
+                    </button>
+                  </div>
+                  {formPassword && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={copyPassword}
+                        className="flex items-center gap-1 text-xs text-tre-teal hover:text-tre-navy transition-colors"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        {passwordCopied ? 'Copied!' : 'Copy to clipboard'}
+                      </button>
+                      <span className="text-xs text-gray-400">
+                        {formPassword.length} characters
+                      </span>
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-500 mt-1">
+                    {editingUser
+                      ? 'Sets a new password for email/password sign-in. Leave blank to keep unchanged.'
+                      : 'Creates a Firebase account with email/password sign-in. Leave blank for Google Sign-In only.'}
+                  </p>
                 </div>
 
                 {/* Actions */}

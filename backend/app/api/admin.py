@@ -23,6 +23,7 @@ from app.core.auth import (
     is_user_admin,
     get_user_by_email,
     require_admin,
+    set_user_password,
 )
 from app.services.storage_service import profile_storage, storage_service
 
@@ -58,6 +59,7 @@ class AddUserRequest(BaseModel):
     role: str = "user"
     scope: str = "all"
     tools: list[str] = AVAILABLE_TOOLS.copy()
+    password: Optional[str] = None
 
 
 class UpdateUserRequest(BaseModel):
@@ -66,6 +68,7 @@ class UpdateUserRequest(BaseModel):
     role: Optional[str] = None
     scope: Optional[str] = None
     tools: Optional[list[str]] = None
+    password: Optional[str] = None
 
 
 class RemoveUserRequest(BaseModel):
@@ -162,6 +165,13 @@ async def add_user(request: AddUserRequest, user: dict = Depends(require_admin))
             detail=f"User {request.email} already in allowlist"
         )
 
+    # Set password in Firebase Auth if provided
+    if request.password:
+        try:
+            set_user_password(request.email, request.password)
+        except Exception as e:
+            logger.warning(f"Added user to allowlist but failed to set password: {e}")
+
     logger.info(f"Added user to allowlist: {request.email}")
     return UserResponse(
         email=request.email.lower(),
@@ -189,6 +199,16 @@ async def update_user(email: str, request: UpdateUserRequest, user: dict = Depen
             status_code=404,
             detail=f"User {email} not found in allowlist"
         )
+
+    # Set password in Firebase Auth if provided
+    if request.password:
+        try:
+            set_user_password(email, request.password)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"User updated but failed to set password: {e}"
+            ) from e
 
     logger.info(f"Updated user in allowlist: {email}")
     user = get_user_by_email(email)

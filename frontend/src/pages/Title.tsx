@@ -472,9 +472,9 @@ export default function Title() {
     }
 
     try {
-      // For mineral format, use the same endpoint but with different filename convention
+      // For mineral format, use the CSV endpoint with mineral format_type
       const endpoint = format === 'mineral'
-        ? `${API_BASE}/title/export/excel`
+        ? `${API_BASE}/title/export/csv`
         : `${API_BASE}/title/export/${format}`
 
       const response = await fetch(endpoint, {
@@ -500,7 +500,7 @@ export default function Title() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      const ext = format === 'csv' ? 'csv' : 'xlsx'
+      const ext = format === 'excel' ? 'xlsx' : 'csv'
       const suffix = format === 'mineral' ? '_mineral' : '_processed'
       a.download = `${activeJob?.documentName?.replace(/\.[^.]+$/, '') || 'title_export'}${suffix}.${ext}`
       document.body.appendChild(a)

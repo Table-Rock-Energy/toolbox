@@ -202,6 +202,34 @@ def get_firebase_app():
     return _firebase_app
 
 
+def set_user_password(email: str, password: str) -> dict:
+    """Set or update a Firebase user's password.
+
+    If the user doesn't exist in Firebase Auth, creates a new account.
+    Returns a dict with status info.
+    """
+    app = get_firebase_app()
+    if app is None:
+        raise RuntimeError("Firebase Admin SDK not initialized")
+
+    from firebase_admin import auth as fb_auth
+
+    try:
+        # Try to find existing user
+        user = fb_auth.get_user_by_email(email)
+        fb_auth.update_user(user.uid, password=password)
+        logger.info(f"Updated password for Firebase user: {email}")
+        return {"action": "updated", "email": email}
+    except fb_auth.UserNotFoundError:
+        # Create new Firebase Auth user with this email/password
+        fb_auth.create_user(email=email, password=password)
+        logger.info(f"Created Firebase user with password: {email}")
+        return {"action": "created", "email": email}
+    except Exception as e:
+        logger.error(f"Failed to set password for {email}: {e}")
+        raise
+
+
 async def verify_firebase_token(token: str) -> Optional[dict]:
     """Verify a Firebase ID token and return the decoded token."""
     app = get_firebase_app()

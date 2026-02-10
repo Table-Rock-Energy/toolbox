@@ -685,7 +685,7 @@ export default function Extract() {
                       </button>
                     )}
                     <button
-                      onClick={() => handleExport('excel')}
+                      onClick={() => handleExport('csv')}
                       className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
                     >
                       <Download className="w-4 h-4" />
