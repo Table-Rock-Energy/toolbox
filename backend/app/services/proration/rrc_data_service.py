@@ -2,20 +2,17 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 from datetime import datetime
 from io import BytesIO
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pandas as pd
 import requests
 import urllib3
 
-from app.core.config import settings
-from app.services.storage_service import rrc_storage, storage_service
+from app.services.storage_service import rrc_storage
 
 # Suppress SSL warnings since RRC website has outdated SSL configuration
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)

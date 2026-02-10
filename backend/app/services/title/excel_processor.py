@@ -9,10 +9,9 @@ from typing import Optional
 
 import pandas as pd
 
-from app.models.title import EntityType, OwnerEntry
+from app.models.title import OwnerEntry
 from app.services.title.address_parser import (
     extract_address_annotations,
-    parse_address,
     parse_address_with_notes,
     split_address_lines,
 )

@@ -21,7 +21,6 @@ from app.models.etl import (
     NameVariant,
     PropertyInterest,
     SourceReference,
-    SourceTool,
     VerificationStatus,
 )
 from app.services.etl.entity_registry import (
@@ -233,7 +232,7 @@ async def resolve_entity(
 
     Returns: (entity, is_new) — the matched/created entity and whether it's new.
     """
-    from app.services.etl.entity_registry import _get_db, _dict_to_entity
+    from app.services.etl.entity_registry import _get_db
 
     entity_type = map_entity_type(entity_type_str)
     properties = properties or []

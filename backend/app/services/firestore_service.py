@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Optional
+from typing import Optional
 from uuid import uuid4
 
 from google.cloud import firestore
@@ -626,7 +626,6 @@ async def get_rrc_data_status() -> dict:
     db = get_firestore_client()
 
     # Count oil records
-    oil_docs = await db.collection(RRC_OIL_COLLECTION).limit(1).get()
     oil_count_query = db.collection(RRC_OIL_COLLECTION).count()
     oil_count_result = await oil_count_query.get()
     oil_rows = oil_count_result[0][0].value if oil_count_result else 0

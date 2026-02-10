@@ -16,7 +16,6 @@ from typing import Optional
 
 from app.models.etl import (
     AddressRecord,
-    Entity,
     OwnershipRecord,
     PropertyInterest,
     SourceReference,

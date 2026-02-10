@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr
 
 from app.core.auth import (

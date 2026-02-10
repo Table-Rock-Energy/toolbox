@@ -20,7 +20,6 @@ from app.models.etl import (
     PropertyInterest,
     Relationship,
     SourceReference,
-    VerificationStatus,
 )
 
 logger = logging.getLogger(__name__)

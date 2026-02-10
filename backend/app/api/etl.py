@@ -7,8 +7,6 @@ entities in the bronze layer — raw ingested data from all tools.
 from __future__ import annotations
 
 import logging
-from typing import Optional
-
 from fastapi import APIRouter, HTTPException
 
 from app.models.etl import (
@@ -17,10 +15,8 @@ from app.models.etl import (
     EntitySearchRequest,
     EntitySearchResponse,
     EntitySearchResult,
-    EntityType,
     ETLPipelineStatus,
     RelationshipCreateRequest,
-    RelationshipType,
     VerificationStatus,
 )
 

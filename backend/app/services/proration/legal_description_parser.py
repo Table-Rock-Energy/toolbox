@@ -6,7 +6,7 @@ import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    pass
 
 
 def parse_legal_description(legal_desc: str) -> tuple[str | None, str | None, str | None]:

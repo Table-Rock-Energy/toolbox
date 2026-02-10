@@ -21,7 +21,7 @@ from app.services.proration.legal_description_parser import parse_legal_descript
 from app.services.proration.rrc_data_service import rrc_data_service
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    pass
 
 logger = logging.getLogger(__name__)
 

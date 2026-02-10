@@ -184,7 +184,7 @@ def parse_row_from_tokens(
 
         # For revenue lines (RI): BTU, Volume, Price, Value, Interest, OwnerVolume, OwnerValue
         # For tax/deduct lines (SV, 10): Value, Interest, OwnerValue
-        btu = None
+        _ = None  # BTU placeholder (parsed but not used)
         volume = None
         price = None
         property_value = None

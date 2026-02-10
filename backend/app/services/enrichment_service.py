@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator
 
 from app.core.config import settings
 
@@ -73,7 +73,6 @@ async def _validate_addresses_step(
         yield {"step": "addresses", "status": "skipped", "message": "Google Maps not configured"}
         return
 
-    total = len(entries)
     has_address = [
         i for i, e in enumerate(entries)
         if any([
