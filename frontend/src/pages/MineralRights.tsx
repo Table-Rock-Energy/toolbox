@@ -104,7 +104,6 @@ export default function MineralRights() {
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null)
   const [relationships, setRelationships] = useState<Relationship[]>([])
   const [ownershipRecords, setOwnershipRecords] = useState<OwnershipRecord[]>([])
-  const [relatedEntities, setRelatedEntities] = useState<Entity[]>([])
   const [loading, setLoading] = useState(false)
   const [searchLoading, setSearchLoading] = useState(false)
 
