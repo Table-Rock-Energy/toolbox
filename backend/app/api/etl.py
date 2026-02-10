@@ -1,7 +1,7 @@
-"""API routes for the Mineral Rights ETL pipeline.
+"""API routes for the Bronze Database (mineral rights ETL pipeline).
 
 Provides endpoints for searching, browsing, and correcting
-entities in the mineral rights database.
+entities in the bronze layer — raw ingested data from all tools.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ router = APIRouter()
 @router.get("/health")
 async def health_check() -> dict:
     """Health check endpoint for ETL pipeline."""
-    return {"status": "healthy", "service": "mineral-rights-etl"}
+    return {"status": "healthy", "service": "bronze-database"}
 
 
 @router.get("/status", response_model=ETLPipelineStatus)

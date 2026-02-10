@@ -1,7 +1,8 @@
-"""Pydantic models for the Mineral Rights ETL pipeline.
+"""Pydantic models for the Bronze Database (mineral rights ETL pipeline).
 
 Core domain models for entity resolution, relationship tracking,
-and ownership history across all toolbox data sources.
+and ownership history across all toolbox data sources. This is the
+bronze layer — raw ingested entities with basic resolution.
 """
 
 from datetime import datetime

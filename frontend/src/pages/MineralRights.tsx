@@ -6,7 +6,7 @@ import {
   MapPin,
   ChevronRight,
   X,
-  Plus,
+  Database,
   CheckCircle,
   AlertCircle,
   Building2,
@@ -168,10 +168,10 @@ export default function MineralRights() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-oswald font-semibold text-white">
-          Mineral Rights Database
+          Bronze Database
         </h1>
         <p className="text-gray-400 mt-1">
-          Search and explore mineral rights ownership, inheritance chains, and property interests
+          Raw entity ingestion layer — mineral rights ownership, inheritance chains, and property interests
         </p>
       </div>
 
@@ -467,14 +467,14 @@ export default function MineralRights() {
       {/* Empty State */}
       {!selectedEntity && searchResults.length === 0 && (
         <div className="bg-tre-navy/50 border border-tre-teal/20 rounded-lg p-12 text-center">
-          <Search className="w-12 h-12 text-tre-teal/30 mx-auto mb-4" />
+          <Database className="w-12 h-12 text-tre-teal/30 mx-auto mb-4" />
           <h3 className="text-lg font-oswald text-gray-400 mb-2">
-            Search the Mineral Rights Database
+            Search the Bronze Database
           </h3>
           <p className="text-sm text-gray-500 max-w-md mx-auto">
             As you process documents through Extract, Title, Proration, and Revenue,
-            entities are automatically resolved and linked. Search by name to explore
-            ownership records and inheritance chains.
+            entities are automatically resolved and linked into this Bronze layer.
+            Search by name to explore ownership records and inheritance chains.
           </p>
         </div>
       )}

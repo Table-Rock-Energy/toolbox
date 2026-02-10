@@ -5,6 +5,7 @@ Consolidated backend for:
 - Title: Title document processing (Excel/CSV)
 - Proration: Mineral holders + RRC queries
 - Revenue: Revenue PDF extraction
+- Bronze DB: Mineral rights entity registry (ETL pipeline)
 """
 
 from __future__ import annotations
