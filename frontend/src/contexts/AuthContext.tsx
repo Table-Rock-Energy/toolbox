@@ -7,6 +7,7 @@ import {
   onAuthStateChanged
 } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
+import api from '../utils/api';
 
 interface AuthContextType {
   user: User | null;
@@ -59,6 +60,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuthError(null);
 
       if (user?.email) {
+        // Set auth token on ApiClient for all api.* calls
+        try {
+          const token = await user.getIdToken();
+          api.setAuthToken(token);
+        } catch {
+          // Token may not be available yet, will retry on next call
+        }
+
         const authData = await checkAuthorization(user.email);
         const authorized = typeof authData === 'object' ? authData.allowed : authData;
         setIsAuthorized(authorized);
@@ -82,6 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUserRole(null);
         setUserScope(null);
         setUserTools([]);
+        api.clearAuthToken();
       }
 
       setLoading(false);

@@ -49,7 +49,14 @@ interface GoogleMapsSettings {
 }
 
 export default function AdminSettings() {
-  useAuth()
+  const { getIdToken } = useAuth()
+
+  const authHeaders = async (): Promise<Record<string, string>> => {
+    const token = await getIdToken()
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    return headers
+  }
 
   // Users state
   const [users, setUsers] = useState<UserEntry[]>([])
@@ -179,7 +186,7 @@ export default function AdminSettings() {
 
       const res = await fetch(`${API_BASE}/admin/settings/google-maps`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify(body),
       })
 
@@ -285,7 +292,7 @@ export default function AdminSettings() {
         // Update existing user
         const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(editingUser.email)}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: await authHeaders(),
           body: JSON.stringify({
             name: formName || null,
             role: formRole,
@@ -310,7 +317,7 @@ export default function AdminSettings() {
 
         const res = await fetch(`${API_BASE}/admin/users`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: await authHeaders(),
           body: JSON.stringify({
             email: formEmail,
             name: formName || null,
@@ -344,6 +351,7 @@ export default function AdminSettings() {
     try {
       const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(email)}`, {
         method: 'DELETE',
+        headers: await authHeaders(),
       })
 
       if (!res.ok) {
@@ -377,7 +385,7 @@ export default function AdminSettings() {
 
       const res = await fetch(`${API_BASE}/admin/settings/gemini`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify(body),
       })
 
