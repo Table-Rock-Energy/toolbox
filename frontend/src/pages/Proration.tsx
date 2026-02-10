@@ -279,7 +279,7 @@ export default function Proration() {
       } else {
         setError(data.message || 'Failed to download RRC data')
       }
-    } catch (err) {
+    } catch {
       setError('Failed to download RRC data. Please try again.')
     } finally {
       setIsDownloadingRRC(false)
@@ -380,7 +380,7 @@ export default function Proration() {
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
-    } catch (err) {
+    } catch {
       setError('Failed to export file')
     }
   }

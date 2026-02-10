@@ -1,0 +1,20 @@
+#!/bin/sh
+#
+# Pre-push hook: runs the same checks CI would catch.
+# Configured via: make setup-hooks (or automatically on make install)
+#
+
+echo "Running preflight checks before push..."
+echo ""
+
+make preflight
+status=$?
+
+if [ $status -ne 0 ]; then
+    echo ""
+    echo "Preflight checks failed — push aborted."
+    echo "Fix the errors above, then try again."
+    exit 1
+fi
+
+exit 0

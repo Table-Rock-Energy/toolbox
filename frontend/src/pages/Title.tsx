@@ -507,7 +507,7 @@ export default function Title() {
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
-    } catch (err) {
+    } catch {
       setError('Failed to export file')
     }
   }

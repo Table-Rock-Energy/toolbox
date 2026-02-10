@@ -1,4 +1,4 @@
-.PHONY: help install dev build test clean docker-build docker-up docker-down deploy
+.PHONY: help install dev build test clean docker-build docker-up docker-down deploy preflight setup-hooks
 
 # Default target
 help:
@@ -28,11 +28,15 @@ help:
 	@echo "  make build          Build for production"
 	@echo "  make deploy         Deploy to Cloud Run"
 	@echo ""
+	@echo "Quality:"
+	@echo "  make preflight      Run pre-push checks (TS build, Python syntax, linting)"
+	@echo "  make setup-hooks    Configure git pre-push hook"
+	@echo ""
 	@echo "Utilities:"
 	@echo "  make clean          Remove build artifacts and caches"
 
 # Installation
-install: install-frontend install-backend
+install: install-frontend install-backend setup-hooks
 
 install-frontend:
 	cd frontend && npm install
@@ -100,3 +104,24 @@ clean:
 	rm -rf backend/.pytest_cache
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
+
+# Pre-push checks (mirrors CI build)
+preflight:
+	@echo "=== TypeScript build check ==="
+	cd frontend && npx tsc -b
+	@echo ""
+	@echo "=== Python syntax check ==="
+	cd backend && python3 -m py_compile app/main.py && find app -name '*.py' -exec python3 -m py_compile {} +
+	@echo ""
+	@echo "=== ESLint (best-effort) ==="
+	@cd frontend && npx eslint . 2>/dev/null || echo "(ESLint issues found — review above, not blocking push)"
+	@echo ""
+	@echo "=== Ruff (best-effort) ==="
+	@cd backend && ruff check app/ 2>/dev/null || echo "(ruff issues or not installed — skipped)"
+	@echo ""
+	@echo "All preflight checks passed."
+
+# Git hooks setup
+setup-hooks:
+	@git config core.hooksPath .githooks
+	@echo "Git hooks configured (.githooks/)"
