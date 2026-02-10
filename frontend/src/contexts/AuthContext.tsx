@@ -12,6 +12,10 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   isAuthorized: boolean;
+  isAdmin: boolean;
+  userRole: string | null;
+  userScope: string | null;
+  userTools: string[];
   authError: string | null;
   signInWithGoogle: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
@@ -27,15 +31,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [userScope, setUserScope] = useState<string | null>(null);
+  const [userTools, setUserTools] = useState<string[]>([]);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Check if user is in allowlist
+  // Check if user is in allowlist and get role info
   const checkAuthorization = async (email: string) => {
     try {
       const response = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(email)}/check`);
       if (response.ok) {
         const data = await response.json();
-        return data.allowed;
+        return data;
       }
       return false;
     } catch (error) {
@@ -51,13 +59,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuthError(null);
 
       if (user?.email) {
-        const authorized = await checkAuthorization(user.email);
+        const authData = await checkAuthorization(user.email);
+        const authorized = typeof authData === 'object' ? authData.allowed : authData;
         setIsAuthorized(authorized);
+        if (authorized && typeof authData === 'object') {
+          setIsAdmin(authData.is_admin || false);
+          setUserRole(authData.role || 'user');
+          setUserScope(authData.scope || 'all');
+          setUserTools(authData.tools || []);
+        } else {
+          setIsAdmin(false);
+          setUserRole(null);
+          setUserScope(null);
+          setUserTools([]);
+        }
         if (!authorized) {
           setAuthError('Your account is not authorized to access this application. Please contact an administrator.');
         }
       } else {
         setIsAuthorized(false);
+        setIsAdmin(false);
+        setUserRole(null);
+        setUserScope(null);
+        setUserTools([]);
       }
 
       setLoading(false);
@@ -120,6 +144,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     loading,
     isAuthorized,
+    isAdmin,
+    userRole,
+    userScope,
+    userTools,
     authError,
     signInWithGoogle,
     signInWithEmail,

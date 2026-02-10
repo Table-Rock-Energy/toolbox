@@ -30,11 +30,19 @@ DEFAULT_ALLOWED_USERS = [
 security = HTTPBearer(auto_error=False)
 
 
+AVAILABLE_TOOLS = ["extract", "title", "proration", "revenue"]
+AVAILABLE_ROLES = ["admin", "user", "viewer"]
+AVAILABLE_SCOPES = ["all", "land", "revenue", "operations"]
+
+
 class AllowedUser(BaseModel):
     """Allowed user entry."""
     email: str
     name: Optional[str] = None
     added_by: Optional[str] = None
+    role: str = "user"
+    scope: str = "all"
+    tools: list[str] = AVAILABLE_TOOLS.copy()
 
 
 def load_allowlist() -> list[str]:
@@ -72,7 +80,14 @@ def get_full_allowlist() -> list[dict]:
     return [{"email": e} for e in DEFAULT_ALLOWED_USERS]
 
 
-def add_allowed_user(email: str, name: Optional[str] = None, added_by: Optional[str] = None) -> bool:
+def add_allowed_user(
+    email: str,
+    name: Optional[str] = None,
+    added_by: Optional[str] = None,
+    role: str = "user",
+    scope: str = "all",
+    tools: Optional[list[str]] = None,
+) -> bool:
     """Add a user to the allowlist."""
     users = get_full_allowlist()
     emails = [u.get("email", "").lower() for u in users]
@@ -84,9 +99,58 @@ def add_allowed_user(email: str, name: Optional[str] = None, added_by: Optional[
         "email": email.lower(),
         "name": name,
         "added_by": added_by,
+        "role": role,
+        "scope": scope,
+        "tools": tools if tools is not None else AVAILABLE_TOOLS.copy(),
     })
     save_allowlist(users)
     return True
+
+
+def update_allowed_user(
+    email: str,
+    name: Optional[str] = None,
+    role: Optional[str] = None,
+    scope: Optional[str] = None,
+    tools: Optional[list[str]] = None,
+) -> bool:
+    """Update a user in the allowlist."""
+    users = get_full_allowlist()
+    found = False
+
+    for u in users:
+        if u.get("email", "").lower() == email.lower():
+            if name is not None:
+                u["name"] = name
+            if role is not None:
+                u["role"] = role
+            if scope is not None:
+                u["scope"] = scope
+            if tools is not None:
+                u["tools"] = tools
+            found = True
+            break
+
+    if found:
+        save_allowlist(users)
+    return found
+
+
+def get_user_by_email(email: str) -> Optional[dict]:
+    """Get a single user from the allowlist by email."""
+    users = get_full_allowlist()
+    for u in users:
+        if u.get("email", "").lower() == email.lower():
+            return u
+    return None
+
+
+def is_user_admin(email: str) -> bool:
+    """Check if a user has admin role."""
+    user = get_user_by_email(email)
+    if user is None:
+        return email.lower() == "james@tablerocktx.com"
+    return user.get("role", "user") == "admin"
 
 
 def remove_allowed_user(email: str) -> bool:

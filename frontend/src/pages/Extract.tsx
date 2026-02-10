@@ -1,9 +1,11 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, Sparkles, X } from 'lucide-react'
+import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Wand2 } from 'lucide-react'
 import { FileUpload, Modal, AiReviewPanel } from '../components'
+import EnrichmentProgress, { DEFAULT_STEPS, type EnrichmentStep, type EnrichmentSummary } from '../components/EnrichmentProgress'
 import { aiApi } from '../utils/api'
 import type { AiSuggestion } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
+import { useToolLayout } from '../hooks/useToolLayout'
 
 interface PartyEntry {
   entry_number: string
@@ -19,6 +21,8 @@ interface PartyEntry {
   state?: string
   zip_code?: string
   notes?: string
+  property_type?: string
+  property_value?: number
   flagged: boolean
   flag_reason?: string
 }
@@ -68,6 +72,8 @@ const COLUMNS: ColumnConfig[] = [
   { key: 'state', label: 'State' },
   { key: 'zip_code', label: 'ZIP' },
   { key: 'notes', label: 'Notes' },
+  { key: 'property_type', label: 'Prop Type' },
+  { key: 'property_value', label: 'Prop Value' },
   { key: 'status', label: 'Status' },
   { key: 'edit', label: '', alwaysVisible: true },
 ]
@@ -83,7 +89,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Extract() {
   const { user } = useAuth()
-  const storageKey = `${STORAGE_KEY_PREFIX}-${user?.uid || 'anon'}`
+  const { panelCollapsed, togglePanel, activeStorageKey } = useToolLayout('extract', user?.uid, STORAGE_KEY_PREFIX)
   const [jobs, setJobs] = useState<ExtractJob[]>([])
   const [activeJob, setActiveJob] = useState<ExtractJob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -94,6 +100,9 @@ export default function Extract() {
   const [showIndividualsOnly, setShowIndividualsOnly] = useState(false)
   const [hideFlagged, setHideFlagged] = useState(false)
   const [hideUnknownAddresses, setHideUnknownAddresses] = useState(true)
+  const [filterPropertyType, setFilterPropertyType] = useState<string>('')
+  const [filterMinValue, setFilterMinValue] = useState<string>('')
+  const [filterMaxValue, setFilterMaxValue] = useState<string>('')
 
   // Row selection state (set of excluded entry numbers)
   const [excludedEntries, setExcludedEntries] = useState<Set<string>>(new Set())
@@ -102,13 +111,20 @@ export default function Extract() {
   const [showAiReview, setShowAiReview] = useState(false)
   const [aiEnabled, setAiEnabled] = useState(false)
 
+  // Enrichment state
+  const [isEnriching, setIsEnriching] = useState(false)
+  const [showEnrichment, setShowEnrichment] = useState(false)
+  const [enrichSteps, setEnrichSteps] = useState<EnrichmentStep[]>([])
+  const [enrichSummary, setEnrichSummary] = useState<EnrichmentSummary | null>(null)
+  const [enrichComplete, setEnrichComplete] = useState(false)
+
   // Edit modal state
   const [editingEntry, setEditingEntry] = useState<PartyEntry | null>(null)
 
-  // Column visibility (persisted in localStorage per user)
+  // Column visibility (persisted in localStorage per user, separate keys for narrow/wide)
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
     try {
-      const saved = localStorage.getItem(storageKey)
+      const saved = localStorage.getItem(activeStorageKey)
       if (saved) return new Set(JSON.parse(saved))
     } catch { /* use defaults */ }
     return new Set(DEFAULT_EXTRACT_VISIBLE)
@@ -116,10 +132,24 @@ export default function Extract() {
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const columnPickerRef = useRef<HTMLDivElement>(null)
 
+  // Reload column visibility when panel collapse state changes (switching between narrow/wide keys)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(activeStorageKey)
+      if (saved) {
+        setVisibleColumns(new Set(JSON.parse(saved)))
+      } else {
+        setVisibleColumns(new Set(DEFAULT_EXTRACT_VISIBLE))
+      }
+    } catch {
+      setVisibleColumns(new Set(DEFAULT_EXTRACT_VISIBLE))
+    }
+  }, [activeStorageKey])
+
   // Persist column visibility to localStorage
   useEffect(() => {
-    localStorage.setItem(storageKey, JSON.stringify([...visibleColumns]))
-  }, [visibleColumns, storageKey])
+    localStorage.setItem(activeStorageKey, JSON.stringify([...visibleColumns]))
+  }, [visibleColumns, activeStorageKey])
 
   // Close column picker on outside click
   useEffect(() => {
@@ -184,6 +214,83 @@ export default function Extract() {
       },
     })
     setShowAiReview(false)
+  }
+
+  const handleEnrich = async () => {
+    if (!activeJob?.result?.entries || activeJob.result.entries.length === 0) return
+
+    setIsEnriching(true)
+    setShowEnrichment(true)
+    setEnrichComplete(false)
+    setEnrichSummary(null)
+    setEnrichSteps(DEFAULT_STEPS.map(s => ({ ...s, status: 'pending' as const })))
+
+    try {
+      const response = await fetch(`${API_BASE}/extract/enrich`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries: activeJob.result.entries }),
+      })
+
+      if (!response.ok) throw new Error('Enrichment failed')
+
+      const reader = response.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      const summary: EnrichmentSummary = { originalCount: activeJob.result.entries.length, finalCount: activeJob.result.entries.length }
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop()!
+
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const event = JSON.parse(line)
+
+            if (event.step === 'addresses' || event.step === 'property' || event.step === 'names' || event.step === 'splitting') {
+              setEnrichSteps(prev => prev.map(s => {
+                if (s.id !== event.step) return s
+                if (event.status === 'started') return { ...s, status: 'active', total: event.total, progress: 0, message: event.message }
+                if (event.status === 'progress') return { ...s, progress: event.progress, total: event.total, message: event.message }
+                if (event.status === 'completed') {
+                  if (event.step === 'addresses') summary.addressesCorrected = event.corrected || 0
+                  if (event.step === 'property') summary.propertiesFound = event.values_found || 0
+                  if (event.step === 'names') summary.namesCorrected = event.applied || 0
+                  if (event.step === 'splitting') summary.entriesSplit = event.split_count || 0
+                  return { ...s, status: 'completed', detail: event.message }
+                }
+                if (event.status === 'skipped') return { ...s, status: 'skipped', detail: event.message }
+                if (event.status === 'error') return { ...s, status: 'error', detail: event.message }
+                return s
+              }))
+            }
+
+            if (event.step === 'complete' && event.entries) {
+              summary.finalCount = event.entries.length
+              setEnrichSummary(summary)
+              setActiveJob({
+                ...activeJob,
+                result: {
+                  ...activeJob.result,
+                  entries: event.entries as PartyEntry[],
+                  total_count: event.entries.length,
+                },
+              })
+              setEnrichComplete(true)
+            }
+          } catch { /* skip malformed lines */ }
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Enrichment failed')
+      setShowEnrichment(false)
+    } finally {
+      setIsEnriching(false)
+    }
   }
 
   const handleFilesSelected = async (files: File[]) => {
@@ -316,13 +423,19 @@ export default function Extract() {
   const filteredEntries = useMemo(() => {
     if (!activeJob?.result?.entries) return []
 
+    const minVal = filterMinValue ? parseFloat(filterMinValue) : null
+    const maxVal = filterMaxValue ? parseFloat(filterMaxValue) : null
+
     return activeJob.result.entries.filter((entry) => {
       if (showIndividualsOnly && entry.entity_type !== 'Individual') return false
       if (hideFlagged && entry.flagged) return false
       if (hideUnknownAddresses && entry.entry_number.startsWith('U')) return false
+      if (filterPropertyType && entry.property_type !== filterPropertyType) return false
+      if (minVal !== null && (!entry.property_value || entry.property_value < minVal)) return false
+      if (maxVal !== null && (!entry.property_value || entry.property_value > maxVal)) return false
       return true
     })
-  }, [activeJob?.result?.entries, showIndividualsOnly, hideFlagged, hideUnknownAddresses])
+  }, [activeJob?.result?.entries, showIndividualsOnly, hideFlagged, hideUnknownAddresses, filterPropertyType, filterMinValue, filterMaxValue])
 
   // Get entries to export (filtered + not excluded)
   const entriesToExport = useMemo(() => {
@@ -358,6 +471,9 @@ export default function Extract() {
     setShowIndividualsOnly(false)
     setHideFlagged(false)
     setHideUnknownAddresses(true)
+    setFilterPropertyType('')
+    setFilterMinValue('')
+    setFilterMaxValue('')
     setExcludedEntries(new Set())
   }
 
@@ -398,7 +514,7 @@ export default function Extract() {
         <div className="p-2 bg-blue-100 rounded-lg">
           <FileSearch className="w-6 h-6 text-blue-600" />
         </div>
-        <div>
+        <div className="flex-1">
           <h1 className="text-2xl font-oswald font-semibold text-tre-navy">
             Extract
           </h1>
@@ -406,10 +522,37 @@ export default function Extract() {
             Extract party and stakeholder data from OCC Exhibit A PDFs
           </p>
         </div>
+        <button
+          onClick={togglePanel}
+          className="hidden lg:flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-tre-navy border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          title={panelCollapsed ? 'Show side panel' : 'Hide side panel'}
+        >
+          {panelCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+          {panelCollapsed ? 'Show Panel' : 'Hide Panel'}
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Upload Section - compact row when panel collapsed */}
+      {panelCollapsed && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <FileUpload
+            onFilesSelected={handleFilesSelected}
+            accept=".pdf"
+            label="Upload OCC Exhibit A"
+            description="Drop your PDF file here"
+          />
+          {isProcessing && (
+            <div className="mt-4 flex items-center gap-2 text-tre-teal">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
+              <span className="text-sm">Processing...</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className={`grid grid-cols-1 ${panelCollapsed ? '' : 'lg:grid-cols-3'} gap-6`}>
         {/* Left Column - Upload and History */}
+        {!panelCollapsed && (
         <div className="space-y-6">
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <FileUpload
@@ -475,9 +618,10 @@ export default function Extract() {
             )}
           </div>
         </div>
+        )}
 
-        {/* Right Column - Results */}
-        <div className="lg:col-span-2">
+        {/* Results */}
+        <div className={panelCollapsed ? '' : 'lg:col-span-2'}>
           {error && (
             <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700">
               <AlertCircle className="w-5 h-5" />
@@ -505,6 +649,14 @@ export default function Extract() {
                     </p>
                   </div>
                   <div className="flex gap-2">
+                    <button
+                      onClick={handleEnrich}
+                      disabled={isEnriching}
+                      className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-tre-teal to-tre-teal/80 text-white rounded-lg hover:from-tre-teal/90 hover:to-tre-teal/70 transition-colors text-sm disabled:opacity-50"
+                    >
+                      <Wand2 className="w-4 h-4" />
+                      {isEnriching ? 'Enriching...' : 'Enrich Data'}
+                    </button>
                     {aiEnabled && (
                       <button
                         onClick={() => setShowAiReview(!showAiReview)}
@@ -563,6 +715,38 @@ export default function Extract() {
                     />
                     <span>Hide Unknown Addresses</span>
                   </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Type:</span>
+                    <select
+                      value={filterPropertyType}
+                      onChange={(e) => setFilterPropertyType(e.target.value)}
+                      className="text-sm border border-gray-300 rounded px-2 py-1 focus:ring-tre-teal focus:border-tre-teal"
+                    >
+                      <option value="">All Types</option>
+                      <option value="residential">Residential</option>
+                      <option value="commercial">Commercial</option>
+                      <option value="land">Land</option>
+                      <option value="unknown">Unknown</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Value:</span>
+                    <input
+                      type="number"
+                      placeholder="Min"
+                      value={filterMinValue}
+                      onChange={(e) => setFilterMinValue(e.target.value)}
+                      className="w-24 text-sm border border-gray-300 rounded px-2 py-1 focus:ring-tre-teal focus:border-tre-teal"
+                    />
+                    <span className="text-gray-400">-</span>
+                    <input
+                      type="number"
+                      placeholder="Max"
+                      value={filterMaxValue}
+                      onChange={(e) => setFilterMaxValue(e.target.value)}
+                      className="w-24 text-sm border border-gray-300 rounded px-2 py-1 focus:ring-tre-teal focus:border-tre-teal"
+                    />
+                  </div>
                   <button
                     onClick={resetFilters}
                     className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
@@ -659,6 +843,8 @@ export default function Extract() {
                         {isColVisible('state') && <th className="text-left py-2 px-3 font-medium text-gray-600">State</th>}
                         {isColVisible('zip_code') && <th className="text-left py-2 px-3 font-medium text-gray-600">ZIP</th>}
                         {isColVisible('notes') && <th className="text-left py-2 px-3 font-medium text-gray-600">Notes</th>}
+                        {isColVisible('property_type') && <th className="text-left py-2 px-3 font-medium text-gray-600">Prop Type</th>}
+                        {isColVisible('property_value') && <th className="text-left py-2 px-3 font-medium text-gray-600">Prop Value</th>}
                         {isColVisible('status') && <th className="text-left py-2 px-3 font-medium text-gray-600">Status</th>}
                         <th className="text-left py-2 px-3 font-medium text-gray-600 w-10"></th>
                       </tr>
@@ -739,6 +925,27 @@ export default function Extract() {
                                 {entry.notes || <span className="text-gray-400">{'\u2014'}</span>}
                               </td>
                             )}
+                            {isColVisible('property_type') && (
+                              <td className="py-2 px-3 text-xs">
+                                {entry.property_type ? (
+                                  <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${
+                                    entry.property_type === 'residential' ? 'text-blue-700 bg-blue-100' :
+                                    entry.property_type === 'commercial' ? 'text-orange-700 bg-orange-100' :
+                                    entry.property_type === 'land' ? 'text-green-700 bg-green-100' :
+                                    'text-gray-600 bg-gray-100'
+                                  }`}>
+                                    {entry.property_type}
+                                  </span>
+                                ) : <span className="text-gray-400">{'\u2014'}</span>}
+                              </td>
+                            )}
+                            {isColVisible('property_value') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">
+                                {entry.property_value ? (
+                                  `$${entry.property_value.toLocaleString()}`
+                                ) : <span className="text-gray-400">{'\u2014'}</span>}
+                              </td>
+                            )}
                             {isColVisible('status') && (
                               <td className="py-2 px-3">
                                 {entry.flagged ? (
@@ -793,6 +1000,67 @@ export default function Extract() {
           )}
         </div>
       </div>
+
+      {/* Recent Jobs - shown at bottom when panel collapsed */}
+      {panelCollapsed && (
+        <div className="bg-white rounded-xl border border-gray-200">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <h3 className="font-medium text-gray-900">Recent Jobs</h3>
+          </div>
+          {jobs.length === 0 ? (
+            <div className="p-6 text-center text-gray-500">
+              <Upload className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+              <p className="text-sm">No jobs yet</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100 max-h-60 overflow-y-auto">
+              {jobs.map((job) => (
+                <button
+                  key={job.id}
+                  onClick={() => handleSelectJob(job)}
+                  className={`group w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${
+                    activeJob?.id === job.id ? 'bg-tre-teal/5 border-l-2 border-tre-teal' : ''
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {job.documentName}
+                      </p>
+                      <p className="text-xs text-gray-500">{job.user}</p>
+                      <p className="text-xs text-gray-400">{job.timestamp}</p>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {job.result?.success ? (
+                        <CheckCircle className="w-4 h-4 text-green-500" />
+                      ) : job.result?.error_message ? (
+                        <AlertCircle className="w-4 h-4 text-red-500" />
+                      ) : null}
+                      <span
+                        role="button"
+                        onClick={(e) => handleDeleteJob(e, job)}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 text-gray-400 hover:text-red-500 transition-all"
+                        title="Delete job"
+                      >
+                        <X className="w-4 h-4" />
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Enrichment Progress Modal */}
+      <EnrichmentProgress
+        isOpen={showEnrichment}
+        onClose={() => setShowEnrichment(false)}
+        steps={enrichSteps}
+        summary={enrichSummary}
+        isComplete={enrichComplete}
+      />
 
       {/* Edit Modal */}
       <Modal

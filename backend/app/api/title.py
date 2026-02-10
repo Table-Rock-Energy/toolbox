@@ -7,6 +7,8 @@ import re
 from typing import Annotated
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from app.core.ingestion import file_response, persist_job_result, validate_upload
 from app.models.title import (
@@ -157,6 +159,28 @@ async def export_excel(request: ExportRequest):
     except Exception as e:
         logger.exception("Error generating Excel: %s", e)
         raise HTTPException(status_code=500, detail=f"Error generating Excel: {e!s}") from e
+
+
+class EnrichRequest(BaseModel):
+    """Request to enrich title entries."""
+    entries: list[dict]
+
+
+@router.post("/enrich")
+async def enrich_entries(request: EnrichRequest):
+    """Enrich title entries with address validation, name cleaning, and splitting.
+
+    Returns a streaming response with newline-delimited JSON progress events.
+    """
+    if not request.entries:
+        raise HTTPException(status_code=400, detail="No entries provided")
+
+    from app.services.enrichment_service import enrich_entries as run_enrichment
+
+    return StreamingResponse(
+        run_enrichment("title", request.entries),
+        media_type="application/x-ndjson",
+    )
 
 
 @router.post("/validate")
