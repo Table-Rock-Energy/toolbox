@@ -104,6 +104,18 @@ class GeminiSettingsResponse(BaseModel):
     monthly_budget: float
 
 
+class GoogleMapsSettingsRequest(BaseModel):
+    """Request to update Google Maps API settings."""
+    api_key: Optional[str] = None
+    enabled: bool = False
+
+
+class GoogleMapsSettingsResponse(BaseModel):
+    """Response with Google Maps settings (key masked)."""
+    has_key: bool
+    enabled: bool
+
+
 class OptionsResponse(BaseModel):
     """Available options for user management."""
     roles: list[str]
@@ -264,6 +276,45 @@ async def update_gemini_settings(request: GeminiSettingsRequest):
         enabled=request.enabled,
         model=request.model,
         monthly_budget=request.monthly_budget,
+    )
+
+
+@router.get("/settings/google-maps", response_model=GoogleMapsSettingsResponse)
+async def get_google_maps_settings():
+    """Get current Google Maps API settings (key masked)."""
+    app_settings = load_app_settings()
+    gmaps = app_settings.get("google_maps", {})
+
+    return GoogleMapsSettingsResponse(
+        has_key=bool(gmaps.get("api_key")),
+        enabled=gmaps.get("enabled", False),
+    )
+
+
+@router.put("/settings/google-maps", response_model=GoogleMapsSettingsResponse)
+async def update_google_maps_settings(request: GoogleMapsSettingsRequest):
+    """Update Google Maps API settings."""
+    app_settings = load_app_settings()
+
+    gmaps = app_settings.get("google_maps", {})
+    if request.api_key is not None:
+        gmaps["api_key"] = request.api_key
+    gmaps["enabled"] = request.enabled
+    app_settings["google_maps"] = gmaps
+
+    save_app_settings(app_settings)
+
+    # Update runtime config
+    from app.core.config import settings as runtime_settings
+    if request.api_key is not None:
+        runtime_settings.google_maps_api_key = request.api_key
+    runtime_settings.google_maps_enabled = request.enabled
+
+    logger.info("Google Maps API settings updated")
+
+    return GoogleMapsSettingsResponse(
+        has_key=bool(gmaps.get("api_key")),
+        enabled=request.enabled,
     )
 
 

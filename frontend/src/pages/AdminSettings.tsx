@@ -11,6 +11,7 @@ import {
   X,
   Bot,
   Save,
+  MapPin,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -36,6 +37,11 @@ interface GeminiSettings {
   enabled: boolean
   model: string
   monthly_budget: number
+}
+
+interface GoogleMapsSettings {
+  has_key: boolean
+  enabled: boolean
 }
 
 export default function AdminSettings() {
@@ -68,6 +74,14 @@ export default function AdminSettings() {
   const [geminiSuccess, setGeminiSuccess] = useState('')
   const [geminiError, setGeminiError] = useState('')
 
+  // Google Maps state
+  const [googleMaps, setGoogleMaps] = useState<GoogleMapsSettings>({ has_key: false, enabled: false })
+  const [googleMapsApiKey, setGoogleMapsApiKey] = useState('')
+  const [googleMapsEnabled, setGoogleMapsEnabled] = useState(false)
+  const [isSavingGoogleMaps, setIsSavingGoogleMaps] = useState(false)
+  const [googleMapsSuccess, setGoogleMapsSuccess] = useState('')
+  const [googleMapsError, setGoogleMapsError] = useState('')
+
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
 
@@ -75,6 +89,7 @@ export default function AdminSettings() {
     fetchUsers()
     fetchOptions()
     fetchGeminiSettings()
+    fetchGoogleMapsSettings()
   }, [])
 
   const fetchUsers = async () => {
@@ -115,6 +130,51 @@ export default function AdminSettings() {
       }
     } catch (err) {
       console.error('Error fetching Gemini settings:', err)
+    }
+  }
+
+  const fetchGoogleMapsSettings = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/settings/google-maps`)
+      if (res.ok) {
+        const data = await res.json()
+        setGoogleMaps(data)
+        setGoogleMapsEnabled(data.enabled)
+      }
+    } catch (err) {
+      console.error('Error fetching Google Maps settings:', err)
+    }
+  }
+
+  const handleSaveGoogleMaps = async () => {
+    setIsSavingGoogleMaps(true)
+    setGoogleMapsError('')
+    setGoogleMapsSuccess('')
+
+    try {
+      const body: Record<string, unknown> = {
+        enabled: googleMapsEnabled,
+      }
+      if (googleMapsApiKey) {
+        body.api_key = googleMapsApiKey
+      }
+
+      const res = await fetch(`${API_BASE}/admin/settings/google-maps`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      if (!res.ok) throw new Error('Failed to update Google Maps settings')
+
+      const data = await res.json()
+      setGoogleMaps(data)
+      setGoogleMapsApiKey('')
+      setGoogleMapsSuccess('Google Maps API settings saved successfully')
+    } catch (err) {
+      setGoogleMapsError(err instanceof Error ? err.message : 'An error occurred')
+    } finally {
+      setIsSavingGoogleMaps(false)
     }
   }
 
@@ -531,6 +591,93 @@ export default function AdminSettings() {
             >
               <Save className="w-4 h-4" />
               {isSavingGemini ? 'Saving...' : 'Save AI Settings'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Google Maps API Configuration */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <MapPin className="w-5 h-5 text-tre-navy" />
+          <h2 className="text-lg font-oswald font-semibold text-tre-navy">
+            Google Maps API Configuration
+          </h2>
+        </div>
+
+        <div className="space-y-4">
+          {/* Status indicator */}
+          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+            <div className={`w-3 h-3 rounded-full ${googleMaps.has_key && googleMaps.enabled ? 'bg-green-500' : 'bg-gray-400'}`} />
+            <span className="text-sm text-gray-700">
+              {googleMaps.has_key && googleMaps.enabled
+                ? 'Google Maps address validation is active'
+                : googleMaps.has_key
+                  ? 'API key configured but validation is disabled'
+                  : 'No API key configured'}
+            </span>
+          </div>
+
+          {/* API Key input */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              <Key className="w-4 h-4 inline mr-1" />
+              Google Maps API Key
+            </label>
+            <input
+              type="password"
+              value={googleMapsApiKey}
+              onChange={(e) => setGoogleMapsApiKey(e.target.value)}
+              placeholder={googleMaps.has_key ? 'Key is set (enter new key to replace)' : 'Enter your Google Maps API key'}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Requires Geocoding API enabled in Google Cloud Console
+            </p>
+          </div>
+
+          {/* Enable/Disable toggle */}
+          <div className="flex items-center justify-between py-2">
+            <div>
+              <p className="font-medium text-gray-900">Enable Address Validation</p>
+              <p className="text-sm text-gray-500">Validate and correct addresses using Google Maps during data enrichment</p>
+            </div>
+            <button
+              onClick={() => setGoogleMapsEnabled(!googleMapsEnabled)}
+              className={`relative w-12 h-6 rounded-full transition-colors ${
+                googleMapsEnabled ? 'bg-tre-teal' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                  googleMapsEnabled ? 'left-7' : 'left-1'
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Google Maps alerts */}
+          {googleMapsError && (
+            <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
+              <AlertCircle className="w-4 h-4" />
+              {googleMapsError}
+            </div>
+          )}
+          {googleMapsSuccess && (
+            <div className="flex items-center gap-2 text-green-600 text-sm p-3 bg-green-50 rounded-lg">
+              <Check className="w-4 h-4" />
+              {googleMapsSuccess}
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2">
+            <button
+              onClick={handleSaveGoogleMaps}
+              disabled={isSavingGoogleMaps}
+              className="flex items-center gap-2 px-6 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors disabled:opacity-50"
+            >
+              <Save className="w-4 h-4" />
+              {isSavingGoogleMaps ? 'Saving...' : 'Save Maps Settings'}
             </button>
           </div>
         </div>

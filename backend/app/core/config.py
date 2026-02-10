@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-2.5-flash"
     gemini_monthly_budget: float = 15.00  # Maximum monthly spend in USD
 
+    # Google Maps API settings (address validation)
+    google_maps_api_key: Optional[str] = None
+    google_maps_enabled: bool = False
+
     @property
     def use_gcs(self) -> bool:
         """Check if GCS should be used for storage."""
@@ -65,6 +69,11 @@ class Settings(BaseSettings):
     def use_gemini(self) -> bool:
         """Check if Gemini AI validation should be used."""
         return self.gemini_enabled and bool(self.gemini_api_key)
+
+    @property
+    def use_google_maps(self) -> bool:
+        """Check if Google Maps address validation should be used."""
+        return self.google_maps_enabled and bool(self.google_maps_api_key)
 
 
 settings = Settings()

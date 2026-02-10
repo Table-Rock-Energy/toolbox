@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Filter, RotateCcw, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Filter, RotateCcw, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Wand2 } from 'lucide-react'
 import { FileUpload, Modal, AiReviewPanel } from '../components'
+import EnrichmentProgress, { DEFAULT_STEPS, type EnrichmentStep, type EnrichmentSummary } from '../components/EnrichmentProgress'
 import { aiApi } from '../utils/api'
 import type { AiSuggestion } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
@@ -19,6 +20,8 @@ interface OwnerEntry {
   zip_code?: string
   legal_description: string
   notes?: string
+  property_type?: string
+  property_value?: number
   duplicate_flag: boolean
   has_address: boolean
 }
@@ -69,6 +72,8 @@ const COLUMNS: ColumnConfig[] = [
   { key: 'zip_code', label: 'ZIP' },
   { key: 'legal_description', label: 'Legal Desc' },
   { key: 'notes', label: 'Notes' },
+  { key: 'property_type', label: 'Prop Type' },
+  { key: 'property_value', label: 'Prop Value' },
   { key: 'duplicate_flag', label: 'Duplicate' },
   { key: 'has_address', label: 'Has Address' },
   { key: 'status', label: 'Status' },
@@ -117,6 +122,13 @@ export default function Title() {
   // AI Review state
   const [showAiReview, setShowAiReview] = useState(false)
   const [aiEnabled, setAiEnabled] = useState(false)
+
+  // Enrichment state
+  const [isEnriching, setIsEnriching] = useState(false)
+  const [showEnrichment, setShowEnrichment] = useState(false)
+  const [enrichSteps, setEnrichSteps] = useState<EnrichmentStep[]>([])
+  const [enrichSummary, setEnrichSummary] = useState<EnrichmentSummary | null>(null)
+  const [enrichComplete, setEnrichComplete] = useState(false)
 
   // Edit modal state
   const [editingEntry, setEditingEntry] = useState<OwnerEntry | null>(null)
@@ -310,6 +322,83 @@ export default function Title() {
     setActiveJob(updatedJob)
     setJobs(prev => prev.map(j => j.id === activeJob.id ? updatedJob : j))
     setShowAiReview(false)
+  }
+
+  const handleEnrich = async () => {
+    if (!activeJob?.result?.entries || activeJob.result.entries.length === 0) return
+
+    setIsEnriching(true)
+    setShowEnrichment(true)
+    setEnrichComplete(false)
+    setEnrichSummary(null)
+    setEnrichSteps(DEFAULT_STEPS.map(s => ({ ...s, status: 'pending' as const })))
+
+    try {
+      const response = await fetch(`${API_BASE}/title/enrich`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries: activeJob.result.entries }),
+      })
+
+      if (!response.ok) throw new Error('Enrichment failed')
+
+      const reader = response.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      const summary: EnrichmentSummary = { originalCount: activeJob.result.entries.length, finalCount: activeJob.result.entries.length }
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop()!
+
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const event = JSON.parse(line)
+
+            if (event.step === 'addresses' || event.step === 'property' || event.step === 'names' || event.step === 'splitting') {
+              setEnrichSteps(prev => prev.map(s => {
+                if (s.id !== event.step) return s
+                if (event.status === 'started') return { ...s, status: 'active', total: event.total, progress: 0, message: event.message }
+                if (event.status === 'progress') return { ...s, progress: event.progress, total: event.total, message: event.message }
+                if (event.status === 'completed') {
+                  if (event.step === 'addresses') summary.addressesCorrected = event.corrected || 0
+                  if (event.step === 'property') summary.propertiesFound = event.values_found || 0
+                  if (event.step === 'names') summary.namesCorrected = event.applied || 0
+                  if (event.step === 'splitting') summary.entriesSplit = event.split_count || 0
+                  return { ...s, status: 'completed', detail: event.message }
+                }
+                if (event.status === 'skipped') return { ...s, status: 'skipped', detail: event.message }
+                if (event.status === 'error') return { ...s, status: 'error', detail: event.message }
+                return s
+              }))
+            }
+
+            if (event.step === 'complete' && event.entries) {
+              summary.finalCount = event.entries.length
+              setEnrichSummary(summary)
+              setActiveJob({
+                ...activeJob,
+                result: {
+                  ...activeJob.result,
+                  entries: event.entries as OwnerEntry[],
+                  total_count: event.entries.length,
+                },
+              })
+              setEnrichComplete(true)
+            }
+          } catch { /* skip malformed lines */ }
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Enrichment failed')
+      setShowEnrichment(false)
+    } finally {
+      setIsEnriching(false)
+    }
   }
 
   const handleFilesSelected = async (files: File[]) => {
@@ -633,6 +722,14 @@ export default function Title() {
                     </p>
                   </div>
                   <div className="flex gap-2">
+                    <button
+                      onClick={handleEnrich}
+                      disabled={isEnriching}
+                      className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-tre-teal to-tre-teal/80 text-white rounded-lg hover:from-tre-teal/90 hover:to-tre-teal/70 transition-colors text-sm disabled:opacity-50"
+                    >
+                      <Wand2 className="w-4 h-4" />
+                      {isEnriching ? 'Enriching...' : 'Enrich Data'}
+                    </button>
                     {aiEnabled && (
                       <button
                         onClick={() => setShowAiReview(!showAiReview)}
@@ -842,6 +939,12 @@ export default function Title() {
                         {isColumnVisible('notes') && (
                           <th className="text-left py-2 px-3 font-medium text-gray-600">Notes</th>
                         )}
+                        {isColumnVisible('property_type') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Prop Type</th>
+                        )}
+                        {isColumnVisible('property_value') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Prop Value</th>
+                        )}
                         {isColumnVisible('duplicate_flag') && (
                           <th className="text-left py-2 px-3 font-medium text-gray-600">Duplicate</th>
                         )}
@@ -919,6 +1022,27 @@ export default function Title() {
                             )}
                             {isColumnVisible('notes') && (
                               <td className="py-2 px-3 text-gray-600 text-xs max-w-[200px] truncate" title={entry.notes}>{entry.notes || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                            )}
+                            {isColumnVisible('property_type') && (
+                              <td className="py-2 px-3 text-xs">
+                                {entry.property_type ? (
+                                  <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${
+                                    entry.property_type === 'residential' ? 'text-blue-700 bg-blue-100' :
+                                    entry.property_type === 'commercial' ? 'text-orange-700 bg-orange-100' :
+                                    entry.property_type === 'land' ? 'text-green-700 bg-green-100' :
+                                    'text-gray-600 bg-gray-100'
+                                  }`}>
+                                    {entry.property_type}
+                                  </span>
+                                ) : <span className="text-gray-400">{'\u2014'}</span>}
+                              </td>
+                            )}
+                            {isColumnVisible('property_value') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">
+                                {entry.property_value ? (
+                                  `$${entry.property_value.toLocaleString()}`
+                                ) : <span className="text-gray-400">{'\u2014'}</span>}
+                              </td>
                             )}
                             {isColumnVisible('duplicate_flag') && (
                               <td className="py-2 px-3 text-gray-600 text-xs">{entry.duplicate_flag ? 'Yes' : 'No'}</td>
@@ -1035,6 +1159,15 @@ export default function Title() {
           )}
         </div>
       )}
+
+      {/* Enrichment Progress Modal */}
+      <EnrichmentProgress
+        isOpen={showEnrichment}
+        onClose={() => setShowEnrichment(false)}
+        steps={enrichSteps}
+        summary={enrichSummary}
+        isComplete={enrichComplete}
+      />
 
       {/* Edit Entry Modal */}
       <Modal
