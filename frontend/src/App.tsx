@@ -7,6 +7,7 @@ import Title from './pages/Title'
 import Proration from './pages/Proration'
 import Revenue from './pages/Revenue'
 import Settings from './pages/Settings'
+import AdminSettings from './pages/AdminSettings'
 import Login from './pages/Login'
 
 // Protected route wrapper
@@ -23,6 +24,17 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (!user || !isAuthorized) {
     return <Navigate to="/login" replace />
+  }
+
+  return <>{children}</>
+}
+
+// Admin-only route wrapper
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { isAdmin } = useAuth()
+
+  if (!isAdmin) {
+    return <Navigate to="/" replace />
   }
 
   return <>{children}</>
@@ -46,6 +58,7 @@ function AppRoutes() {
         <Route path="proration" element={<Proration />} />
         <Route path="revenue" element={<Revenue />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="admin" element={<AdminRoute><AdminSettings /></AdminRoute>} />
       </Route>
     </Routes>
   )

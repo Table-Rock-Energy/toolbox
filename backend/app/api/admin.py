@@ -1,8 +1,10 @@
-"""Admin API endpoints for user management."""
+"""Admin API endpoints for user management and app settings."""
 
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -10,21 +12,59 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, EmailStr
 
 from app.core.auth import (
+    AVAILABLE_TOOLS,
+    AVAILABLE_ROLES,
+    AVAILABLE_SCOPES,
     get_full_allowlist,
     add_allowed_user,
+    update_allowed_user,
     remove_allowed_user,
     is_user_allowed,
+    is_user_admin,
+    get_user_by_email,
 )
 from app.services.storage_service import profile_storage, storage_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# App settings file
+APP_SETTINGS_FILE = Path(__file__).parent.parent.parent / "data" / "app_settings.json"
+
+
+def load_app_settings() -> dict:
+    """Load app settings from file."""
+    if APP_SETTINGS_FILE.exists():
+        try:
+            with open(APP_SETTINGS_FILE, "r") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading app settings: {e}")
+    return {}
+
+
+def save_app_settings(settings: dict) -> None:
+    """Save app settings to file."""
+    APP_SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(APP_SETTINGS_FILE, "w") as f:
+        json.dump(settings, f, indent=2)
+
 
 class AddUserRequest(BaseModel):
     """Request to add a user to the allowlist."""
     email: EmailStr
     name: Optional[str] = None
+    role: str = "user"
+    scope: str = "all"
+    tools: list[str] = AVAILABLE_TOOLS.copy()
+
+
+class UpdateUserRequest(BaseModel):
+    """Request to update a user in the allowlist."""
+    name: Optional[str] = None
+    role: Optional[str] = None
+    scope: Optional[str] = None
+    tools: Optional[list[str]] = None
 
 
 class RemoveUserRequest(BaseModel):
@@ -37,12 +77,48 @@ class UserResponse(BaseModel):
     email: str
     name: Optional[str] = None
     added_by: Optional[str] = None
+    role: str = "user"
+    scope: str = "all"
+    tools: list[str] = AVAILABLE_TOOLS.copy()
 
 
 class AllowlistResponse(BaseModel):
     """Response containing the full allowlist."""
     users: list[UserResponse]
     count: int
+
+
+class GeminiSettingsRequest(BaseModel):
+    """Request to update Gemini API key settings."""
+    api_key: Optional[str] = None
+    enabled: bool = False
+    model: str = "gemini-2.5-flash"
+    monthly_budget: float = 15.00
+
+
+class GeminiSettingsResponse(BaseModel):
+    """Response with Gemini settings (key masked)."""
+    has_key: bool
+    enabled: bool
+    model: str
+    monthly_budget: float
+
+
+class OptionsResponse(BaseModel):
+    """Available options for user management."""
+    roles: list[str]
+    scopes: list[str]
+    tools: list[str]
+
+
+@router.get("/options", response_model=OptionsResponse)
+async def get_options():
+    """Get available roles, scopes, and tools for user management."""
+    return OptionsResponse(
+        roles=AVAILABLE_ROLES,
+        scopes=AVAILABLE_SCOPES,
+        tools=AVAILABLE_TOOLS,
+    )
 
 
 @router.get("/users", response_model=AllowlistResponse)
@@ -61,7 +137,10 @@ async def add_user(request: AddUserRequest):
     success = add_allowed_user(
         email=request.email,
         name=request.name,
-        added_by="admin"  # In production, get from auth context
+        added_by="admin",
+        role=request.role,
+        scope=request.scope,
+        tools=request.tools,
     )
 
     if not success:
@@ -74,8 +153,33 @@ async def add_user(request: AddUserRequest):
     return UserResponse(
         email=request.email.lower(),
         name=request.name,
-        added_by="admin"
+        added_by="admin",
+        role=request.role,
+        scope=request.scope,
+        tools=request.tools,
     )
+
+
+@router.put("/users/{email}", response_model=UserResponse)
+async def update_user(email: str, request: UpdateUserRequest):
+    """Update a user in the allowlist."""
+    success = update_allowed_user(
+        email=email,
+        name=request.name,
+        role=request.role,
+        scope=request.scope,
+        tools=request.tools,
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail=f"User {email} not found in allowlist"
+        )
+
+    logger.info(f"Updated user in allowlist: {email}")
+    user = get_user_by_email(email)
+    return UserResponse(**user)
 
 
 @router.delete("/users/{email}")
@@ -104,10 +208,63 @@ async def remove_user(email: str):
 async def check_user(email: str):
     """Check if a user is in the allowlist."""
     allowed = is_user_allowed(email)
+    admin = is_user_admin(email) if allowed else False
+    user_data = get_user_by_email(email)
     return {
         "email": email,
-        "allowed": allowed
+        "allowed": allowed,
+        "is_admin": admin,
+        "role": user_data.get("role", "user") if user_data else None,
+        "scope": user_data.get("scope", "all") if user_data else None,
+        "tools": user_data.get("tools", AVAILABLE_TOOLS) if user_data else None,
     }
+
+
+@router.get("/settings/gemini", response_model=GeminiSettingsResponse)
+async def get_gemini_settings():
+    """Get current Gemini AI settings (API key masked)."""
+    app_settings = load_app_settings()
+    gemini = app_settings.get("gemini", {})
+
+    return GeminiSettingsResponse(
+        has_key=bool(gemini.get("api_key")),
+        enabled=gemini.get("enabled", False),
+        model=gemini.get("model", "gemini-2.5-flash"),
+        monthly_budget=gemini.get("monthly_budget", 15.00),
+    )
+
+
+@router.put("/settings/gemini", response_model=GeminiSettingsResponse)
+async def update_gemini_settings(request: GeminiSettingsRequest):
+    """Update Gemini AI settings including API key."""
+    app_settings = load_app_settings()
+
+    gemini = app_settings.get("gemini", {})
+    if request.api_key is not None:
+        gemini["api_key"] = request.api_key
+    gemini["enabled"] = request.enabled
+    gemini["model"] = request.model
+    gemini["monthly_budget"] = request.monthly_budget
+    app_settings["gemini"] = gemini
+
+    save_app_settings(app_settings)
+
+    # Update runtime config
+    from app.core.config import settings as runtime_settings
+    if request.api_key is not None:
+        runtime_settings.gemini_api_key = request.api_key
+    runtime_settings.gemini_enabled = request.enabled
+    runtime_settings.gemini_model = request.model
+    runtime_settings.gemini_monthly_budget = request.monthly_budget
+
+    logger.info("Gemini AI settings updated")
+
+    return GeminiSettingsResponse(
+        has_key=bool(gemini.get("api_key")),
+        enabled=request.enabled,
+        model=request.model,
+        monthly_budget=request.monthly_budget,
+    )
 
 
 @router.post("/upload-profile-image")

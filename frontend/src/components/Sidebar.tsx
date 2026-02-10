@@ -10,6 +10,7 @@ import {
   ChevronRight,
   ChevronLeft,
   User,
+  Shield,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -31,7 +32,7 @@ interface SidebarProps {
 export default function Sidebar({ mobile, onClose }: SidebarProps) {
   const location = useLocation()
   const navigate = useNavigate()
-  const { user, signOut } = useAuth()
+  const { user, signOut, isAdmin } = useAuth()
   const [isUserMenuVisible, setIsUserMenuVisible] = useState(false)
   const [collapsed, setCollapsed] = useState(() => {
     if (mobile) return false
@@ -143,6 +144,30 @@ export default function Sidebar({ mobile, onClose }: SidebarProps) {
           </NavLink>
         ))}
       </nav>
+
+      {/* Admin Section - only visible to admins */}
+      {isAdmin && (
+        <div className={`${isCollapsed ? 'p-2' : 'px-4 pb-2'} border-t border-tre-teal/20 pt-2`}>
+          {!isCollapsed && (
+            <p className="text-tre-tan/60 text-xs uppercase tracking-wider mb-2 px-4">
+              Admin
+            </p>
+          )}
+          <NavLink
+            to="/admin"
+            className={getLinkClassName('/admin')}
+            title={isCollapsed ? 'Admin Settings' : undefined}
+          >
+            <Shield className="w-5 h-5 flex-shrink-0" />
+            {!isCollapsed && (
+              <>
+                <span className="font-oswald font-light tracking-wide">Admin Settings</span>
+                <ChevronRight className="w-4 h-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+              </>
+            )}
+          </NavLink>
+        </div>
+      )}
 
       {/* User Section - click to toggle menu (works on touch + mouse) */}
       <div

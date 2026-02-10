@@ -2,16 +2,25 @@
   {
     "email": "james@tablerocktx.com",
     "name": "James Bullis",
-    "added_by": "system"
+    "added_by": "system",
+    "role": "admin",
+    "scope": "all",
+    "tools": ["extract", "title", "proration", "revenue"]
   },
   {
     "email": "travis@tablerocktx.com",
     "name": "Travis Bowles",
-    "added_by": "system"
+    "added_by": "system",
+    "role": "user",
+    "scope": "all",
+    "tools": ["extract", "title", "proration", "revenue"]
   },
   {
     "email": "cory@tablerocktx.com",
     "name": "Cory Wilson",
-    "added_by": "system"
+    "added_by": "system",
+    "role": "user",
+    "scope": "all",
+    "tools": ["extract", "title", "proration", "revenue"]
   }
 ]

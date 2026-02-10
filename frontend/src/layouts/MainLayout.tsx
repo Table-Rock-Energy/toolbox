@@ -10,6 +10,7 @@ const toolNames: Record<string, string> = {
   '/proration': 'Proration',
   '/revenue': 'Revenue',
   '/settings': 'Settings',
+  '/admin': 'Admin Settings',
   '/help': 'Help',
 }
 
