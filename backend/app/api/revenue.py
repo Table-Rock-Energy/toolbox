@@ -15,7 +15,12 @@ from app.models.revenue import (
 )
 from app.services.revenue.export_service import export_to_csv, generate_summary_report
 from app.services.revenue.format_detector import detect_format, get_parser_for_format
-from app.services.revenue.pdf_extractor import extract_text
+from app.services.revenue.pdf_extractor import (
+    extract_text,
+    extract_text_pymupdf,
+    extract_text_pdfplumber,
+    extract_structured_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -196,3 +201,54 @@ async def validate_statements(request: ExportRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Validation failed: {e!s}") from e
+
+
+@router.post("/debug/extract-text")
+async def debug_extract_text(file: UploadFile = File(...)):
+    """Debug endpoint: show raw extracted text from each extraction method.
+
+    Returns the raw text from PyMuPDF and pdfplumber side-by-side,
+    plus structured text with position info, so we can diagnose
+    parsing issues caused by PDF font encoding problems.
+    """
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="PDF files only")
+
+    content = await file.read()
+    result: dict = {"filename": file.filename, "size_bytes": len(content)}
+
+    # PyMuPDF extraction
+    try:
+        pymupdf_text = extract_text_pymupdf(content)
+        result["pymupdf"] = {
+            "success": True,
+            "char_count": len(pymupdf_text),
+            "text": pymupdf_text,
+        }
+    except Exception as e:
+        result["pymupdf"] = {"success": False, "error": str(e)}
+
+    # pdfplumber extraction
+    try:
+        pdfplumber_text = extract_text_pdfplumber(content)
+        result["pdfplumber"] = {
+            "success": True,
+            "char_count": len(pdfplumber_text),
+            "text": pdfplumber_text,
+        }
+    except Exception as e:
+        result["pdfplumber"] = {"success": False, "error": str(e)}
+
+    # Structured text with position info (PyMuPDF dict mode)
+    try:
+        structured = extract_structured_text(content)
+        result["structured"] = structured
+    except Exception as e:
+        result["structured"] = {"error": str(e)}
+
+    # Format detection on the primary text
+    primary_text = result.get("pymupdf", {}).get("text") or result.get("pdfplumber", {}).get("text") or ""
+    if primary_text:
+        result["detected_format"] = detect_format(primary_text).value
+
+    return result
