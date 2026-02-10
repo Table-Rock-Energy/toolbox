@@ -23,7 +23,7 @@ const toolNavItems = [
   { name: 'Title', path: '/title', icon: FileText },
   { name: 'Proration', path: '/proration', icon: Calculator },
   { name: 'Revenue', path: '/revenue', icon: DollarSign },
-  { name: 'Bronze DB', path: '/mineral-rights', icon: Database },
+  { name: 'Database', path: '/mineral-rights', icon: Database },
 ]
 
 interface SidebarProps {
@@ -147,30 +147,6 @@ export default function Sidebar({ mobile, onClose }: SidebarProps) {
         ))}
       </nav>
 
-      {/* Admin Section - only visible to admins */}
-      {isAdmin && (
-        <div className={`${isCollapsed ? 'p-2' : 'px-4 pb-2'} border-t border-tre-teal/20 pt-2`}>
-          {!isCollapsed && (
-            <p className="text-tre-tan/60 text-xs uppercase tracking-wider mb-2 px-4">
-              Admin
-            </p>
-          )}
-          <NavLink
-            to="/admin"
-            className={getLinkClassName('/admin')}
-            title={isCollapsed ? 'Admin Settings' : undefined}
-          >
-            <Shield className="w-5 h-5 flex-shrink-0" />
-            {!isCollapsed && (
-              <>
-                <span className="font-oswald font-light tracking-wide">Admin Settings</span>
-                <ChevronRight className="w-4 h-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
-              </>
-            )}
-          </NavLink>
-        </div>
-      )}
-
       {/* User Section - click to toggle menu (works on touch + mouse) */}
       <div
         className={`${isCollapsed ? 'p-2' : 'p-4'} border-t border-tre-teal/20 relative`}
@@ -187,6 +163,15 @@ export default function Sidebar({ mobile, onClose }: SidebarProps) {
               <User className="w-4 h-4" />
               {!isCollapsed && <span className="text-sm">Profile Settings</span>}
             </button>
+            {isAdmin && (
+              <button
+                onClick={() => { navigate('/admin'); setIsUserMenuVisible(false) }}
+                className="w-full flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-tre-teal/10 hover:text-tre-teal transition-colors border-t border-tre-teal/20"
+              >
+                <Shield className="w-4 h-4" />
+                {!isCollapsed && <span className="text-sm">Admin Settings</span>}
+              </button>
+            )}
             <button
               onClick={() => { handleSignOut(); setIsUserMenuVisible(false) }}
               className="w-full flex items-center gap-3 px-4 py-3 text-gray-300 hover:text-red-400 hover:bg-red-400/10 transition-colors border-t border-tre-teal/20"
