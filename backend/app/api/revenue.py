@@ -125,6 +125,7 @@ async def export_csv(request: ExportRequest):
             csv_content.encode("utf-8"),
             filename,
             media_type="text/csv",
+            extra_headers={"X-Row-Count": str(row_count)},
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Export failed: {e!s}") from e

@@ -186,7 +186,7 @@ async def enrich_entries(request: EnrichRequest):
     if not request.entries:
         raise HTTPException(status_code=400, detail="No entries provided")
 
-    from app.services.enrichment_service import enrich_entries as run_enrichment
+    from app.services.data_enrichment_pipeline import enrich_entries as run_enrichment
 
     return StreamingResponse(
         run_enrichment("title", request.entries),

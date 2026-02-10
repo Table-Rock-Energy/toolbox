@@ -207,17 +207,23 @@ def file_response(
     content: bytes,
     filename: str,
     media_type: Optional[str] = None,
+    extra_headers: Optional[dict[str, str]] = None,
 ) -> Response:
     """Build a ``Response`` for a downloadable file export.
 
     If *media_type* is ``None`` it is inferred from the filename extension.
+    Optional *extra_headers* are merged into the response headers.
     """
     if media_type is None:
         ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
         media_type = MEDIA_TYPES.get(ext, "application/octet-stream")
 
+    response_headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    if extra_headers:
+        response_headers.update(extra_headers)
+
     return Response(
         content=content,
         media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers=response_headers,
     )

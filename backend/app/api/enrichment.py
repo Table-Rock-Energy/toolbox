@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.core.auth import require_auth
 
 from app.models.enrichment import (
     EnrichmentConfigUpdateRequest,
@@ -27,7 +29,7 @@ async def enrichment_status() -> EnrichmentStatusResponse:
 
 
 @router.post("/config")
-async def update_enrichment_config(request: EnrichmentConfigUpdateRequest) -> dict:
+async def update_enrichment_config(request: EnrichmentConfigUpdateRequest, user: dict = Depends(require_auth)) -> dict:
     """
     Update enrichment API keys and enabled state.
 

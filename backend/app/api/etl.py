@@ -7,7 +7,9 @@ entities in the bronze layer — raw ingested data from all tools.
 from __future__ import annotations
 
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.core.auth import require_auth
 
 from app.models.etl import (
     EntityCorrectionRequest,
@@ -143,7 +145,7 @@ async def get_entity_detail(entity_id: str) -> EntityDetailResponse:
 
 @router.put("/entities/{entity_id}/correct")
 async def correct_entity(
-    entity_id: str, request: EntityCorrectionRequest
+    entity_id: str, request: EntityCorrectionRequest, user: dict = Depends(require_auth)
 ) -> dict:
     """Correct entity information (user verification)."""
     try:
@@ -182,7 +184,7 @@ async def correct_entity(
 
 
 @router.post("/relationships")
-async def create_relationship(request: RelationshipCreateRequest) -> dict:
+async def create_relationship(request: RelationshipCreateRequest, user: dict = Depends(require_auth)) -> dict:
     """Create a new relationship between two entities."""
     try:
         from app.models.etl import Relationship, SourceReference, SourceTool
