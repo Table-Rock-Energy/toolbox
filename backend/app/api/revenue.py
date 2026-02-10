@@ -16,6 +16,8 @@ from app.models.revenue import (
 from app.services.revenue.export_service import export_to_csv, generate_summary_report
 from app.services.revenue.format_detector import detect_format, get_parser_for_format
 from app.services.revenue.pdf_extractor import (
+    detect_garbled_text,
+    extract_tables_pdfplumber,
     extract_text,
     extract_text_pymupdf,
     extract_text_pdfplumber,
@@ -208,8 +210,9 @@ async def debug_extract_text(file: UploadFile = File(...)):
     """Debug endpoint: show raw extracted text from each extraction method.
 
     Returns the raw text from PyMuPDF and pdfplumber side-by-side,
-    plus structured text with position info, so we can diagnose
-    parsing issues caused by PDF font encoding problems.
+    plus garbled text analysis, table extraction, and structured text
+    with position info, so we can diagnose parsing issues caused by
+    PDF font encoding problems.
     """
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="PDF files only")
@@ -220,24 +223,39 @@ async def debug_extract_text(file: UploadFile = File(...)):
     # PyMuPDF extraction
     try:
         pymupdf_text = extract_text_pymupdf(content)
+        garbled = detect_garbled_text(pymupdf_text)
         result["pymupdf"] = {
             "success": True,
             "char_count": len(pymupdf_text),
             "text": pymupdf_text,
+            "garbled_analysis": garbled,
         }
     except Exception as e:
         result["pymupdf"] = {"success": False, "error": str(e)}
 
-    # pdfplumber extraction
+    # pdfplumber text extraction
     try:
         pdfplumber_text = extract_text_pdfplumber(content)
+        garbled = detect_garbled_text(pdfplumber_text)
         result["pdfplumber"] = {
             "success": True,
             "char_count": len(pdfplumber_text),
             "text": pdfplumber_text,
+            "garbled_analysis": garbled,
         }
     except Exception as e:
         result["pdfplumber"] = {"success": False, "error": str(e)}
+
+    # pdfplumber table extraction (different algorithm, may work better)
+    try:
+        tables = extract_tables_pdfplumber(content)
+        result["pdfplumber_tables"] = {
+            "success": True,
+            "table_count": len(tables),
+            "tables": tables,
+        }
+    except Exception as e:
+        result["pdfplumber_tables"] = {"success": False, "error": str(e)}
 
     # Structured text with position info (PyMuPDF dict mode)
     try:
@@ -246,9 +264,52 @@ async def debug_extract_text(file: UploadFile = File(...)):
     except Exception as e:
         result["structured"] = {"error": str(e)}
 
+    # Font analysis from PyMuPDF (helps identify encoding issues)
+    try:
+        import fitz
+        doc = fitz.open(stream=content, filetype="pdf")
+        fonts_info = []
+        for page_num in range(len(doc)):
+            page = doc.load_page(page_num)
+            font_list = page.get_fonts(full=True)
+            for font in font_list:
+                fonts_info.append({
+                    "page": page_num + 1,
+                    "xref": font[0],
+                    "ext": font[1],
+                    "type": font[2],
+                    "basefont": font[3],
+                    "name": font[4],
+                    "encoding": font[5] if len(font) > 5 else None,
+                })
+        doc.close()
+        result["fonts"] = fonts_info
+    except Exception as e:
+        result["fonts"] = {"error": str(e)}
+
     # Format detection on the primary text
-    primary_text = result.get("pymupdf", {}).get("text") or result.get("pdfplumber", {}).get("text") or ""
+    pymupdf_score = result.get("pymupdf", {}).get("garbled_analysis", {}).get("score", 999)
+    plumber_score = result.get("pdfplumber", {}).get("garbled_analysis", {}).get("score", 999)
+    primary_text = (
+        result.get("pdfplumber", {}).get("text")
+        if plumber_score < pymupdf_score
+        else result.get("pymupdf", {}).get("text")
+    ) or ""
     if primary_text:
         result["detected_format"] = detect_format(primary_text).value
+
+    # Recommendation
+    if pymupdf_score == 0 and plumber_score == 0:
+        result["recommendation"] = "Both extractors produce clean text."
+    elif pymupdf_score <= plumber_score:
+        result["recommendation"] = (
+            f"PyMuPDF is cleaner (score {pymupdf_score} vs {plumber_score}). "
+            "Using PyMuPDF for parsing."
+        )
+    else:
+        result["recommendation"] = (
+            f"pdfplumber is cleaner (score {plumber_score} vs {pymupdf_score}). "
+            "Using pdfplumber for parsing."
+        )
 
     return result

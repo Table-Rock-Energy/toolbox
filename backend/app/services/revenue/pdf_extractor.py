@@ -1,6 +1,8 @@
 """PDF text extraction service using pymupdf, pdfplumber, and OCR."""
 
 import io
+import re
+from collections import Counter
 from typing import Optional
 
 import fitz  # pymupdf
@@ -13,6 +15,14 @@ try:
     OCR_AVAILABLE = True
 except ImportError:
     OCR_AVAILABLE = False
+
+
+# Characters that indicate garbled font encoding
+_GARBLED_CHARS = set("¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿")
+# Pattern: doubled single-letter product codes (Oo, oO, Gg, gG)
+_DOUBLED_CODE_RE = re.compile(r"\b[OoGg]{2}\b")
+# Pattern: numbers missing decimal points (large integers in decimal positions)
+_SUSPICIOUSLY_LARGE_INT_RE = re.compile(r"\b\d{7,}\b")
 
 
 def extract_text_pymupdf(pdf_bytes: bytes) -> str:
@@ -81,9 +91,66 @@ def extract_tables_pdfplumber(pdf_bytes: bytes) -> list[list[list[str]]]:
     return all_tables
 
 
+def detect_garbled_text(text: str) -> dict:
+    """Detect if extracted text has garbled font encoding.
+
+    Returns a dict with:
+      - garbled: bool — True if text appears garbled
+      - score: int — number of garbled indicators found
+      - indicators: list[str] — descriptions of what was detected
+    """
+    if not text:
+        return {"garbled": False, "score": 0, "indicators": []}
+
+    indicators: list[str] = []
+    score = 0
+
+    # Check for unusual characters from font encoding issues
+    garbled_chars_found = [ch for ch in text if ch in _GARBLED_CHARS]
+    if garbled_chars_found:
+        counts = Counter(garbled_chars_found)
+        score += len(garbled_chars_found)
+        for ch, cnt in counts.most_common(5):
+            indicators.append(f"Unusual character U+{ord(ch):04X} '{ch}' appears {cnt}x")
+
+    # Check for doubled product codes (Oo, oO, Gg, gG)
+    doubled = _DOUBLED_CODE_RE.findall(text)
+    if doubled:
+        score += len(doubled) * 2
+        indicators.append(f"Doubled letter codes found {len(doubled)}x: {doubled[:5]}")
+
+    # Check for suspiciously large integers where decimals expected
+    large_ints = _SUSPICIOUSLY_LARGE_INT_RE.findall(text)
+    if large_ints:
+        score += len(large_ints)
+        indicators.append(
+            f"Large integers (possible missing decimals) found {len(large_ints)}x: "
+            f"{large_ints[:5]}"
+        )
+
+    # Check ratio of non-ASCII to ASCII characters
+    if len(text) > 100:
+        non_ascii = sum(1 for ch in text if ord(ch) > 127)
+        ratio = non_ascii / len(text)
+        if ratio > 0.02:  # >2% non-ASCII is suspicious for financial docs
+            score += int(ratio * 100)
+            indicators.append(
+                f"High non-ASCII ratio: {ratio:.1%} ({non_ascii} chars)"
+            )
+
+    return {
+        "garbled": score >= 3,
+        "score": score,
+        "indicators": indicators,
+    }
+
+
 def extract_text(pdf_bytes: bytes, use_fallback: bool = True, use_ocr: bool = True) -> str:
     """
     Extract text from PDF, with fallback to pdfplumber and OCR.
+
+    Tries PyMuPDF first. If the text appears garbled (font encoding issues),
+    falls back to pdfplumber which sometimes handles custom fonts better.
 
     Args:
         pdf_bytes: The PDF file as bytes
@@ -93,22 +160,43 @@ def extract_text(pdf_bytes: bytes, use_fallback: bool = True, use_ocr: bool = Tr
     Returns:
         Extracted text from the PDF
     """
+    pymupdf_text = None
+    pdfplumber_text = None
+
     # Try pymupdf first
     try:
-        text = extract_text_pymupdf(pdf_bytes)
-        if text and len(text.strip()) > 100:
-            return text
+        pymupdf_text = extract_text_pymupdf(pdf_bytes)
     except Exception:
         pass
+
+    # If PyMuPDF produced text, check if it's garbled
+    if pymupdf_text and len(pymupdf_text.strip()) > 100:
+        garbled = detect_garbled_text(pymupdf_text)
+        if not garbled["garbled"]:
+            return pymupdf_text
+        # Text looks garbled — try pdfplumber before returning
 
     # Try pdfplumber as fallback
     if use_fallback:
         try:
-            text = extract_text_pdfplumber(pdf_bytes)
-            if text and len(text.strip()) > 100:
-                return text
+            pdfplumber_text = extract_text_pdfplumber(pdf_bytes)
         except Exception:
             pass
+
+    # Pick the cleaner text
+    if pymupdf_text and pdfplumber_text:
+        pymupdf_garbled = detect_garbled_text(pymupdf_text)
+        plumber_garbled = detect_garbled_text(pdfplumber_text)
+        # Prefer whichever is less garbled
+        if plumber_garbled["score"] < pymupdf_garbled["score"]:
+            return pdfplumber_text
+        return pymupdf_text
+
+    if pymupdf_text and len(pymupdf_text.strip()) > 100:
+        return pymupdf_text
+
+    if pdfplumber_text and len(pdfplumber_text.strip()) > 100:
+        return pdfplumber_text
 
     # Try OCR as last resort for scanned/image-based PDFs
     if use_ocr and OCR_AVAILABLE:
@@ -119,8 +207,8 @@ def extract_text(pdf_bytes: bytes, use_fallback: bool = True, use_ocr: bool = Tr
         except Exception:
             pass
 
-    # Return empty string if all methods fail
-    return ""
+    # Return whatever we have, even if garbled
+    return pymupdf_text or pdfplumber_text or ""
 
 
 def get_page_count(pdf_bytes: bytes) -> int:

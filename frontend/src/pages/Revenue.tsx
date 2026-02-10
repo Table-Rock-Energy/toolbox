@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { DollarSign, Download, Upload, FileText, AlertCircle, CheckCircle, ChevronDown, ChevronRight, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { DollarSign, Download, Upload, FileText, AlertCircle, CheckCircle, ChevronDown, ChevronRight, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Bug } from 'lucide-react'
 import { FileUpload, Modal, AiReviewPanel } from '../components'
 import { aiApi } from '../utils/api'
 import type { AiSuggestion } from '../utils/api'
@@ -116,6 +116,11 @@ export default function Revenue() {
 
   // Edit modal state
   const [editingRow, setEditingRow] = useState<{ statementIdx: number; rowIdx: number; row: RevenueRow } | null>(null)
+
+  // Debug panel state
+  const [showDebug, setShowDebug] = useState(false)
+  const [debugResult, setDebugResult] = useState<Record<string, unknown> | null>(null)
+  const [debugLoading, setDebugLoading] = useState(false)
 
   // Column visibility (persisted in localStorage per user, separate keys for narrow/wide)
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
@@ -348,6 +353,28 @@ export default function Revenue() {
     } catch { /* best-effort */ }
     setJobs((prev) => prev.filter((j) => j.id !== job.id))
     if (activeJob?.id === job.id) setActiveJob(null)
+  }
+
+  const handleDebugUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setDebugLoading(true)
+    setDebugResult(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await fetch(`${API_BASE}/revenue/debug/extract-text`, {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await response.json()
+      setDebugResult(data)
+    } catch (err) {
+      setDebugResult({ error: err instanceof Error ? err.message : 'Debug request failed' })
+    } finally {
+      setDebugLoading(false)
+      e.target.value = ''
+    }
   }
 
   // Safely coerce to number (handles old Firestore data stored as strings)
@@ -921,6 +948,148 @@ export default function Revenue() {
           )}
         </div>
       )}
+
+      {/* Debug Extraction Panel */}
+      <div className="bg-white rounded-xl border border-gray-200">
+        <button
+          onClick={() => setShowDebug(!showDebug)}
+          className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+        >
+          <div className="flex items-center gap-2 text-sm font-medium text-gray-600">
+            <Bug className="w-4 h-4" />
+            Debug PDF Extraction
+          </div>
+          {showDebug ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+        </button>
+        {showDebug && (
+          <div className="px-4 pb-4 space-y-4">
+            <p className="text-xs text-gray-500">
+              Upload a PDF to see raw extracted text from each extraction method. Helps diagnose font encoding issues.
+            </p>
+            <div className="flex items-center gap-3">
+              <label className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm cursor-pointer">
+                <input
+                  type="file"
+                  accept=".pdf"
+                  onChange={handleDebugUpload}
+                  className="hidden"
+                />
+                Choose PDF
+              </label>
+              {debugLoading && (
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
+                  Analyzing...
+                </div>
+              )}
+            </div>
+            {debugResult && (
+              <div className="space-y-3">
+                {/* Recommendation */}
+                {debugResult.recommendation && (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+                    {debugResult.recommendation as string}
+                  </div>
+                )}
+
+                {/* Garbled Analysis */}
+                {[
+                  { key: 'pymupdf', label: 'PyMuPDF' },
+                  { key: 'pdfplumber', label: 'pdfplumber' },
+                ].map(({ key, label }) => {
+                  const data = debugResult[key] as Record<string, unknown> | undefined
+                  if (!data) return null
+                  const garbled = data.garbled_analysis as Record<string, unknown> | undefined
+                  return (
+                    <div key={key} className="border border-gray-200 rounded-lg overflow-hidden">
+                      <div className="px-3 py-2 bg-gray-50 flex items-center justify-between">
+                        <span className="text-sm font-medium text-gray-700">{label}</span>
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-gray-500">{data.char_count as number} chars</span>
+                          {garbled && (
+                            <span className={`px-2 py-0.5 rounded-full ${
+                              garbled.garbled ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                            }`}>
+                              {garbled.garbled ? `Garbled (score: ${garbled.score})` : 'Clean'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {garbled?.indicators && (garbled.indicators as string[]).length > 0 && (
+                        <div className="px-3 py-2 bg-yellow-50 border-b border-gray-200">
+                          <ul className="text-xs text-yellow-800 space-y-0.5">
+                            {(garbled.indicators as string[]).map((ind, i) => (
+                              <li key={i}>{ind}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      <pre className="px-3 py-2 text-xs text-gray-700 max-h-60 overflow-auto whitespace-pre-wrap font-mono bg-gray-50/50">
+                        {(data.text as string)?.substring(0, 3000) || 'No text extracted'}
+                        {(data.text as string)?.length > 3000 && '\n... (truncated)'}
+                      </pre>
+                    </div>
+                  )
+                })}
+
+                {/* pdfplumber Tables */}
+                {debugResult.pdfplumber_tables && (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="px-3 py-2 bg-gray-50">
+                      <span className="text-sm font-medium text-gray-700">
+                        pdfplumber Tables ({(debugResult.pdfplumber_tables as Record<string, unknown>).table_count as number} found)
+                      </span>
+                    </div>
+                    <pre className="px-3 py-2 text-xs text-gray-700 max-h-60 overflow-auto whitespace-pre-wrap font-mono bg-gray-50/50">
+                      {JSON.stringify((debugResult.pdfplumber_tables as Record<string, unknown>).tables, null, 2)?.substring(0, 3000) || 'No tables'}
+                    </pre>
+                  </div>
+                )}
+
+                {/* Font Info */}
+                {debugResult.fonts && Array.isArray(debugResult.fonts) && (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="px-3 py-2 bg-gray-50">
+                      <span className="text-sm font-medium text-gray-700">
+                        Fonts ({(debugResult.fonts as unknown[]).length})
+                      </span>
+                    </div>
+                    <div className="px-3 py-2 text-xs">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="text-left text-gray-500">
+                            <th className="pb-1">Name</th>
+                            <th className="pb-1">Type</th>
+                            <th className="pb-1">Base Font</th>
+                            <th className="pb-1">Encoding</th>
+                          </tr>
+                        </thead>
+                        <tbody className="text-gray-700">
+                          {(debugResult.fonts as Array<Record<string, unknown>>).map((f, i) => (
+                            <tr key={i}>
+                              <td className="py-0.5">{f.name as string}</td>
+                              <td className="py-0.5">{f.type as string}</td>
+                              <td className="py-0.5">{f.basefont as string}</td>
+                              <td className="py-0.5">{(f.encoding as string) || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Detected Format */}
+                {debugResult.detected_format && (
+                  <div className="text-sm text-gray-600">
+                    Detected format: <span className="font-medium">{debugResult.detected_format as string}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Edit Row Modal */}
       <Modal
