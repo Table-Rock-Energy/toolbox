@@ -126,8 +126,18 @@ export default function Proration() {
   const [isLoadingEntries, setIsLoadingEntries] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // RRC Data State
-  const [rrcStatus, setRrcStatus] = useState<RRCDataStatus | null>(null)
+  // RRC Data State (initialize from sessionStorage cache to avoid flash on navigation)
+  const [rrcStatus, setRrcStatus] = useState<RRCDataStatus | null>(() => {
+    try {
+      const cached = sessionStorage.getItem('rrc-status-cache')
+      if (cached) {
+        const { data, ts } = JSON.parse(cached)
+        // Use cache if less than 5 minutes old
+        if (Date.now() - ts < 5 * 60 * 1000) return data
+      }
+    } catch { /* ignore */ }
+    return null
+  })
   const [isDownloadingRRC, setIsDownloadingRRC] = useState(false)
   const [rrcMessage, setRrcMessage] = useState<string | null>(null)
 
@@ -190,9 +200,12 @@ export default function Proration() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showColumnPicker])
 
-  // Check RRC data status on mount
+  // Check RRC data status on mount (skip if cache is fresh)
   useEffect(() => {
-    checkRRCStatus()
+    if (!rrcStatus) {
+      checkRRCStatus()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Load recent jobs on mount
@@ -254,6 +267,9 @@ export default function Proration() {
       if (response.ok) {
         const data = await response.json()
         setRrcStatus(data)
+        try {
+          sessionStorage.setItem('rrc-status-cache', JSON.stringify({ data, ts: Date.now() }))
+        } catch { /* ignore storage errors */ }
       }
     } catch (err) {
       console.error('Failed to check RRC status:', err)
@@ -273,7 +289,7 @@ export default function Proration() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        setRrcMessage(`Downloaded ${data.oil_rows?.toLocaleString() || 0} oil and ${data.gas_rows?.toLocaleString() || 0} gas records`)
+        setRrcMessage(data.message || `Downloaded ${data.oil_rows?.toLocaleString() || 0} oil and ${data.gas_rows?.toLocaleString() || 0} gas records`)
         // Refresh status
         await checkRRCStatus()
       } else {
@@ -553,60 +569,79 @@ export default function Proration() {
       </div>
 
       {/* RRC Data Status Banner */}
-      <div className={`rounded-xl border p-4 ${
-        dataExpired ? 'bg-orange-50 border-orange-200' :
-        hasRRCData ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'
-      }`}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Database className={`w-5 h-5 ${
-              dataExpired ? 'text-orange-600' :
-              hasRRCData ? 'text-green-600' : 'text-yellow-600'
-            }`} />
-            <div>
-              <h3 className={`font-medium ${
-                dataExpired ? 'text-orange-800' :
-                hasRRCData ? 'text-green-800' : 'text-yellow-800'
-              }`}>
-                RRC Master Database
-                {dataExpired && (
-                  <span className="ml-2 text-xs font-normal bg-orange-200 text-orange-800 px-2 py-0.5 rounded">
-                    Monthly Update Available
-                  </span>
-                )}
-              </h3>
-              {rrcStatus ? (
-                <div className="text-sm mt-1 space-y-0.5">
-                  {hasRRCData ? (
-                    <>
-                      <div className={dataExpired ? 'text-orange-700' : 'text-green-700'}>
-                        <span className="font-medium">{totalRecords.toLocaleString()}</span> records
-                        ({oilRecords.toLocaleString()} oil, {gasRecords.toLocaleString()} gas)
-                      </div>
-                      <div className="text-gray-500 text-xs">
-                        Last synced: {rrcStatus.last_sync?.completed_at
-                          ? formatDate(rrcStatus.last_sync.completed_at)
-                          : rrcStatus.oil_modified
-                            ? formatDate(rrcStatus.oil_modified)
-                            : 'Never'
-                        }
-                        {rrcStatus.last_sync?.new_records ? (
-                          <span className="ml-2">&bull; {rrcStatus.last_sync.new_records.toLocaleString()} new, {(rrcStatus.last_sync.updated_records || 0).toLocaleString()} updated</span>
-                        ) : null}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="text-yellow-700">
-                      No RRC data available. Download to build the master database.
-                    </div>
+      {hasRRCData && !dataExpired ? (
+        /* Compact green info line when data is loaded and current */
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-green-50 border border-green-200">
+          <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+          <span className="text-sm text-green-800">
+            <span className="font-medium">{totalRecords.toLocaleString()}</span> RRC records
+            <span className="text-green-600 mx-1">({oilRecords.toLocaleString()} oil, {gasRecords.toLocaleString()} gas)</span>
+            <span className="text-green-600/70">&bull; Synced {rrcStatus?.last_sync?.completed_at
+              ? formatDate(rrcStatus.last_sync.completed_at)
+              : rrcStatus?.oil_modified
+                ? formatDate(rrcStatus.oil_modified)
+                : 'Never'
+            }</span>
+          </span>
+          {rrcMessage && (
+            <span className="text-sm text-green-700 ml-auto flex items-center gap-1">
+              <CheckCircle className="w-3.5 h-3.5" />
+              {rrcMessage}
+            </span>
+          )}
+        </div>
+      ) : (
+        /* Full banner when action is needed (no data or expired) */
+        <div className={`rounded-xl border p-4 ${
+          dataExpired ? 'bg-orange-50 border-orange-200' : 'bg-yellow-50 border-yellow-200'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Database className={`w-5 h-5 ${
+                dataExpired ? 'text-orange-600' : 'text-yellow-600'
+              }`} />
+              <div>
+                <h3 className={`font-medium ${
+                  dataExpired ? 'text-orange-800' : 'text-yellow-800'
+                }`}>
+                  RRC Master Database
+                  {dataExpired && (
+                    <span className="ml-2 text-xs font-normal bg-orange-200 text-orange-800 px-2 py-0.5 rounded">
+                      Monthly Update Available
+                    </span>
                   )}
-                </div>
-              ) : (
-                <div className="text-sm text-gray-500">Checking status...</div>
-              )}
+                </h3>
+                {rrcStatus ? (
+                  <div className="text-sm mt-1 space-y-0.5">
+                    {hasRRCData ? (
+                      <>
+                        <div className="text-orange-700">
+                          <span className="font-medium">{totalRecords.toLocaleString()}</span> records
+                          ({oilRecords.toLocaleString()} oil, {gasRecords.toLocaleString()} gas)
+                        </div>
+                        <div className="text-gray-500 text-xs">
+                          Last synced: {rrcStatus.last_sync?.completed_at
+                            ? formatDate(rrcStatus.last_sync.completed_at)
+                            : rrcStatus.oil_modified
+                              ? formatDate(rrcStatus.oil_modified)
+                              : 'Never'
+                          }
+                          {rrcStatus.last_sync?.new_records ? (
+                            <span className="ml-2">&bull; {rrcStatus.last_sync.new_records.toLocaleString()} new, {(rrcStatus.last_sync.updated_records || 0).toLocaleString()} updated</span>
+                          ) : null}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-yellow-700">
+                        No RRC data available. Download to build the master database.
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-500">Checking status...</div>
+                )}
+              </div>
             </div>
-          </div>
-          {showDownloadButton && (
             <button
               onClick={handleDownloadRRC}
               disabled={isDownloadingRRC}
@@ -619,15 +654,15 @@ export default function Proration() {
               <RefreshCw className={`w-4 h-4 ${isDownloadingRRC ? 'animate-spin' : ''}`} />
               {isDownloadingRRC ? 'Syncing...' : dataExpired ? 'Download & Sync' : 'Download & Build'}
             </button>
+          </div>
+          {rrcMessage && (
+            <div className="mt-2 text-sm text-green-700 flex items-center gap-1">
+              <CheckCircle className="w-4 h-4" />
+              {rrcMessage}
+            </div>
           )}
         </div>
-        {rrcMessage && (
-          <div className="mt-2 text-sm text-green-700 flex items-center gap-1">
-            <CheckCircle className="w-4 h-4" />
-            {rrcMessage}
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Upload Section - compact row when panel collapsed */}
       {panelCollapsed && (

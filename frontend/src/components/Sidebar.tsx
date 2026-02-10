@@ -10,20 +10,51 @@ import {
   LogOut,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
   User,
   Shield,
+  Wrench,
+  Layers,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar-collapsed'
+const NAV_GROUPS_KEY = 'sidebar-nav-groups'
 
-const toolNavItems = [
-  { name: 'Dashboard', path: '/', icon: LayoutDashboard },
-  { name: 'Extract', path: '/extract', icon: FileSearch },
-  { name: 'Title', path: '/title', icon: FileText },
-  { name: 'Proration', path: '/proration', icon: Calculator },
-  { name: 'Revenue', path: '/revenue', icon: DollarSign },
-  { name: 'Database', path: '/mineral-rights', icon: Database },
+interface NavItem {
+  name: string
+  path: string
+  icon: React.ComponentType<{ className?: string }>
+  badge?: string
+}
+
+interface NavGroup {
+  id: string
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+  items: NavItem[]
+}
+
+const navGroups: NavGroup[] = [
+  {
+    id: 'tools',
+    label: 'Tools',
+    icon: Wrench,
+    items: [
+      { name: 'Extract', path: '/extract', icon: FileSearch },
+      { name: 'Title', path: '/title', icon: FileText },
+      { name: 'Proration', path: '/proration', icon: Calculator },
+      { name: 'Revenue', path: '/revenue', icon: DollarSign },
+    ],
+  },
+  {
+    id: 'databases',
+    label: 'Databases',
+    icon: Layers,
+    items: [
+      { name: 'Bronze', path: '/mineral-rights', icon: Database, badge: 'Bronze' },
+    ],
+  },
 ]
 
 interface SidebarProps {
@@ -42,12 +73,24 @@ export default function Sidebar({ mobile, onClose }: SidebarProps) {
       return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
     } catch { return false }
   })
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem(NAV_GROUPS_KEY)
+      if (saved) return JSON.parse(saved)
+    } catch { /* defaults */ }
+    // All groups expanded by default
+    return Object.fromEntries(navGroups.map(g => [g.id, true]))
+  })
 
   useEffect(() => {
     if (!mobile) {
       localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed))
     }
   }, [collapsed, mobile])
+
+  useEffect(() => {
+    localStorage.setItem(NAV_GROUPS_KEY, JSON.stringify(expandedGroups))
+  }, [expandedGroups])
 
   // Close mobile drawer on route change
   useEffect(() => {
@@ -88,13 +131,25 @@ export default function Sidebar({ mobile, onClose }: SidebarProps) {
     setIsUserMenuVisible(!isUserMenuVisible)
   }
 
+  const toggleGroup = (groupId: string) => {
+    setExpandedGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }))
+  }
+
+  const isGroupActive = (group: NavGroup): boolean => {
+    return group.items.some(item =>
+      item.path === '/'
+        ? location.pathname === '/'
+        : location.pathname.startsWith(item.path)
+    )
+  }
+
   return (
     <aside className={`${isCollapsed ? 'w-16' : 'w-64'} bg-tre-navy flex flex-col h-full transition-all duration-200 relative`}>
       {/* Collapse Toggle - desktop only */}
       {!mobile && (
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="absolute -right-3 top-20 z-50 w-6 h-6 bg-tre-navy border border-tre-teal/30 rounded-full flex items-center justify-center text-tre-teal hover:bg-tre-teal/20 transition-colors"
+          className="absolute -right-3 top-20 z-50 w-6 h-6 bg-tre-navy border border-tre-teal/30 rounded-full flex items-center justify-center text-tre-teal hover:bg-tre-teal hover:text-white transition-colors"
           title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {isCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
@@ -122,28 +177,66 @@ export default function Sidebar({ mobile, onClose }: SidebarProps) {
         </div>
       </div>
 
-      {/* Tools Navigation */}
-      <nav className={`flex-1 ${isCollapsed ? 'p-2' : 'p-4'} space-y-1`}>
-        {!isCollapsed && (
-          <p className="text-tre-tan/60 text-xs uppercase tracking-wider mb-3 px-4">
-            Tools
-          </p>
-        )}
-        {toolNavItems.map((item) => (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            className={getLinkClassName(item.path)}
-            title={isCollapsed ? item.name : undefined}
-          >
-            <item.icon className="w-5 h-5 flex-shrink-0" />
-            {!isCollapsed && (
-              <>
-                <span className="font-oswald font-light tracking-wide">{item.name}</span>
-                <ChevronRight className="w-4 h-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
-              </>
+      {/* Navigation */}
+      <nav className={`flex-1 ${isCollapsed ? 'p-2' : 'p-4'} space-y-1 overflow-y-auto`}>
+        {/* Dashboard - top level */}
+        <NavLink
+          to="/"
+          className={getLinkClassName('/')}
+          title={isCollapsed ? 'Dashboard' : undefined}
+        >
+          <LayoutDashboard className="w-5 h-5 flex-shrink-0" />
+          {!isCollapsed && (
+            <>
+              <span className="font-oswald font-light tracking-wide">Dashboard</span>
+              <ChevronRight className="w-4 h-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+            </>
+          )}
+        </NavLink>
+
+        {/* Collapsible groups */}
+        {navGroups.map((navGroup) => (
+          <div key={navGroup.id} className={isCollapsed ? '' : 'mt-3'}>
+            {/* Group header */}
+            {isCollapsed ? (
+              <div className="my-2 border-t border-tre-teal/10" />
+            ) : (
+              <button
+                onClick={() => toggleGroup(navGroup.id)}
+                className={`w-full flex items-center gap-2 px-4 py-2 text-xs uppercase tracking-wider transition-colors rounded-lg ${
+                  isGroupActive(navGroup) ? 'text-tre-teal' : 'text-tre-tan/60 hover:text-tre-tan'
+                }`}
+              >
+                <navGroup.icon className="w-3.5 h-3.5" />
+                <span className="flex-1 text-left">{navGroup.label}</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                  expandedGroups[navGroup.id] ? '' : '-rotate-90'
+                }`} />
+              </button>
             )}
-          </NavLink>
+
+            {/* Group items */}
+            <div className={`space-y-1 overflow-hidden transition-all duration-200 ${
+              !isCollapsed && !expandedGroups[navGroup.id] ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'
+            }`}>
+              {navGroup.items.map((item) => (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  className={getLinkClassName(item.path)}
+                  title={isCollapsed ? item.name : undefined}
+                >
+                  <item.icon className="w-5 h-5 flex-shrink-0" />
+                  {!isCollapsed && (
+                    <>
+                      <span className="font-oswald font-light tracking-wide">{item.name}</span>
+                      <ChevronRight className="w-4 h-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </>
+                  )}
+                </NavLink>
+              ))}
+            </div>
+          </div>
         ))}
       </nav>
 

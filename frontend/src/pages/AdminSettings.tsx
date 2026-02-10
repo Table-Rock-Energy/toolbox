@@ -12,8 +12,12 @@ import {
   Bot,
   Save,
   MapPin,
+  Plug,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { enrichmentApi } from '../utils/api'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
@@ -85,11 +89,25 @@ export default function AdminSettings() {
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
 
+  // Enrichment / Integrations state
+  const [pdlApiKey, setPdlApiKey] = useState('')
+  const [searchbugApiKey, setSearchbugApiKey] = useState('')
+  const [enrichmentEnabled, setEnrichmentEnabled] = useState(false)
+  const [isSavingEnrichment, setIsSavingEnrichment] = useState(false)
+  const [enrichmentError, setEnrichmentError] = useState('')
+  const [enrichmentSuccess, setEnrichmentSuccess] = useState('')
+  const [showPdlKey, setShowPdlKey] = useState(false)
+  const [showSearchbugKey, setShowSearchbugKey] = useState(false)
+  const [enrichmentLoaded, setEnrichmentLoaded] = useState(false)
+  const [pdlConfigured, setPdlConfigured] = useState(false)
+  const [searchbugConfigured, setSearchbugConfigured] = useState(false)
+
   useEffect(() => {
     fetchUsers()
     fetchOptions()
     fetchGeminiSettings()
     fetchGoogleMapsSettings()
+    loadEnrichmentConfig()
   }, [])
 
   const fetchUsers = async () => {
@@ -175,6 +193,55 @@ export default function AdminSettings() {
       setGoogleMapsError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setIsSavingGoogleMaps(false)
+    }
+  }
+
+  const loadEnrichmentConfig = async () => {
+    try {
+      const { data } = await enrichmentApi.getConfig()
+      if (data) {
+        setEnrichmentEnabled(data.enabled)
+        setPdlConfigured(!!data.pdl_api_key)
+        setSearchbugConfigured(!!data.searchbug_api_key)
+      }
+    } catch {
+      // Enrichment not available, ignore
+    } finally {
+      setEnrichmentLoaded(true)
+    }
+  }
+
+  const handleSaveEnrichment = async () => {
+    setIsSavingEnrichment(true)
+    setEnrichmentError('')
+    setEnrichmentSuccess('')
+
+    try {
+      const updatePayload: { pdl_api_key?: string; searchbug_api_key?: string; enabled?: boolean } = {
+        enabled: enrichmentEnabled,
+      }
+
+      if (pdlApiKey && !pdlApiKey.startsWith('*')) {
+        updatePayload.pdl_api_key = pdlApiKey
+      }
+      if (searchbugApiKey && !searchbugApiKey.startsWith('*')) {
+        updatePayload.searchbug_api_key = searchbugApiKey
+      }
+
+      const { data, error } = await enrichmentApi.updateConfig(updatePayload)
+      if (error) {
+        setEnrichmentError(error)
+      } else if (data) {
+        setEnrichmentSuccess('Enrichment settings saved successfully!')
+        setPdlConfigured(data.status.pdl_configured)
+        setSearchbugConfigured(data.status.searchbug_configured)
+        setPdlApiKey('')
+        setSearchbugApiKey('')
+      }
+    } catch {
+      setEnrichmentError('Failed to save enrichment settings.')
+    } finally {
+      setIsSavingEnrichment(false)
     }
   }
 
@@ -681,6 +748,157 @@ export default function AdminSettings() {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Integrations / Enrichment Section */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="flex items-center gap-2 mb-1">
+          <Plug className="w-5 h-5 text-tre-navy" />
+          <h2 className="text-lg font-oswald font-semibold text-tre-navy">
+            Integrations
+          </h2>
+        </div>
+        <p className="text-sm text-gray-500 mb-4">
+          Configure API keys for data enrichment services. Enrich names and addresses with phone numbers, emails, social media, and public records.
+        </p>
+
+        {!enrichmentLoaded ? (
+          <div className="flex items-center gap-2 text-gray-400 text-sm py-4">
+            <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />
+            Loading configuration...
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {/* Master toggle */}
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <p className="font-medium text-gray-900">Enable Data Enrichment</p>
+                <p className="text-sm text-gray-500">Turn on enrichment lookups across all tools</p>
+              </div>
+              <button
+                onClick={() => setEnrichmentEnabled((v) => !v)}
+                className={`relative w-12 h-6 rounded-full transition-colors ${
+                  enrichmentEnabled ? 'bg-tre-teal' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                    enrichmentEnabled ? 'left-7' : 'left-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* People Data Labs */}
+            <div className="p-4 bg-gray-50 rounded-lg space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-gray-900">People Data Labs</p>
+                  <p className="text-sm text-gray-500">Phone numbers, emails, and social media profiles</p>
+                </div>
+                {pdlConfigured && (
+                  <span className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">
+                    <Check className="w-3 h-3" /> Configured
+                  </span>
+                )}
+              </div>
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  API Key
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPdlKey ? 'text' : 'password'}
+                    value={pdlApiKey}
+                    onChange={(e) => setPdlApiKey(e.target.value)}
+                    placeholder={pdlConfigured ? 'Key configured (enter new key to update)' : 'Enter your PDL API key'}
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal font-mono text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPdlKey((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPdlKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Get your API key at{' '}
+                  <a href="https://dashboard.peopledatalabs.com" target="_blank" rel="noopener noreferrer" className="text-tre-teal hover:underline">
+                    dashboard.peopledatalabs.com
+                  </a>
+                </p>
+              </div>
+            </div>
+
+            {/* SearchBug */}
+            <div className="p-4 bg-gray-50 rounded-lg space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-gray-900">SearchBug</p>
+                  <p className="text-sm text-gray-500">Deceased records, bankruptcy, liens, and judgments</p>
+                </div>
+                {searchbugConfigured && (
+                  <span className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">
+                    <Check className="w-3 h-3" /> Configured
+                  </span>
+                )}
+              </div>
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  API Key
+                </label>
+                <div className="relative">
+                  <input
+                    type={showSearchbugKey ? 'text' : 'password'}
+                    value={searchbugApiKey}
+                    onChange={(e) => setSearchbugApiKey(e.target.value)}
+                    placeholder={searchbugConfigured ? 'Key configured (enter new key to update)' : 'Enter your SearchBug API key'}
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal font-mono text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSearchbugKey((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showSearchbugKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Get your API key at{' '}
+                  <a href="https://www.searchbug.com/api/default.aspx" target="_blank" rel="noopener noreferrer" className="text-tre-teal hover:underline">
+                    searchbug.com/api
+                  </a>
+                </p>
+              </div>
+            </div>
+
+            {enrichmentError && (
+              <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
+                <AlertCircle className="w-4 h-4" />
+                {enrichmentError}
+              </div>
+            )}
+
+            {enrichmentSuccess && (
+              <div className="flex items-center gap-2 text-green-600 text-sm p-3 bg-green-50 rounded-lg">
+                <Check className="w-4 h-4" />
+                {enrichmentSuccess}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={handleSaveEnrichment}
+                disabled={isSavingEnrichment}
+                className="flex items-center gap-2 px-6 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                {isSavingEnrichment ? 'Saving...' : 'Save Integrations'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Add/Edit User Modal */}

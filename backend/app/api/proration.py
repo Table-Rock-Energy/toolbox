@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -53,8 +54,33 @@ async def get_rrc_status() -> dict:
 
 
 @router.post("/rrc/download", response_model=RRCDownloadResponse)
-async def download_rrc_data() -> RRCDownloadResponse:
-    """Download latest RRC proration data (oil and gas)."""
+async def download_rrc_data(force: bool = False) -> RRCDownloadResponse:
+    """Download latest RRC proration data (oil and gas).
+
+    Skips download if data was already synced this month unless force=True.
+    """
+    # Guard: only download once per month
+    if not force:
+        try:
+            from app.services.firestore_service import get_rrc_data_status
+            db_status = await get_rrc_data_status()
+            last_sync = db_status.get("last_sync", {})
+            completed_at = last_sync.get("completed_at") if last_sync else None
+            if completed_at:
+                last_dt = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+                first_of_month = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                if last_dt >= first_of_month:
+                    total = (db_status.get("oil_rows", 0) + db_status.get("gas_rows", 0))
+                    logger.info("RRC data already current (synced %s). Skipping download.", completed_at)
+                    return RRCDownloadResponse(
+                        success=True,
+                        message=f"Already up to date ({total:,} records synced {completed_at[:10]})",
+                        oil_rows=db_status.get("oil_rows", 0),
+                        gas_rows=db_status.get("gas_rows", 0),
+                    )
+        except Exception as e:
+            logger.debug("Could not check last sync for guard: %s", e)
+
     logger.info("Starting RRC data download...")
 
     success, message, stats = rrc_data_service.download_all_data()
