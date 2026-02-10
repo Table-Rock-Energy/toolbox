@@ -541,7 +541,6 @@ export default function Proration() {
   }
 
   const dataExpired = hasRRCData && isDataExpired()
-  const showDownloadButton = dataExpired || !hasRRCData
 
   return (
     <div className="space-y-6">
