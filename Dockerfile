@@ -43,11 +43,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend application code
 COPY backend/app/ ./app/
 
+# Copy data directory (allowed_users.json, etc.)
+COPY backend/data/ ./data/
+
 # Copy built frontend from builder stage
 COPY --from=frontend-builder /app/frontend/dist ./static
-
-# Create data directory for RRC proration data
-RUN mkdir -p /app/data
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
