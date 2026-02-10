@@ -100,6 +100,9 @@ export default function Extract() {
   const [showIndividualsOnly, setShowIndividualsOnly] = useState(false)
   const [hideFlagged, setHideFlagged] = useState(false)
   const [hideUnknownAddresses, setHideUnknownAddresses] = useState(true)
+  const [filterPropertyType, setFilterPropertyType] = useState<string>('')
+  const [filterMinValue, setFilterMinValue] = useState<string>('')
+  const [filterMaxValue, setFilterMaxValue] = useState<string>('')
 
   // Row selection state (set of excluded entry numbers)
   const [excludedEntries, setExcludedEntries] = useState<Set<string>>(new Set())
@@ -420,13 +423,19 @@ export default function Extract() {
   const filteredEntries = useMemo(() => {
     if (!activeJob?.result?.entries) return []
 
+    const minVal = filterMinValue ? parseFloat(filterMinValue) : null
+    const maxVal = filterMaxValue ? parseFloat(filterMaxValue) : null
+
     return activeJob.result.entries.filter((entry) => {
       if (showIndividualsOnly && entry.entity_type !== 'Individual') return false
       if (hideFlagged && entry.flagged) return false
       if (hideUnknownAddresses && entry.entry_number.startsWith('U')) return false
+      if (filterPropertyType && entry.property_type !== filterPropertyType) return false
+      if (minVal !== null && (!entry.property_value || entry.property_value < minVal)) return false
+      if (maxVal !== null && (!entry.property_value || entry.property_value > maxVal)) return false
       return true
     })
-  }, [activeJob?.result?.entries, showIndividualsOnly, hideFlagged, hideUnknownAddresses])
+  }, [activeJob?.result?.entries, showIndividualsOnly, hideFlagged, hideUnknownAddresses, filterPropertyType, filterMinValue, filterMaxValue])
 
   // Get entries to export (filtered + not excluded)
   const entriesToExport = useMemo(() => {
@@ -462,6 +471,9 @@ export default function Extract() {
     setShowIndividualsOnly(false)
     setHideFlagged(false)
     setHideUnknownAddresses(true)
+    setFilterPropertyType('')
+    setFilterMinValue('')
+    setFilterMaxValue('')
     setExcludedEntries(new Set())
   }
 
@@ -703,6 +715,38 @@ export default function Extract() {
                     />
                     <span>Hide Unknown Addresses</span>
                   </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Type:</span>
+                    <select
+                      value={filterPropertyType}
+                      onChange={(e) => setFilterPropertyType(e.target.value)}
+                      className="text-sm border border-gray-300 rounded px-2 py-1 focus:ring-tre-teal focus:border-tre-teal"
+                    >
+                      <option value="">All Types</option>
+                      <option value="residential">Residential</option>
+                      <option value="commercial">Commercial</option>
+                      <option value="land">Land</option>
+                      <option value="unknown">Unknown</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Value:</span>
+                    <input
+                      type="number"
+                      placeholder="Min"
+                      value={filterMinValue}
+                      onChange={(e) => setFilterMinValue(e.target.value)}
+                      className="w-24 text-sm border border-gray-300 rounded px-2 py-1 focus:ring-tre-teal focus:border-tre-teal"
+                    />
+                    <span className="text-gray-400">-</span>
+                    <input
+                      type="number"
+                      placeholder="Max"
+                      value={filterMaxValue}
+                      onChange={(e) => setFilterMaxValue(e.target.value)}
+                      className="w-24 text-sm border border-gray-300 rounded px-2 py-1 focus:ring-tre-teal focus:border-tre-teal"
+                    />
+                  </div>
                   <button
                     onClick={resetFilters}
                     className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"

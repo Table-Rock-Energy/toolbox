@@ -115,6 +115,9 @@ export default function Title() {
   const [hideDuplicates, setHideDuplicates] = useState(false)
   const [showIndividualsOnly, setShowIndividualsOnly] = useState(false)
   const [selectedSection, setSelectedSection] = useState<string>('')
+  const [filterPropertyType, setFilterPropertyType] = useState<string>('')
+  const [filterMinValue, setFilterMinValue] = useState<string>('')
+  const [filterMaxValue, setFilterMaxValue] = useState<string>('')
 
   // Row selection state
   const [excludedIndices, setExcludedIndices] = useState<Set<number>>(new Set())
@@ -252,8 +255,21 @@ export default function Title() {
       filtered = filtered.filter(e => e.legal_description === selectedSection)
     }
 
+    if (filterPropertyType) {
+      filtered = filtered.filter(e => e.property_type === filterPropertyType)
+    }
+
+    const minVal = filterMinValue ? parseFloat(filterMinValue) : null
+    const maxVal = filterMaxValue ? parseFloat(filterMaxValue) : null
+    if (minVal !== null) {
+      filtered = filtered.filter(e => e.property_value && e.property_value >= minVal)
+    }
+    if (maxVal !== null) {
+      filtered = filtered.filter(e => e.property_value && e.property_value <= maxVal)
+    }
+
     return filtered
-  }, [activeJob?.result?.entries, hideNoAddress, hideDuplicates, showIndividualsOnly, selectedSection])
+  }, [activeJob?.result?.entries, hideNoAddress, hideDuplicates, showIndividualsOnly, selectedSection, filterPropertyType, filterMinValue, filterMaxValue])
 
   // Get entries to export (filtered + not excluded)
   const entriesToExport = useMemo(() => {
@@ -550,6 +566,9 @@ export default function Title() {
     setHideDuplicates(false)
     setShowIndividualsOnly(false)
     setSelectedSection('')
+    setFilterPropertyType('')
+    setFilterMinValue('')
+    setFilterMaxValue('')
     setExcludedIndices(new Set())
   }
 
@@ -837,6 +856,38 @@ export default function Title() {
                       </select>
                     </div>
                   )}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Type:</span>
+                    <select
+                      value={filterPropertyType}
+                      onChange={(e) => setFilterPropertyType(e.target.value)}
+                      className="text-sm border border-gray-300 rounded px-2 py-1 focus:ring-tre-teal focus:border-tre-teal"
+                    >
+                      <option value="">All Types</option>
+                      <option value="residential">Residential</option>
+                      <option value="commercial">Commercial</option>
+                      <option value="land">Land</option>
+                      <option value="unknown">Unknown</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Value:</span>
+                    <input
+                      type="number"
+                      placeholder="Min"
+                      value={filterMinValue}
+                      onChange={(e) => setFilterMinValue(e.target.value)}
+                      className="w-24 text-sm border border-gray-300 rounded px-2 py-1 focus:ring-tre-teal focus:border-tre-teal"
+                    />
+                    <span className="text-gray-400">-</span>
+                    <input
+                      type="number"
+                      placeholder="Max"
+                      value={filterMaxValue}
+                      onChange={(e) => setFilterMaxValue(e.target.value)}
+                      className="w-24 text-sm border border-gray-300 rounded px-2 py-1 focus:ring-tre-teal focus:border-tre-teal"
+                    />
+                  </div>
                   <button
                     onClick={resetFilters}
                     className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
