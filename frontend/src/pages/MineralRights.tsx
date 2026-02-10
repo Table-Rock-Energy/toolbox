@@ -153,7 +153,6 @@ export default function MineralRights() {
         setSelectedEntity(data.entity)
         setRelationships(data.relationships || [])
         setOwnershipRecords(data.ownership_records || [])
-        setRelatedEntities(data.related_entities || [])
       }
     } catch (e) {
       console.error('Failed to fetch entity:', e)
