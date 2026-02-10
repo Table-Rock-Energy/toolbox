@@ -167,6 +167,17 @@ async def upload_csv(
         if job_id:
             result.job_id = job_id
 
+        # Feed ETL pipeline (non-blocking, failure doesn't break upload)
+        try:
+            from app.services.etl.pipeline import process_proration_rows
+            await process_proration_rows(
+                job_id=result.job_id or "",
+                source_filename=file.filename,
+                rows=[r.model_dump() for r in result.rows],
+            )
+        except Exception as etl_err:
+            logger.warning(f"ETL pipeline failed (non-critical): {etl_err}")
+
         return UploadResponse(
             message=(
                 f"Successfully processed {result.processed_rows} rows "

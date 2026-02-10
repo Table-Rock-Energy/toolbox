@@ -6,6 +6,7 @@ import {
   FileText,
   Calculator,
   DollarSign,
+  Database,
   LogOut,
   ChevronRight,
   ChevronLeft,
@@ -22,6 +23,7 @@ const toolNavItems = [
   { name: 'Title', path: '/title', icon: FileText },
   { name: 'Proration', path: '/proration', icon: Calculator },
   { name: 'Revenue', path: '/revenue', icon: DollarSign },
+  { name: 'Bronze DB', path: '/mineral-rights', icon: Database },
 ]
 
 interface SidebarProps {

@@ -101,6 +101,17 @@ async def upload_file(
         if job_id:
             result.job_id = job_id
 
+        # Feed ETL pipeline (non-blocking, failure doesn't break upload)
+        try:
+            from app.services.etl.pipeline import process_title_entries
+            await process_title_entries(
+                job_id=result.job_id or "",
+                source_filename=file.filename,
+                entries=[e.model_dump() for e in entries],
+            )
+        except Exception as etl_err:
+            logger.warning(f"ETL pipeline failed (non-critical): {etl_err}")
+
         return UploadResponse(
             message=f"Successfully processed {len(entries)} entries",
             result=result,

@@ -100,6 +100,16 @@ async def upload_pdfs(files: list[UploadFile] = File(...)):
         if job_id:
             result.job_id = job_id
 
+        # Feed ETL pipeline (non-blocking, failure doesn't break upload)
+        try:
+            from app.services.etl.pipeline import process_revenue_statements
+            await process_revenue_statements(
+                job_id=result.job_id or "",
+                statements=[s.model_dump(mode="json") for s in statements],
+            )
+        except Exception as etl_err:
+            logger.warning(f"ETL pipeline failed (non-critical): {etl_err}")
+
     return result
 
 

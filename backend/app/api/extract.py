@@ -107,6 +107,17 @@ async def upload_pdf(
         if job_id:
             result.job_id = job_id
 
+        # Feed ETL pipeline (non-blocking, failure doesn't break upload)
+        try:
+            from app.services.etl.pipeline import process_extract_entries
+            await process_extract_entries(
+                job_id=result.job_id or "",
+                source_filename=file.filename,
+                entries=[e.model_dump() for e in entries],
+            )
+        except Exception as etl_err:
+            logger.warning(f"ETL pipeline failed (non-critical): {etl_err}")
+
         return UploadResponse(
             message=f"Successfully extracted {len(entries)} entries",
             result=result,
