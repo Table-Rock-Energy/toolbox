@@ -683,13 +683,13 @@ export default function Revenue() {
                                       {isColVisible('owner_value') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{formatCurrency(row.owner_value)}</td>}
                                       {isColVisible('owner_tax_amount') && (
                                         <td className="py-2 px-2 text-red-600 text-right text-xs">
-                                          {toNum(row.owner_tax_amount) ? `-${formatCurrency(row.owner_tax_amount)}` : '\u2014'}
+                                          {toNum(row.owner_tax_amount) !== undefined ? `-${formatCurrency(Math.abs(toNum(row.owner_tax_amount)!))}` : '\u2014'}
                                         </td>
                                       )}
                                       {isColVisible('tax_type') && <td className="py-2 px-2 text-gray-600 text-xs">{row.tax_type || '\u2014'}</td>}
                                       {isColVisible('owner_deduct_amount') && (
                                         <td className="py-2 px-2 text-orange-600 text-right text-xs">
-                                          {toNum(row.owner_deduct_amount) ? `-${formatCurrency(row.owner_deduct_amount)}` : '\u2014'}
+                                          {toNum(row.owner_deduct_amount) !== undefined ? `-${formatCurrency(Math.abs(toNum(row.owner_deduct_amount)!))}` : '\u2014'}
                                         </td>
                                       )}
                                       {isColVisible('deduct_code') && <td className="py-2 px-2 text-gray-600 text-xs">{row.deduct_code || '\u2014'}</td>}
@@ -746,13 +746,13 @@ export default function Revenue() {
                   </div>
                   <div className="p-3 bg-red-50 rounded-lg text-center">
                     <p className="text-lg font-oswald font-semibold text-red-600">
-                      -{formatCurrency(getTotals().tax)}
+                      -{formatCurrency(Math.abs(getTotals().tax))}
                     </p>
                     <p className="text-xs text-gray-500">Taxes</p>
                   </div>
                   <div className="p-3 bg-orange-50 rounded-lg text-center">
                     <p className="text-lg font-oswald font-semibold text-orange-600">
-                      -{formatCurrency(getTotals().deductions)}
+                      -{formatCurrency(Math.abs(getTotals().deductions))}
                     </p>
                     <p className="text-xs text-gray-500">Deductions</p>
                   </div>
