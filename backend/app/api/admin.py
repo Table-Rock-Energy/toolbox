@@ -500,3 +500,63 @@ async def get_profile_image(user_id: str):
             )
 
     raise HTTPException(status_code=404, detail="Profile image not found")
+
+
+# --- User Preferences ---
+
+class UserPreferencesRequest(BaseModel):
+    """Request to update notification preferences."""
+    email_notifications: bool = True
+    browser_notifications: bool = False
+    job_complete_alerts: bool = True
+    weekly_report: bool = True
+
+
+class UserPreferencesResponse(BaseModel):
+    """Response with user notification preferences."""
+    email_notifications: bool = True
+    browser_notifications: bool = False
+    job_complete_alerts: bool = True
+    weekly_report: bool = True
+
+
+@router.get("/preferences/{email}", response_model=UserPreferencesResponse)
+async def get_preferences(email: str):
+    """Get notification preferences for a user."""
+    try:
+        from app.services.firestore_service import get_user_preferences
+        prefs = await get_user_preferences(email)
+        if prefs:
+            return UserPreferencesResponse(
+                email_notifications=prefs.get("email_notifications", True),
+                browser_notifications=prefs.get("browser_notifications", False),
+                job_complete_alerts=prefs.get("job_complete_alerts", True),
+                weekly_report=prefs.get("weekly_report", True),
+            )
+    except Exception as e:
+        logger.warning(f"Could not load preferences for {email}: {e}")
+
+    # Return defaults if no saved preferences
+    return UserPreferencesResponse()
+
+
+@router.put("/preferences/{email}", response_model=UserPreferencesResponse)
+async def update_preferences(email: str, request: UserPreferencesRequest):
+    """Update notification preferences for a user."""
+    try:
+        from app.services.firestore_service import set_user_preferences
+        prefs = {
+            "email_notifications": request.email_notifications,
+            "browser_notifications": request.browser_notifications,
+            "job_complete_alerts": request.job_complete_alerts,
+            "weekly_report": request.weekly_report,
+        }
+        await set_user_preferences(email, prefs)
+        logger.info(f"Updated preferences for {email}")
+        return UserPreferencesResponse(**prefs)
+    except Exception as e:
+        logger.warning(f"Failed to save preferences for {email}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save preferences: {str(e)}"
+        ) from e

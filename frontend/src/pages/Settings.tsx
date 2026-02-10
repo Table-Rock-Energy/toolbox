@@ -26,6 +26,8 @@ export default function Settings() {
     jobComplete: true,
     weeklyReport: true,
   })
+  const [isSavingNotifications, setIsSavingNotifications] = useState(false)
+  const [notificationSuccess, setNotificationSuccess] = useState('')
 
   // Profile form state
   const [firstName, setFirstName] = useState('')
@@ -48,6 +50,54 @@ export default function Settings() {
       }
     }
   }, [user])
+
+  // Load notification preferences from Firestore
+  useEffect(() => {
+    if (!user?.email) return
+    const loadPreferences = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/admin/preferences/${encodeURIComponent(user.email!)}`)
+        if (res.ok) {
+          const data = await res.json()
+          setNotifications({
+            email: data.email_notifications ?? true,
+            browser: data.browser_notifications ?? false,
+            jobComplete: data.job_complete_alerts ?? true,
+            weeklyReport: data.weekly_report ?? true,
+          })
+        }
+      } catch (err) {
+        console.error('Failed to load notification preferences:', err)
+      }
+    }
+    loadPreferences()
+  }, [user?.email])
+
+  const handleSaveNotifications = async () => {
+    if (!user?.email) return
+    setIsSavingNotifications(true)
+    setNotificationSuccess('')
+    try {
+      const res = await fetch(`${API_BASE}/admin/preferences/${encodeURIComponent(user.email)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email_notifications: notifications.email,
+          browser_notifications: notifications.browser,
+          job_complete_alerts: notifications.jobComplete,
+          weekly_report: notifications.weeklyReport,
+        }),
+      })
+      if (res.ok) {
+        setNotificationSuccess('Notification preferences saved!')
+        setTimeout(() => setNotificationSuccess(''), 3000)
+      }
+    } catch (err) {
+      console.error('Failed to save notification preferences:', err)
+    } finally {
+      setIsSavingNotifications(false)
+    }
+  }
 
   // Password change state
   const [currentPassword, setCurrentPassword] = useState('')
@@ -532,9 +582,19 @@ export default function Settings() {
                   />
                 </button>
               </div>
+              {notificationSuccess && (
+                <div className="flex items-center gap-2 text-green-600 text-sm p-3 bg-green-50 rounded-lg">
+                  <Check className="w-4 h-4" />
+                  {notificationSuccess}
+                </div>
+              )}
               <div className="flex justify-end pt-2">
-                <button className="px-6 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors">
-                  Save Notifications
+                <button
+                  onClick={handleSaveNotifications}
+                  disabled={isSavingNotifications}
+                  className="px-6 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors disabled:opacity-50"
+                >
+                  {isSavingNotifications ? 'Saving...' : 'Save Notifications'}
                 </button>
               </div>
             </div>

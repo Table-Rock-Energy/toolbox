@@ -44,6 +44,7 @@ RRC_GAS_COLLECTION = "rrc_gas_proration"
 RRC_SYNC_COLLECTION = "rrc_data_syncs"
 AUDIT_LOGS_COLLECTION = "audit_logs"
 APP_CONFIG_COLLECTION = "app_config"
+USER_PREFERENCES_COLLECTION = "user_preferences"
 
 
 # =============================================================================
@@ -785,3 +786,25 @@ async def set_config_doc(doc_id: str, data: dict) -> None:
     db = get_firestore_client()
     data["_updated_at"] = datetime.utcnow()
     await db.collection(APP_CONFIG_COLLECTION).document(doc_id).set(data)
+
+
+# =============================================================================
+# User Preferences Operations
+# =============================================================================
+
+
+async def get_user_preferences(email: str) -> Optional[dict]:
+    """Get a user's preferences from Firestore."""
+    db = get_firestore_client()
+    doc_id = email.lower().replace("@", "_at_").replace(".", "_")
+    doc = await db.collection(USER_PREFERENCES_COLLECTION).document(doc_id).get()
+    return doc.to_dict() if doc.exists else None
+
+
+async def set_user_preferences(email: str, prefs: dict) -> None:
+    """Save a user's preferences to Firestore."""
+    db = get_firestore_client()
+    doc_id = email.lower().replace("@", "_at_").replace(".", "_")
+    prefs["email"] = email.lower()
+    prefs["_updated_at"] = datetime.utcnow()
+    await db.collection(USER_PREFERENCES_COLLECTION).document(doc_id).set(prefs)
