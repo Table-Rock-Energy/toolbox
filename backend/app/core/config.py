@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-2.5-flash"
     gemini_monthly_budget: float = 15.00  # Maximum monthly spend in USD
 
+    # Data enrichment settings (People Data Labs + SearchBug)
+    pdl_api_key: Optional[str] = None
+    searchbug_api_key: Optional[str] = None
+    enrichment_enabled: bool = False
+
     @property
     def use_gcs(self) -> bool:
         """Check if GCS should be used for storage."""
@@ -65,6 +70,11 @@ class Settings(BaseSettings):
     def use_gemini(self) -> bool:
         """Check if Gemini AI validation should be used."""
         return self.gemini_enabled and bool(self.gemini_api_key)
+
+    @property
+    def use_enrichment(self) -> bool:
+        """Check if data enrichment should be used."""
+        return self.enrichment_enabled and (bool(self.pdl_api_key) or bool(self.searchbug_api_key))
 
 
 settings = Settings()

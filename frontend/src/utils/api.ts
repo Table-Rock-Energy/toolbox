@@ -238,4 +238,67 @@ export const aiApi = {
     api.post<AiValidationResult>('/ai/validate', { tool, entries }, { timeout: 120000 }),
 }
 
+// Enrichment types
+export interface EnrichmentPhoneNumber {
+  number: string
+  type?: string | null
+  carrier?: string | null
+}
+
+export interface EnrichmentSocialProfile {
+  platform: string
+  url: string
+  username?: string | null
+}
+
+export interface EnrichmentPublicRecords {
+  is_deceased: boolean
+  deceased_date?: string | null
+  has_bankruptcy: boolean
+  bankruptcy_details: string[]
+  has_liens: boolean
+  lien_details: string[]
+}
+
+export interface EnrichedPerson {
+  original_name: string
+  original_address?: string | null
+  phones: EnrichmentPhoneNumber[]
+  emails: string[]
+  social_profiles: EnrichmentSocialProfile[]
+  public_records: EnrichmentPublicRecords
+  enrichment_sources: string[]
+  enriched_at?: string | null
+  match_confidence?: string | null
+}
+
+export interface EnrichmentStatusResponse {
+  enabled: boolean
+  pdl_configured: boolean
+  searchbug_configured: boolean
+}
+
+export interface EnrichmentConfigResponse {
+  enabled: boolean
+  pdl_api_key: string | null
+  searchbug_api_key: string | null
+}
+
+export interface EnrichmentResponse {
+  success: boolean
+  results: EnrichedPerson[]
+  total_requested: number
+  total_enriched: number
+  error_message?: string | null
+}
+
+export const enrichmentApi = {
+  getStatus: () => api.get<EnrichmentStatusResponse>('/enrichment/status'),
+  getConfig: () => api.get<EnrichmentConfigResponse>('/enrichment/config'),
+  updateConfig: (config: { pdl_api_key?: string; searchbug_api_key?: string; enabled?: boolean }) =>
+    api.post<{ success: boolean; message: string; status: EnrichmentStatusResponse }>('/enrichment/config', config),
+  lookup: (persons: { name: string; address?: string; city?: string; state?: string; zip_code?: string }[]) =>
+    api.post<EnrichmentResponse>('/enrichment/lookup', { persons }, { timeout: 60000 }),
+}
+
 export default api
