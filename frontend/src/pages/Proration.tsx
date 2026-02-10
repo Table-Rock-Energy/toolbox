@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
-import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw, Filter, Settings, Edit2, Columns, Sparkles, X } from 'lucide-react'
+import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw, Filter, Settings, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { FileUpload, Modal, AiReviewPanel } from '../components'
 import { aiApi } from '../utils/api'
 import type { AiSuggestion } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
+import { useToolLayout } from '../hooks/useToolLayout'
 
 interface MineralHolderRow {
   county: string
@@ -118,7 +119,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Proration() {
   const { user } = useAuth()
-  const storageKey = `${STORAGE_KEY_PREFIX}-${user?.uid || 'anon'}`
+  const { panelCollapsed, togglePanel, activeStorageKey } = useToolLayout('proration', user?.uid, STORAGE_KEY_PREFIX)
   const [jobs, setJobs] = useState<ProrationJob[]>([])
   const [activeJob, setActiveJob] = useState<ProrationJob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -146,10 +147,10 @@ export default function Proration() {
   const [editingRow, setEditingRow] = useState<MineralHolderRow | null>(null)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
 
-  // Column Visibility State (persisted in localStorage per user)
+  // Column Visibility State (persisted in localStorage per user, separate keys for narrow/wide)
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
     try {
-      const saved = localStorage.getItem(storageKey)
+      const saved = localStorage.getItem(activeStorageKey)
       if (saved) return new Set(JSON.parse(saved))
     } catch { /* use defaults */ }
     return new Set(DEFAULT_PRORATION_VISIBLE)
@@ -157,10 +158,24 @@ export default function Proration() {
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const columnPickerRef = useRef<HTMLDivElement>(null)
 
+  // Reload column visibility when panel collapse state changes
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(activeStorageKey)
+      if (saved) {
+        setVisibleColumns(new Set(JSON.parse(saved)))
+      } else {
+        setVisibleColumns(new Set(DEFAULT_PRORATION_VISIBLE))
+      }
+    } catch {
+      setVisibleColumns(new Set(DEFAULT_PRORATION_VISIBLE))
+    }
+  }, [activeStorageKey])
+
   // Persist column visibility to localStorage
   useEffect(() => {
-    localStorage.setItem(storageKey, JSON.stringify([...visibleColumns]))
-  }, [visibleColumns, storageKey])
+    localStorage.setItem(activeStorageKey, JSON.stringify([...visibleColumns]))
+  }, [visibleColumns, activeStorageKey])
 
   // Close column picker on outside click
   useEffect(() => {
@@ -519,7 +534,7 @@ export default function Proration() {
         <div className="p-2 bg-purple-100 rounded-lg">
           <Calculator className="w-6 h-6 text-purple-600" />
         </div>
-        <div>
+        <div className="flex-1">
           <h1 className="text-2xl font-oswald font-semibold text-tre-navy">
             Proration
           </h1>
@@ -527,6 +542,14 @@ export default function Proration() {
             Calculate interest prorations and NRA allocations with RRC data
           </p>
         </div>
+        <button
+          onClick={togglePanel}
+          className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-tre-navy border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          title={panelCollapsed ? 'Show side panel' : 'Hide side panel'}
+        >
+          {panelCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+          {panelCollapsed ? 'Show Panel' : 'Hide Panel'}
+        </button>
       </div>
 
       {/* RRC Data Status Banner */}
@@ -606,8 +629,9 @@ export default function Proration() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className={`grid grid-cols-1 ${panelCollapsed ? '' : 'lg:grid-cols-3'} gap-6`}>
         {/* Left Column - Upload and History */}
+        {!panelCollapsed && (
         <div className="space-y-6">
           {/* Upload Section */}
           <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -769,9 +793,10 @@ export default function Proration() {
             )}
           </div>
         </div>
+        )}
 
         {/* Right Column - Results */}
-        <div className="lg:col-span-2">
+        <div className={panelCollapsed ? '' : 'lg:col-span-2'}>
           {error && (
             <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700">
               <AlertCircle className="w-5 h-5" />
