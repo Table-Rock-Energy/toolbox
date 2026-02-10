@@ -439,6 +439,25 @@ export default function Revenue() {
         </button>
       </div>
 
+      {/* Upload Section - compact row when panel collapsed */}
+      {panelCollapsed && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <FileUpload
+            onFilesSelected={handleFilesSelected}
+            accept=".pdf"
+            multiple={false}
+            label="Upload Revenue Statement"
+            description="Drop your PDF file here"
+          />
+          {isProcessing && (
+            <div className="mt-4 flex items-center gap-2 text-tre-teal">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
+              <span className="text-sm">Processing...</span>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className={`grid grid-cols-1 ${panelCollapsed ? '' : 'lg:grid-cols-3'} gap-6`}>
         {/* Left Column - Upload and History */}
         {!panelCollapsed && (
@@ -850,6 +869,58 @@ export default function Revenue() {
           )}
         </div>
       </div>
+
+      {/* Recent Jobs - shown at bottom when panel collapsed */}
+      {panelCollapsed && (
+        <div className="bg-white rounded-xl border border-gray-200">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <h3 className="font-medium text-gray-900">Recent Jobs</h3>
+          </div>
+          {jobs.length === 0 ? (
+            <div className="p-6 text-center text-gray-500">
+              <Upload className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+              <p className="text-sm">No jobs yet</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100 max-h-60 overflow-y-auto">
+              {jobs.map((job) => (
+                <button
+                  key={job.id}
+                  onClick={() => handleSelectJob(job)}
+                  className={`group w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${
+                    activeJob?.id === job.id ? 'bg-tre-teal/5 border-l-2 border-tre-teal' : ''
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {job.documentName}
+                      </p>
+                      <p className="text-xs text-gray-500">{job.user}</p>
+                      <p className="text-xs text-gray-400">{job.timestamp}</p>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {job.result?.success ? (
+                        <CheckCircle className="w-4 h-4 text-green-500" />
+                      ) : job.result?.errors?.length ? (
+                        <AlertCircle className="w-4 h-4 text-red-500" />
+                      ) : null}
+                      <span
+                        role="button"
+                        onClick={(e) => handleDeleteJob(e, job)}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 text-gray-400 hover:text-red-500 transition-all"
+                        title="Delete job"
+                      >
+                        <X className="w-4 h-4" />
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Edit Row Modal */}
       <Modal

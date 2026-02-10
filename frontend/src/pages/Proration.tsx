@@ -629,6 +629,118 @@ export default function Proration() {
         )}
       </div>
 
+      {/* Upload Section - compact row when panel collapsed */}
+      {panelCollapsed && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          {!showProcessingOptions ? (
+            <>
+              <FileUpload
+                onFilesSelected={handleFilesSelected}
+                accept=".csv"
+                label="Upload Mineral Holders CSV"
+                description="Drop your CSV file from mineralholders.com"
+              />
+              {isProcessing && (
+                <div className="mt-4 flex items-center gap-2 text-tre-teal">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
+                  <span className="text-sm">Processing...</span>
+                </div>
+              )}
+              {!hasRRCData && !isProcessing && (
+                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <p className="text-xs text-yellow-700">
+                    <AlertTriangle className="w-3 h-3 inline mr-1" />
+                    Download RRC data first for accurate NRA calculations
+                  </p>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-gray-700">
+                <Settings className="w-4 h-4" />
+                <span className="font-medium">Processing Options</span>
+              </div>
+
+              <div className="p-3 bg-gray-50 rounded-lg text-sm">
+                <span className="text-gray-600">File:</span>{' '}
+                <span className="font-medium text-gray-900">{selectedFile?.name}</span>
+              </div>
+
+              {/* Filter Options */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <Filter className="w-4 h-4" />
+                  <span>Filters</span>
+                </div>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={newRecordOnly}
+                    onChange={(e) => setNewRecordOnly(e.target.checked)}
+                    className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                  />
+                  <span>New Records Only (Y)</span>
+                </label>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={deduplicateByPropertyId}
+                    onChange={(e) => setDeduplicateByPropertyId(e.target.checked)}
+                    className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                  />
+                  <span>Deduplicate by Property ID</span>
+                </label>
+
+                <div className="flex items-center gap-2">
+                  <label className="text-sm">Min Appraisal Value:</label>
+                  <input
+                    type="number"
+                    value={minAppraisalValue}
+                    onChange={(e) => setMinAppraisalValue(Number(e.target.value))}
+                    min={0}
+                    className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-tre-teal focus:border-tre-teal"
+                  />
+                </div>
+              </div>
+
+              {/* Well Type Override */}
+              <div className="space-y-2">
+                <label className="text-sm text-gray-600">Well Type Override:</label>
+                <select
+                  value={wellTypeOverride}
+                  onChange={(e) => setWellTypeOverride(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+                >
+                  <option value="auto">Auto-detect from RRC data</option>
+                  <option value="oil">Oil</option>
+                  <option value="gas">Gas</option>
+                  <option value="both">Both</option>
+                </select>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={cancelProcessing}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={processFile}
+                  className="flex-1 px-4 py-2 bg-tre-navy text-white rounded-lg text-sm hover:bg-tre-navy/90 transition-colors"
+                >
+                  Process CSV
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className={`grid grid-cols-1 ${panelCollapsed ? '' : 'lg:grid-cols-3'} gap-6`}>
         {/* Left Column - Upload and History */}
         {!panelCollapsed && (
@@ -1023,6 +1135,58 @@ export default function Proration() {
           )}
         </div>
       </div>
+
+      {/* Recent Jobs - shown at bottom when panel collapsed */}
+      {panelCollapsed && (
+        <div className="bg-white rounded-xl border border-gray-200">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <h3 className="font-medium text-gray-900">Recent Jobs</h3>
+          </div>
+          {jobs.length === 0 ? (
+            <div className="p-6 text-center text-gray-500">
+              <Upload className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+              <p className="text-sm">No jobs yet</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100 max-h-60 overflow-y-auto">
+              {jobs.map((job) => (
+                <button
+                  key={job.id}
+                  onClick={() => handleSelectJob(job)}
+                  className={`group w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${
+                    activeJob?.id === job.id ? 'bg-tre-teal/5 border-l-2 border-tre-teal' : ''
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {job.documentName}
+                      </p>
+                      <p className="text-xs text-gray-500">{job.user}</p>
+                      <p className="text-xs text-gray-400">{job.timestamp}</p>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {job.result?.success ? (
+                        <CheckCircle className="w-4 h-4 text-green-500" />
+                      ) : job.result?.error_message ? (
+                        <AlertCircle className="w-4 h-4 text-red-500" />
+                      ) : null}
+                      <span
+                        role="button"
+                        onClick={(e) => handleDeleteJob(e, job)}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 text-gray-400 hover:text-red-500 transition-all"
+                        title="Delete job"
+                      >
+                        <X className="w-4 h-4" />
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Edit Row Modal */}
       <Modal
