@@ -199,6 +199,9 @@ def _parse_page_rows(
     current_property_name: Optional[str] = None
     current_product: Optional[str] = None
     current_interest_type: Optional[str] = None
+    # For multi-line property headers (Petro-Hunt): property number on one row,
+    # name/state on the next row
+    pending_property_name: bool = False
 
     for row_spans in logical_rows:
         row_text = " ".join(s.text for s in row_spans)
@@ -206,7 +209,31 @@ def _parse_page_rows(
 
         # Skip known non-data rows
         if _is_skip_row(row_text_lower):
+            pending_property_name = False
             continue
+
+        # Handle multi-line property: previous row set property number,
+        # this row should have the property name (e.g. "COPPERHEAD 53-14 1H")
+        # or "State: TX, County: LOVING"
+        if pending_property_name:
+            pending_property_name = False
+            # Check if this row is a State/County continuation
+            state_match = re.match(r"State:\s*\w+", row_text, re.IGNORECASE)
+            if state_match:
+                # State-only continuation row — property name stays as-is from number row
+                continue
+            # Check if this row has name + state (e.g. "COPPERHEAD 53-14 1H, State: TX...")
+            name_state = re.match(r"(.+?),\s*State:", row_text, re.IGNORECASE)
+            if name_state:
+                current_property_name = name_state.group(1).strip()
+                continue
+            # Otherwise treat entire row text as property name if it's not
+            # a product label or numeric data
+            if not _extract_standalone_product(row_text) and not re.match(
+                r"^[\d,.\-()]+$", row_text.replace(" ", "")
+            ):
+                current_property_name = row_text.strip()
+                continue
 
         # Check for property header line
         # Petro-Hunt/Oxyrock: "Property: 329*28097 COPPERHEAD 53-14 1H, State: TX..."
@@ -225,6 +252,34 @@ def _parse_page_rows(
             current_product = None
             current_interest_type = None
             continue
+
+        # Fallback: "Property: NUMBER NAME" without ", State:" on same row
+        # (Petro-Hunt multi-line headers)
+        if not prop_match:
+            partial_match = re.search(
+                r"property\s*:\s*(\S+)\s*(.*)", row_text, re.IGNORECASE
+            )
+            if partial_match:
+                current_property_no = partial_match.group(1)
+                name_part = partial_match.group(2).strip()
+                if name_part:
+                    current_property_name = name_part
+                else:
+                    current_property_name = None
+                current_product = None
+                current_interest_type = None
+                pending_property_name = not bool(name_part)
+                continue
+
+            # Number-only property header without ", State:" (e.g. "329*28097")
+            num_only = re.match(r"^(\d[\d*]+)$", row_text.strip())
+            if num_only and len(row_text.strip()) >= 5:
+                current_property_no = num_only.group(1)
+                current_property_name = None
+                current_product = None
+                current_interest_type = None
+                pending_property_name = True
+                continue
 
         # Check for standalone product name (e.g., "GAS", "OIL", "CONDENSATE")
         # These appear on their own line above the data rows
@@ -509,6 +564,11 @@ def _parse_data_row(
     if row_deduct_amount and not row_deduct_code:
         row_deduct_code = "10"
 
+    # Owner net revenue: prefer column value, then fall back to calculation
+    computed_owner_net = owner_net_from_col or owner_net_value
+    if computed_owner_net is None and owner_value is not None:
+        computed_owner_net = _compute_owner_net(owner_value, row_tax_amount, row_deduct_amount)
+
     return RevenueRow(
         property_name=property_name,
         property_number=property_no,
@@ -525,8 +585,21 @@ def _parse_data_row(
         tax_type=row_tax_type,
         owner_deduct_amount=row_deduct_amount,
         deduct_code=row_deduct_code,
-        owner_net_revenue=owner_net_from_col or owner_net_value,
+        owner_net_revenue=computed_owner_net,
     )
+
+
+def _compute_owner_net(
+    owner_value: float,
+    tax_amount: Optional[float],
+    deduct_amount: Optional[float],
+) -> float:
+    """Compute owner net revenue as owner_value minus taxes and deductions.
+
+    For Petro-Hunt revenue rows (where taxes are separate rows), tax_amount
+    and deduct_amount will be None/0, so this returns owner_value as-is.
+    """
+    return owner_value - (tax_amount or 0) - (deduct_amount or 0)
 
 
 def _parse_float(value: Optional[str]) -> Optional[float]:
