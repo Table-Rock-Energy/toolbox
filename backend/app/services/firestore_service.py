@@ -100,10 +100,12 @@ async def create_job(
     user_id: Optional[str] = None,
     source_file_size: Optional[int] = None,
     options: Optional[dict] = None,
+    job_id: Optional[str] = None,
 ) -> dict:
     """Create a new processing job."""
     db = get_firestore_client()
-    job_id = str(uuid4())
+    if job_id is None:
+        job_id = str(uuid4())
 
     job_data = {
         "id": job_id,

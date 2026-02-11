@@ -437,6 +437,7 @@ export default function Title() {
 
       const response = await fetch(`${API_BASE}/title/upload`, {
         method: 'POST',
+        headers: { 'X-User-Email': user?.email || '' },
         body: formData,
       })
 

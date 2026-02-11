@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
-from typing import Annotated
+from typing import Annotated, Optional
+from uuid import uuid4
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -42,6 +44,7 @@ async def health_check() -> dict:
 @router.post("/upload", response_model=UploadResponse)
 async def upload_file(
     file: Annotated[UploadFile, File(description="Excel or CSV file to process")],
+    request: Request,
 ) -> UploadResponse:
     """Upload an Excel or CSV file and extract owner entries."""
     file_bytes = await validate_upload(
@@ -79,6 +82,9 @@ async def upload_file(
             len(entries), duplicate_count, no_address_count, file.filename,
         )
 
+        # Generate job_id locally so we can return it immediately
+        job_id = str(uuid4())
+
         result = ProcessingResult(
             success=True,
             entries=entries,
@@ -87,31 +93,24 @@ async def upload_file(
             no_address_count=no_address_count,
             sections=sections,
             source_filename=file.filename,
+            job_id=job_id,
         )
 
-        # Persist to Firestore (non-blocking)
-        job_id = await persist_job_result(
-            tool="title",
+        # Extract user email from header
+        user_email = request.headers.get("x-user-email") or None
+
+        # Fire-and-forget: persist to Firestore + ETL in background
+        entry_dicts = [e.model_dump() for e in entries]
+        asyncio.create_task(_persist_in_background(
+            job_id=job_id,
             filename=file.filename,
             file_size=len(file_bytes),
-            entries=[e.model_dump() for e in entries],
+            entries=entry_dicts,
             total=len(entries),
             success=len(entries),
             errors=duplicate_count,
-        )
-        if job_id:
-            result.job_id = job_id
-
-        # Feed ETL pipeline (non-blocking, failure doesn't break upload)
-        try:
-            from app.services.etl.pipeline import process_title_entries
-            await process_title_entries(
-                job_id=result.job_id or "",
-                source_filename=file.filename,
-                entries=[e.model_dump() for e in entries],
-            )
-        except Exception as etl_err:
-            logger.warning(f"ETL pipeline failed (non-critical): {etl_err}")
+            user_id=user_email,
+        ))
 
         return UploadResponse(
             message=f"Successfully processed {len(entries)} entries",
@@ -126,6 +125,44 @@ async def upload_file(
             status_code=500,
             detail=f"Error processing file: {e!s}",
         ) from e
+
+
+async def _persist_in_background(
+    *,
+    job_id: str,
+    filename: str,
+    file_size: int,
+    entries: list[dict],
+    total: int,
+    success: int,
+    errors: int,
+    user_id: Optional[str] = None,
+) -> None:
+    """Background task for Firestore persistence + ETL pipeline."""
+    try:
+        await persist_job_result(
+            tool="title",
+            filename=filename,
+            file_size=file_size,
+            entries=entries,
+            total=total,
+            success=success,
+            errors=errors,
+            user_id=user_id,
+            job_id=job_id,
+        )
+    except Exception as e:
+        logger.warning("Background persistence failed: %s", e)
+
+    try:
+        from app.services.etl.pipeline import process_title_entries
+        await process_title_entries(
+            job_id=job_id,
+            source_filename=filename,
+            entries=entries,
+        )
+    except Exception as e:
+        logger.warning("Background ETL failed: %s", e)
 
 
 @router.post("/preview")
