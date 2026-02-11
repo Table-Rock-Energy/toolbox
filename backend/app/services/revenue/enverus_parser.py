@@ -60,10 +60,11 @@ def parse_enverus_statement(pdf_bytes: bytes, filename: str) -> RevenueStatement
         statement.payor = header.get("operator_name")
         statement.operator_name = header.get("operator_name")
 
-        # Parse data rows from all pages
+        # Parse data rows from all pages, carrying property context across pages
+        page_ctx: dict[str, Optional[str]] = {}
         for page_num in sorted(pages.keys()):
             page_spans = pages[page_num]
-            rows = _parse_page_rows(page_spans, layout)
+            rows, page_ctx = _parse_page_rows(page_spans, layout, page_ctx)
             statement.rows.extend(rows)
 
     except Exception as e:
@@ -181,24 +182,29 @@ def _find_value_right_of(label_span: TextSpan, all_spans: list[TextSpan]) -> Opt
 
 
 def _parse_page_rows(
-    spans: list[TextSpan], layout: EnverusColumnLayout
-) -> list[RevenueRow]:
-    """Parse data rows from a single page's spans."""
+    spans: list[TextSpan],
+    layout: EnverusColumnLayout,
+    ctx: Optional[dict[str, Optional[str]]] = None,
+) -> tuple[list[RevenueRow], dict[str, Optional[str]]]:
+    """Parse data rows from a single page's spans.
+
+    Accepts and returns a context dict to carry property/product state across pages.
+    """
     rows: list[RevenueRow] = []
 
     # Only consider spans below the header row
     data_spans = [s for s in spans if s.y0 > layout.header_y + 10]
     if not data_spans:
-        return rows
+        return rows, ctx or {}
 
     # Group spans into logical rows by y-position
     logical_rows = _group_into_rows(data_spans)
 
-    # Track current property context
-    current_property_no: Optional[str] = None
-    current_property_name: Optional[str] = None
-    current_product: Optional[str] = None
-    current_interest_type: Optional[str] = None
+    # Track current property context (carry over from previous page)
+    current_property_no: Optional[str] = (ctx or {}).get("property_no")
+    current_property_name: Optional[str] = (ctx or {}).get("property_name")
+    current_product: Optional[str] = (ctx or {}).get("product")
+    current_interest_type: Optional[str] = (ctx or {}).get("interest_type")
     # For multi-line property headers (Petro-Hunt): property number on one row,
     # name/state on the next row
     pending_property_name: bool = False
@@ -315,7 +321,12 @@ def _parse_page_rows(
         if row:
             rows.append(row)
 
-    return rows
+    return rows, {
+        "property_no": current_property_no,
+        "property_name": current_property_name,
+        "product": current_product,
+        "interest_type": current_interest_type,
+    }
 
 
 def _group_into_rows(spans: list[TextSpan]) -> list[list[TextSpan]]:
@@ -332,11 +343,16 @@ def _group_into_rows(spans: list[TextSpan]) -> list[list[TextSpan]]:
         if abs(span.y0 - current_y) <= ROW_Y_TOLERANCE:
             current_row.append(span)
         else:
+            # Sort by x-position for left-to-right reading order within the row.
+            # Spans grouped by y-proximity may have slightly different y0 values,
+            # causing incorrect ordering when sorted by (y0, x0).
+            current_row.sort(key=lambda s: s.x0)
             rows.append(current_row)
             current_row = [span]
             current_y = span.y0
 
     if current_row:
+        current_row.sort(key=lambda s: s.x0)
         rows.append(current_row)
 
     return rows
