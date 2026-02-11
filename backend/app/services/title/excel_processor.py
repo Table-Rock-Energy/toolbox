@@ -253,12 +253,26 @@ def _process_multi_column(
     # Try to identify columns
     col_mapping = _identify_columns(df)
 
+    # Check if the "name" column is actually a dedicated full name column
+    # vs a first_name/last_name column being used as fallback
+    has_full_name_col = "name" in col_mapping and col_mapping["name"] not in (
+        col_mapping.get("first_name"), col_mapping.get("last_name")
+    )
+    has_separate_name_cols = "first_name" in col_mapping or "last_name" in col_mapping
+
     for _, row in df.iterrows():
-        # Get name
         name_col = col_mapping.get("name", 0)
         raw_name = row.iloc[name_col] if name_col < len(row) else None
 
-        if pd.isna(raw_name) or not str(raw_name).strip():
+        # If no dedicated full name column, reconstruct from first/last parts
+        if not has_full_name_col and has_separate_name_cols:
+            raw_first = _get_cell_value(row, col_mapping.get("first_name"))
+            raw_last = _get_cell_value(row, col_mapping.get("last_name"))
+            parts = [p for p in [raw_first, raw_last] if p]
+            if parts:
+                raw_name = " ".join(parts)
+
+        if pd.isna(raw_name) if not isinstance(raw_name, str) else not raw_name or not str(raw_name).strip():
             continue
 
         # Extract annotations from name
@@ -446,8 +460,16 @@ def _identify_columns(df: pd.DataFrame) -> dict[str, int]:
     col_names = [str(c).lower().strip() for c in df.columns]
 
     for i, name in enumerate(col_names):
-        if "name" in name or "owner" in name:
+        if name in ("full name", "full_name"):
             mapping["name"] = i
+        elif name in ("first name", "first_name"):
+            mapping["first_name"] = i
+        elif name in ("last name", "last_name"):
+            mapping["last_name"] = i
+        elif "name" in name or "owner" in name:
+            # Generic name/owner column - only set if no specific match yet
+            if "name" not in mapping:
+                mapping["name"] = i
         elif "address" in name or "street" in name or "mailing" in name:
             mapping["address"] = i
         elif "city" in name:
@@ -456,6 +478,14 @@ def _identify_columns(df: pd.DataFrame) -> dict[str, int]:
             mapping["state"] = i
         elif "zip" in name or "postal" in name:
             mapping["zip"] = i
+
+    # If no "full name" column but we have first+last, use first_name as the
+    # name column (full_name will be reconstructed in _process_multi_column)
+    if "name" not in mapping:
+        if "first_name" in mapping:
+            mapping["name"] = mapping["first_name"]
+        elif "last_name" in mapping:
+            mapping["name"] = mapping["last_name"]
 
     # Default mappings if not found
     if "name" not in mapping:
