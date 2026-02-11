@@ -10,6 +10,7 @@ import pandas as pd
 
 from app.models.title import EXPORT_COLUMNS, FilterOptions, OwnerEntry
 from app.services.shared.export_utils import (
+    dataframe_to_csv_bytes,
     dataframe_to_excel_bytes,
     generate_export_filename,
 )
