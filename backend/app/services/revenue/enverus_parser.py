@@ -67,6 +67,11 @@ def parse_enverus_statement(pdf_bytes: bytes, filename: str) -> RevenueStatement
             rows, page_ctx = _parse_page_rows(page_spans, layout, page_ctx)
             statement.rows.extend(rows)
 
+        # For statements with separate tax/deduction rows (Petro-Hunt/Oxyrock),
+        # compute owner_net_revenue on revenue rows by subtracting associated taxes
+        if statement.rows:
+            statement.rows = _apply_net_revenue_calculation(statement.rows)
+
     except Exception as e:
         statement.errors.append(f"Parsing error: {e!s}")
         logger.exception(f"Failed to parse Enverus statement: {filename}")
@@ -181,6 +186,23 @@ def _find_value_right_of(label_span: TextSpan, all_spans: list[TextSpan]) -> Opt
     return None
 
 
+def _detect_page_header_y(spans: list[TextSpan], fallback_y: float) -> float:
+    """Find the header row y-position on this specific page.
+
+    Page 0 may have a large copyright notice pushing headers down (e.g. y=301),
+    while pages 1+ have headers near the top (e.g. y=36-58). Using a global
+    header_y from page 0 would discard most data on subsequent pages.
+    """
+    header_keywords = {"volume", "value", "price", "type", "interest", "date"}
+    header_spans = [
+        s for s in spans
+        if s.text.lower().strip() in header_keywords and s.y0 < 200
+    ]
+    if header_spans:
+        return max(s.y0 for s in header_spans)
+    return fallback_y
+
+
 def _parse_page_rows(
     spans: list[TextSpan],
     layout: EnverusColumnLayout,
@@ -192,8 +214,9 @@ def _parse_page_rows(
     """
     rows: list[RevenueRow] = []
 
-    # Only consider spans below the header row
-    data_spans = [s for s in spans if s.y0 > layout.header_y + 10]
+    # Detect header row position for THIS page (not the global page-0 value)
+    page_header_y = _detect_page_header_y(spans, layout.header_y)
+    data_spans = [s for s in spans if s.y0 > page_header_y + 10]
     if not data_spans:
         return rows, ctx or {}
 
@@ -303,11 +326,25 @@ def _parse_page_rows(
             current_interest_type = product_label["interest_type"]
             continue
 
-        # Check for tax/deduction label rows
+        # Count numeric spans to distinguish label rows from data rows.
+        # Data rows have 2+ numeric values; label-only rows have 0-1.
+        numeric_count = sum(
+            1 for s in row_spans
+            if re.match(r"^[\d,.\-()]+$", s.text.replace(" ", ""))
+        )
+
+        # Check for tax/deduction label rows — but ONLY if the row doesn't
+        # have significant numeric data (which means it's a data row with
+        # an inline label like "SEVERANCE TAX Dec 25 (1,713.17) 0.00032...")
         tax_label = _extract_tax_label(row_text)
         if tax_label:
+            if numeric_count < 2:
+                # Pure label row (no data)
+                current_interest_type = tax_label
+                continue
+            # Data row that starts with a tax/deduction type — set context
+            # and fall through to _parse_data_row()
             current_interest_type = tax_label
-            continue
 
         # Try to parse as a data row
         row = _parse_data_row(
@@ -603,6 +640,48 @@ def _parse_data_row(
         deduct_code=row_deduct_code,
         owner_net_revenue=computed_owner_net,
     )
+
+
+def _apply_net_revenue_calculation(rows: list[RevenueRow]) -> list[RevenueRow]:
+    """Post-process rows to compute owner_net_revenue for separate-tax-row statements.
+
+    In Petro-Hunt/Oxyrock layouts, revenue and tax/deduction rows are separate.
+    Revenue rows have owner_value but taxes are None; tax rows have owner_tax_amount
+    or owner_deduct_amount but no owner_value. This groups rows by
+    (property_number, product_code, sales_date) and computes net on the revenue row.
+
+    For Magnolia-style rows with inline T&D (where net is already computed per-row),
+    this is a no-op since tax rows won't exist in the same group.
+    """
+    from collections import defaultdict
+
+    groups: dict[tuple, list[int]] = defaultdict(list)
+    for i, row in enumerate(rows):
+        key = (row.property_number, row.product_code, row.sales_date)
+        groups[key].append(i)
+
+    for indices in groups.values():
+        revenue_idx = None
+        total_tax = 0.0
+        total_deduct = 0.0
+
+        for idx in indices:
+            row = rows[idx]
+            if row.owner_value is not None:
+                revenue_idx = idx
+            if row.owner_tax_amount is not None:
+                total_tax += row.owner_tax_amount
+            if row.owner_deduct_amount is not None:
+                total_deduct += row.owner_deduct_amount
+
+        # Only adjust if there are separate tax/deduction rows to subtract
+        if revenue_idx is not None and (total_tax or total_deduct):
+            rev = rows[revenue_idx]
+            rev.owner_net_revenue = round(
+                (rev.owner_value or 0) - total_tax - total_deduct, 2
+            )
+
+    return rows
 
 
 def _compute_owner_net(
