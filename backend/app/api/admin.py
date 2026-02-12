@@ -195,45 +195,6 @@ class OptionsResponse(BaseModel):
     tools: list[str]
 
 
-@router.delete("/cleanup-entities")
-async def cleanup_entity_collections(user: dict = Depends(require_admin)):
-    """Batch-delete all documents from entities, relationships, and ownership_records collections.
-
-    This is a one-time cleanup endpoint. ETL pipeline has been disabled.
-    """
-    try:
-        from app.services.firestore_service import get_firestore_client
-
-        db = get_firestore_client()
-        collections_to_clean = ["entities", "relationships", "ownership_records"]
-        results = {}
-
-        for collection_name in collections_to_clean:
-            deleted = 0
-            while True:
-                docs = db.collection(collection_name).limit(500)
-                batch = db.batch()
-                count = 0
-                async for doc in docs.stream():
-                    batch.delete(doc.reference)
-                    count += 1
-                if count == 0:
-                    break
-                await batch.commit()
-                deleted += count
-            results[collection_name] = deleted
-            logger.info(f"Deleted {deleted} documents from {collection_name}")
-
-        return {
-            "success": True,
-            "message": "Entity collections cleaned",
-            "deleted": results,
-        }
-    except Exception as e:
-        logger.exception(f"Cleanup failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Cleanup failed: {e!s}") from e
-
-
 @router.get("/options", response_model=OptionsResponse)
 async def get_options():
     """Get available roles, scopes, and tools for user management."""
