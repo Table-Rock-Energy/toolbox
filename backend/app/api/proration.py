@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
 from app.core.ingestion import file_response, persist_job_result, validate_upload
 from app.models.proration import (
@@ -148,6 +148,7 @@ async def sync_rrc_to_database() -> dict:
 @router.post("/upload", response_model=UploadResponse)
 async def upload_csv(
     file: Annotated[UploadFile, File(description="CSV file from mineralholders.com")],
+    request: Request,
     options_json: Annotated[Optional[str], Form(description="Processing options as JSON")] = None,
 ) -> UploadResponse:
     """Upload a CSV file and process mineral holder data."""
@@ -181,6 +182,8 @@ async def upload_csv(
         )
 
         # Persist to Firestore (non-blocking)
+        user_email = request.headers.get("x-user-email") or None
+        user_name = request.headers.get("x-user-name") or None
         job_id = await persist_job_result(
             tool="proration",
             filename=file.filename,
@@ -189,20 +192,13 @@ async def upload_csv(
             total=result.total_rows,
             success=result.matched_rows,
             errors=result.failed_rows,
+            user_id=user_email,
+            user_name=user_name,
         )
         if job_id:
             result.job_id = job_id
 
-        # Feed ETL pipeline (non-blocking, failure doesn't break upload)
-        try:
-            from app.services.etl.pipeline import process_proration_rows
-            await process_proration_rows(
-                job_id=result.job_id or "",
-                source_filename=file.filename,
-                rows=[r.model_dump() for r in result.rows],
-            )
-        except Exception as etl_err:
-            logger.warning(f"ETL pipeline failed (non-critical): {etl_err}")
+        # ETL pipeline disabled - will be replaced with Supabase
 
         return UploadResponse(
             message=(

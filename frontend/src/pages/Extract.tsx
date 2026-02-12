@@ -317,6 +317,10 @@ export default function Extract() {
 
       const response = await fetch(`${API_BASE}/extract/upload`, {
         method: 'POST',
+        headers: {
+          'X-User-Email': user?.email || '',
+          'X-User-Name': user?.displayName || '',
+        },
         body: formData,
       })
 

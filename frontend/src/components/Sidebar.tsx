@@ -6,7 +6,6 @@ import {
   FileText,
   Calculator,
   DollarSign,
-  Database,
   LogOut,
   ChevronRight,
   ChevronLeft,
@@ -14,7 +13,6 @@ import {
   User,
   Shield,
   Wrench,
-  Layers,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -45,14 +43,6 @@ const navGroups: NavGroup[] = [
       { name: 'Title', path: '/title', icon: FileText },
       { name: 'Proration', path: '/proration', icon: Calculator },
       { name: 'Revenue', path: '/revenue', icon: DollarSign },
-    ],
-  },
-  {
-    id: 'databases',
-    label: 'Databases',
-    icon: Layers,
-    items: [
-      { name: 'Bronze', path: '/mineral-rights', icon: Database, badge: 'Bronze' },
     ],
   },
 ]

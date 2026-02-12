@@ -63,6 +63,7 @@ interface RecentJob {
   source_filename: string
   user_email: string
   user_id: string
+  user_name?: string
   created_at: string
   status: string
   total_count?: number
@@ -211,7 +212,7 @@ export default function Dashboard() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900">{job.source_filename || 'Unknown'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{job.user_id || job.user_email || 'Unknown'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{job.user_name || job.user_id || job.user_email || 'Unknown'}</td>
                     <td className="px-4 py-3">
                       {job.status === 'completed' ? (
                         <span className="inline-flex items-center gap-1 text-green-600 text-xs">

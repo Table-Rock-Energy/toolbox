@@ -96,10 +96,11 @@ async def upload_file(
             job_id=job_id,
         )
 
-        # Extract user email from header
+        # Extract user info from headers
         user_email = request.headers.get("x-user-email") or None
+        user_name = request.headers.get("x-user-name") or None
 
-        # Fire-and-forget: persist to Firestore + ETL in background
+        # Fire-and-forget: persist to Firestore in background
         entry_dicts = [e.model_dump() for e in entries]
         asyncio.create_task(_persist_in_background(
             job_id=job_id,
@@ -110,6 +111,7 @@ async def upload_file(
             success=len(entries),
             errors=duplicate_count,
             user_id=user_email,
+            user_name=user_name,
         ))
 
         return UploadResponse(
@@ -137,8 +139,9 @@ async def _persist_in_background(
     success: int,
     errors: int,
     user_id: Optional[str] = None,
+    user_name: Optional[str] = None,
 ) -> None:
-    """Background task for Firestore persistence + ETL pipeline."""
+    """Background task for Firestore persistence."""
     try:
         await persist_job_result(
             tool="title",
@@ -149,20 +152,13 @@ async def _persist_in_background(
             success=success,
             errors=errors,
             user_id=user_id,
+            user_name=user_name,
             job_id=job_id,
         )
     except Exception as e:
         logger.warning("Background persistence failed: %s", e)
 
-    try:
-        from app.services.etl.pipeline import process_title_entries
-        await process_title_entries(
-            job_id=job_id,
-            source_filename=filename,
-            entries=entries,
-        )
-    except Exception as e:
-        logger.warning("Background ETL failed: %s", e)
+    # ETL pipeline disabled - will be replaced with Supabase
 
 
 @router.post("/preview")

@@ -98,6 +98,7 @@ async def create_job(
     tool: str,
     source_filename: str,
     user_id: Optional[str] = None,
+    user_name: Optional[str] = None,
     source_file_size: Optional[int] = None,
     options: Optional[dict] = None,
     job_id: Optional[str] = None,
@@ -110,6 +111,7 @@ async def create_job(
     job_data = {
         "id": job_id,
         "user_id": user_id,
+        "user_name": user_name,
         "tool": tool,
         "status": "pending",
         "source_filename": source_filename,

@@ -401,6 +401,10 @@ export default function Revenue() {
 
       const response = await fetch(`${API_BASE}/revenue/upload`, {
         method: 'POST',
+        headers: {
+          'X-User-Email': user?.email || '',
+          'X-User-Name': user?.displayName || '',
+        },
         body: formData,
       })
 

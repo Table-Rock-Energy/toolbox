@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
 from app.core.ingestion import file_response, persist_job_result
 from app.models.revenue import (
@@ -36,7 +36,7 @@ async def health_check():
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload_pdfs(files: list[UploadFile] = File(...)):
+async def upload_pdfs(request: Request, files: list[UploadFile] = File(...)):
     """Upload and process multiple PDF revenue statements."""
     statements = []
     errors = []
@@ -102,6 +102,8 @@ async def upload_pdfs(files: list[UploadFile] = File(...)):
     # Persist to Firestore (non-blocking)
     if statements:
         filenames = ", ".join(s.filename for s in statements)
+        user_email = request.headers.get("x-user-email") or None
+        user_name = request.headers.get("x-user-name") or None
         job_id = await persist_job_result(
             tool="revenue",
             filename=filenames,
@@ -109,19 +111,13 @@ async def upload_pdfs(files: list[UploadFile] = File(...)):
             total=total_rows,
             success=total_rows,
             errors=len(errors),
+            user_id=user_email,
+            user_name=user_name,
         )
         if job_id:
             result.job_id = job_id
 
-        # Feed ETL pipeline (non-blocking, failure doesn't break upload)
-        try:
-            from app.services.etl.pipeline import process_revenue_statements
-            await process_revenue_statements(
-                job_id=result.job_id or "",
-                statements=[s.model_dump(mode="json") for s in statements],
-            )
-        except Exception as etl_err:
-            logger.warning(f"ETL pipeline failed (non-critical): {etl_err}")
+        # ETL pipeline disabled - will be replaced with Supabase
 
     return result
 

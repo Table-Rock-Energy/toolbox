@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -35,6 +35,7 @@ async def health_check() -> dict:
 @router.post("/upload", response_model=UploadResponse)
 async def upload_pdf(
     file: Annotated[UploadFile, File(description="PDF file containing Exhibit A")],
+    request: Request,
 ) -> UploadResponse:
     """Upload a PDF file and extract party entries from Exhibit A."""
     file_bytes = await validate_upload(file, allowed_extensions=[".pdf"])
@@ -95,6 +96,8 @@ async def upload_pdf(
         )
 
         # Persist to Firestore (non-blocking)
+        user_email = request.headers.get("x-user-email") or None
+        user_name = request.headers.get("x-user-name") or None
         job_id = await persist_job_result(
             tool="extract",
             filename=file.filename,
@@ -103,20 +106,13 @@ async def upload_pdf(
             total=len(entries),
             success=len(entries),
             errors=flagged_count,
+            user_id=user_email,
+            user_name=user_name,
         )
         if job_id:
             result.job_id = job_id
 
-        # Feed ETL pipeline (non-blocking, failure doesn't break upload)
-        try:
-            from app.services.etl.pipeline import process_extract_entries
-            await process_extract_entries(
-                job_id=result.job_id or "",
-                source_filename=file.filename,
-                entries=[e.model_dump() for e in entries],
-            )
-        except Exception as etl_err:
-            logger.warning(f"ETL pipeline failed (non-critical): {etl_err}")
+        # ETL pipeline disabled - will be replaced with Supabase
 
         return UploadResponse(
             message=f"Successfully extracted {len(entries)} entries",

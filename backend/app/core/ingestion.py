@@ -124,6 +124,7 @@ async def persist_job_result(
     errors: int,
     collection: Optional[str] = None,
     user_id: Optional[str] = None,
+    user_name: Optional[str] = None,
     job_id: Optional[str] = None,
 ) -> Optional[str]:
     """Persist processing results to Firestore.
@@ -143,6 +144,7 @@ async def persist_job_result(
             source_filename=filename,
             source_file_size=file_size,
             user_id=user_id,
+            user_name=user_name,
             job_id=job_id,
         )
         job_id = job["id"]

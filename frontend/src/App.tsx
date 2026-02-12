@@ -8,7 +8,6 @@ import Proration from './pages/Proration'
 import Revenue from './pages/Revenue'
 import Settings from './pages/Settings'
 import AdminSettings from './pages/AdminSettings'
-import MineralRights from './pages/MineralRights'
 import Login from './pages/Login'
 
 // Protected route wrapper
@@ -58,7 +57,6 @@ function AppRoutes() {
         <Route path="title" element={<Title />} />
         <Route path="proration" element={<Proration />} />
         <Route path="revenue" element={<Revenue />} />
-        <Route path="mineral-rights" element={<MineralRights />} />
         <Route path="settings" element={<Settings />} />
         <Route path="admin" element={<AdminRoute><AdminSettings /></AdminRoute>} />
       </Route>
