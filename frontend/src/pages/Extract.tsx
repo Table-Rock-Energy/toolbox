@@ -88,7 +88,7 @@ const STORAGE_KEY_PREFIX = 'extract-visible-columns'
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Extract() {
-  const { user } = useAuth()
+  const { user, userName } = useAuth()
   const { panelCollapsed, togglePanel, activeStorageKey } = useToolLayout('extract', user?.uid, STORAGE_KEY_PREFIX)
   const [jobs, setJobs] = useState<ExtractJob[]>([])
   const [activeJob, setActiveJob] = useState<ExtractJob | null>(null)
@@ -319,7 +319,7 @@ export default function Extract() {
         method: 'POST',
         headers: {
           'X-User-Email': user?.email || '',
-          'X-User-Name': user?.displayName || '',
+          'X-User-Name': userName || user?.displayName || '',
         },
         body: formData,
       })

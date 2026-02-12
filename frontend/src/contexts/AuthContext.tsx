@@ -11,6 +11,7 @@ import api from '../utils/api';
 
 interface AuthContextType {
   user: User | null;
+  userName: string | null;
   loading: boolean;
   isAuthorized: boolean;
   isAdmin: boolean;
@@ -36,6 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userScope, setUserScope] = useState<string | null>(null);
   const [userTools, setUserTools] = useState<string[]>([]);
+  const [userName, setUserName] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
 
   // Check if user is in allowlist and get role info
@@ -76,11 +78,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUserRole(authData.role || 'user');
           setUserScope(authData.scope || 'all');
           setUserTools(authData.tools || []);
+          const first = authData.first_name || '';
+          const last = authData.last_name || '';
+          const fullName = `${first} ${last}`.trim();
+          setUserName(fullName || user.displayName || null);
         } else {
           setIsAdmin(false);
           setUserRole(null);
           setUserScope(null);
           setUserTools([]);
+          setUserName(null);
         }
         if (!authorized) {
           setAuthError('Your account is not authorized to access this application. Please contact an administrator.');
@@ -91,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUserRole(null);
         setUserScope(null);
         setUserTools([]);
+        setUserName(null);
         api.clearAuthToken();
       }
 
@@ -152,6 +160,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = {
     user,
+    userName,
     loading,
     isAuthorized,
     isAdmin,

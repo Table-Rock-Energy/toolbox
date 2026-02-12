@@ -118,7 +118,7 @@ const STORAGE_KEY_PREFIX = 'proration-visible-columns'
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Proration() {
-  const { user } = useAuth()
+  const { user, userName } = useAuth()
   const { panelCollapsed, togglePanel, activeStorageKey } = useToolLayout('proration', user?.uid, STORAGE_KEY_PREFIX)
   const [jobs, setJobs] = useState<ProrationJob[]>([])
   const [activeJob, setActiveJob] = useState<ProrationJob | null>(null)
@@ -340,7 +340,7 @@ export default function Proration() {
         method: 'POST',
         headers: {
           'X-User-Email': user?.email || '',
-          'X-User-Name': user?.displayName || '',
+          'X-User-Name': userName || user?.displayName || '',
         },
         body: formData,
       })

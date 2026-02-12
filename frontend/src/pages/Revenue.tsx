@@ -172,7 +172,7 @@ const STORAGE_KEY_PREFIX = 'revenue-visible-columns'
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Revenue() {
-  const { user } = useAuth()
+  const { user, userName } = useAuth()
   const { panelCollapsed, togglePanel, activeStorageKey } = useToolLayout('revenue', user?.uid, STORAGE_KEY_PREFIX)
   const [jobs, setJobs] = useState<RevenueJob[]>([])
   const [activeJob, setActiveJob] = useState<RevenueJob | null>(null)
@@ -403,7 +403,7 @@ export default function Revenue() {
         method: 'POST',
         headers: {
           'X-User-Email': user?.email || '',
-          'X-User-Name': user?.displayName || '',
+          'X-User-Name': userName || user?.displayName || '',
         },
         body: formData,
       })

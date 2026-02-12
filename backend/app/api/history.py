@@ -49,6 +49,28 @@ async def get_jobs(
         jobs = await db.get_recent_jobs(tool=tool, limit=limit)
         jobs = [_serialize_doc(j) for j in jobs]
 
+        # Resolve emails to names for jobs missing user_name
+        try:
+            from app.core.auth import get_full_allowlist
+
+            allowlist = get_full_allowlist()
+            name_map: dict[str, str] = {}
+            for u in allowlist:
+                email = u.get("email", "").lower()
+                first = u.get("first_name", "")
+                last = u.get("last_name", "")
+                full = f"{first} {last}".strip()
+                if email and full:
+                    name_map[email] = full
+
+            for job in jobs:
+                if not job.get("user_name") and job.get("user_id"):
+                    resolved = name_map.get(job["user_id"].lower())
+                    if resolved:
+                        job["user_name"] = resolved
+        except Exception:
+            pass  # Non-critical enrichment
+
         return {
             "jobs": jobs,
             "count": len(jobs),

@@ -102,7 +102,7 @@ const ENTITY_TYPE_OPTIONS = [
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Title() {
-  const { user } = useAuth()
+  const { user, userName } = useAuth()
   const { panelCollapsed, togglePanel, activeStorageKey } = useToolLayout('title', user?.uid, STORAGE_KEY_PREFIX)
   const [jobs, setJobs] = useState<TitleJob[]>([])
   const [activeJob, setActiveJob] = useState<TitleJob | null>(null)
@@ -439,7 +439,7 @@ export default function Title() {
         method: 'POST',
         headers: {
           'X-User-Email': user?.email || '',
-          'X-User-Name': user?.displayName || '',
+          'X-User-Name': userName || user?.displayName || '',
         },
         body: formData,
       })

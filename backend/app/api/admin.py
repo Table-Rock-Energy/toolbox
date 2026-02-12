@@ -321,6 +321,8 @@ async def check_user(email: str):
         "role": user_data.get("role", "user") if user_data else None,
         "scope": user_data.get("scope", "all") if user_data else None,
         "tools": user_data.get("tools", AVAILABLE_TOOLS) if user_data else None,
+        "first_name": user_data.get("first_name") if user_data else None,
+        "last_name": user_data.get("last_name") if user_data else None,
     }
 
 
