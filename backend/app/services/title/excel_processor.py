@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from io import BytesIO
 from typing import Optional
 
 import pandas as pd
 
 from app.models.title import OwnerEntry
+from app.services.title.ownership_report_parser import (
+    is_ownership_report,
+    process_ownership_report,
+)
 from app.services.title.address_parser import (
     extract_address_annotations,
     parse_address_with_notes,
@@ -43,7 +48,15 @@ def _is_unknown_address(value: str | None) -> bool:
 logger = logging.getLogger(__name__)
 
 
-def process_excel(file_bytes: bytes, filename: str) -> list[OwnerEntry]:
+@dataclass
+class ExcelProcessingResult:
+    """Result of processing an Excel file."""
+
+    entries: list[OwnerEntry]
+    county: Optional[str] = None
+
+
+def process_excel(file_bytes: bytes, filename: str) -> ExcelProcessingResult:
     """
     Process an Excel file with multiple sheets.
 
@@ -58,13 +71,19 @@ def process_excel(file_bytes: bytes, filename: str) -> list[OwnerEntry]:
         filename: Original filename for logging
 
     Returns:
-        List of OwnerEntry objects
+        ExcelProcessingResult with entries and optional county
     """
     entries: list[OwnerEntry] = []
 
     try:
         # Read Excel file
         excel_file = pd.ExcelFile(BytesIO(file_bytes))
+
+        # Check for ownership report format first
+        if is_ownership_report(excel_file):
+            logger.info("Detected ownership report format for %s", filename)
+            or_entries, county = process_ownership_report(file_bytes, filename)
+            return ExcelProcessingResult(entries=or_entries, county=county)
         sheet_names = excel_file.sheet_names
 
         logger.info(f"Processing {len(sheet_names)} sheets from {filename}")
@@ -95,7 +114,7 @@ def process_excel(file_bytes: bytes, filename: str) -> list[OwnerEntry]:
     # Flag duplicates
     entries = _flag_duplicates(entries)
 
-    return entries
+    return ExcelProcessingResult(entries=entries)
 
 
 def _extract_legal_description(sheet_name: str) -> str:

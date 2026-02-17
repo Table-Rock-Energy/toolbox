@@ -24,6 +24,9 @@ interface OwnerEntry {
   property_value?: number
   duplicate_flag: boolean
   has_address: boolean
+  interest?: number
+  net_acres?: number
+  leasehold?: string
 }
 
 interface ProcessingResult {
@@ -34,6 +37,7 @@ interface ProcessingResult {
   duplicate_count?: number
   no_address_count?: number
   sections?: string[]
+  county?: string
   source_filename?: string
   error_message?: string
 }
@@ -72,6 +76,9 @@ const COLUMNS: ColumnConfig[] = [
   { key: 'zip_code', label: 'ZIP' },
   { key: 'legal_description', label: 'Legal Desc' },
   { key: 'notes', label: 'Notes' },
+  { key: 'interest', label: 'Interest' },
+  { key: 'net_acres', label: 'Net Acres' },
+  { key: 'leasehold', label: 'Leasehold' },
   { key: 'property_type', label: 'Prop Type' },
   { key: 'property_value', label: 'Prop Value' },
   { key: 'duplicate_flag', label: 'Duplicate' },
@@ -772,7 +779,13 @@ export default function Title() {
                       </button>
                     )}
                     <button
-                      onClick={() => setShowMineralExport(true)}
+                      onClick={() => {
+                        if (activeJob?.result?.county) {
+                          handleExport('mineral', activeJob.result.county, '')
+                        } else {
+                          setShowMineralExport(true)
+                        }
+                      }}
                       className="flex items-center gap-2 px-3 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
                     >
                       <Download className="w-4 h-4" />
@@ -999,6 +1012,15 @@ export default function Title() {
                         {isColumnVisible('notes') && (
                           <th className="text-left py-2 px-3 font-medium text-gray-600">Notes</th>
                         )}
+                        {isColumnVisible('interest') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Interest</th>
+                        )}
+                        {isColumnVisible('net_acres') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Net Acres</th>
+                        )}
+                        {isColumnVisible('leasehold') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Leasehold</th>
+                        )}
                         {isColumnVisible('property_type') && (
                           <th className="text-left py-2 px-3 font-medium text-gray-600">Prop Type</th>
                         )}
@@ -1082,6 +1104,21 @@ export default function Title() {
                             )}
                             {isColumnVisible('notes') && (
                               <td className="py-2 px-3 text-gray-600 text-xs max-w-[200px] truncate" title={entry.notes}>{entry.notes || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                            )}
+                            {isColumnVisible('interest') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">
+                                {entry.interest != null ? entry.interest.toFixed(6) : <span className="text-gray-400">{'\u2014'}</span>}
+                              </td>
+                            )}
+                            {isColumnVisible('net_acres') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">
+                                {entry.net_acres != null ? entry.net_acres.toFixed(2) : <span className="text-gray-400">{'\u2014'}</span>}
+                              </td>
+                            )}
+                            {isColumnVisible('leasehold') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">
+                                {entry.leasehold || <span className="text-gray-400">{'\u2014'}</span>}
+                              </td>
                             )}
                             {isColumnVisible('property_type') && (
                               <td className="py-2 px-3 text-xs">
@@ -1234,6 +1271,7 @@ export default function Title() {
         isOpen={showMineralExport}
         onClose={() => setShowMineralExport(false)}
         onExport={(county, campaignName) => handleExport('mineral', county, campaignName)}
+        initialCounty={activeJob?.result?.county}
       />
 
       {/* Edit Entry Modal */}
@@ -1360,6 +1398,35 @@ export default function Title() {
                 type="text"
                 value={editingEntry.legal_description}
                 onChange={(e) => setEditingEntry({ ...editingEntry, legal_description: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Interest</label>
+              <input
+                type="number"
+                step="any"
+                value={editingEntry.interest ?? ''}
+                onChange={(e) => setEditingEntry({ ...editingEntry, interest: e.target.value ? parseFloat(e.target.value) : undefined })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Net Acres</label>
+              <input
+                type="number"
+                step="any"
+                value={editingEntry.net_acres ?? ''}
+                onChange={(e) => setEditingEntry({ ...editingEntry, net_acres: e.target.value ? parseFloat(e.target.value) : undefined })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-tre-teal focus:border-tre-teal"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Leasehold</label>
+              <input
+                type="text"
+                value={editingEntry.leasehold || ''}
+                onChange={(e) => setEditingEntry({ ...editingEntry, leasehold: e.target.value })}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-tre-teal focus:border-tre-teal"
               />
             </div>

@@ -58,9 +58,12 @@ async def upload_file(
         is_excel = filename_lower.endswith((".xlsx", ".xls"))
 
         if is_excel:
-            entries = process_excel(file_bytes, file.filename)
+            result_data = process_excel(file_bytes, file.filename)
+            entries = result_data.entries
+            county = result_data.county
         else:
             entries = process_csv(file_bytes, file.filename)
+            county = None
 
         if not entries:
             return UploadResponse(
@@ -92,6 +95,7 @@ async def upload_file(
             duplicate_count=duplicate_count,
             no_address_count=no_address_count,
             sections=sections,
+            county=county,
             source_filename=file.filename,
             job_id=job_id,
         )

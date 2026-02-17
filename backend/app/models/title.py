@@ -43,6 +43,9 @@ class OwnerEntry(BaseModel):
     has_address: bool = Field(
         default=False, description="TRUE if address info is present"
     )
+    interest: Optional[float] = Field(None, description="Ownership interest fraction")
+    net_acres: Optional[float] = Field(None, description="Net mineral acres")
+    leasehold: Optional[str] = Field(None, description="Leasehold status/info")
 
 
 class FilterOptions(BaseModel):
@@ -72,6 +75,7 @@ class ProcessingResult(BaseModel):
     sections: list[str] = Field(
         default_factory=list, description="List of legal descriptions found"
     )
+    county: Optional[str] = Field(None, description="County extracted from document")
     error_message: Optional[str] = Field(
         None, description="Error message if processing failed"
     )
@@ -127,4 +131,7 @@ EXPORT_COLUMNS = [
     "Notes",
     "Duplicate Flag",
     "Has Address",
+    "Interest",
+    "Net Acres",
+    "Leasehold",
 ]

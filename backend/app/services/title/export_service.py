@@ -68,6 +68,9 @@ def entries_to_dataframe(entries: list[OwnerEntry]) -> pd.DataFrame:
             "Notes": entry.notes or "",
             "Duplicate Flag": "TRUE" if entry.duplicate_flag else "",
             "Has Address": "TRUE" if entry.has_address else "",
+            "Interest": entry.interest if entry.interest is not None else "",
+            "Net Acres": entry.net_acres if entry.net_acres is not None else "",
+            "Leasehold": entry.leasehold or "",
         })
 
     return pd.DataFrame(rows, columns=EXPORT_COLUMNS)
@@ -101,6 +104,9 @@ def to_csv(
             "Notes": entry.notes or "",
             "Duplicate Flag": "TRUE" if entry.duplicate_flag else "",
             "Has Address": "TRUE" if entry.has_address else "",
+            "Interest": entry.interest if entry.interest is not None else "",
+            "Net Acres": entry.net_acres if entry.net_acres is not None else "",
+            "Leasehold": entry.leasehold or "",
         })
 
     csv_content = output.getvalue()
@@ -140,7 +146,12 @@ def entries_to_mineral_dataframe(
         row["Primary Address State"] = entry.state or ""
         row["Primary Address Zip"] = entry.zip_code or ""
         row["Owner Type"] = entry.entity_type.value
-        row["Notes/Comments"] = entry.notes or ""
+        notes_parts = [entry.notes or ""]
+        if entry.interest is not None:
+            notes_parts.append(f"Interest: {entry.interest}")
+        if entry.net_acres is not None:
+            notes_parts.append(f"Net Acres: {entry.net_acres}")
+        row["Notes/Comments"] = "; ".join(p for p in notes_parts if p)
         row["Territory"] = entry.legal_description
         row["County"] = county
         row["Campaign Name"] = campaign_name

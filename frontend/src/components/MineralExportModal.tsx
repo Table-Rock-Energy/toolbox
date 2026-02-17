@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Download } from 'lucide-react'
 import Modal from './Modal'
 
@@ -6,11 +6,19 @@ interface MineralExportModalProps {
   isOpen: boolean
   onClose: () => void
   onExport: (county: string, campaignName: string) => void
+  initialCounty?: string
 }
 
-export default function MineralExportModal({ isOpen, onClose, onExport }: MineralExportModalProps) {
+export default function MineralExportModal({ isOpen, onClose, onExport, initialCounty }: MineralExportModalProps) {
   const [county, setCounty] = useState('')
   const [campaignName, setCampaignName] = useState('')
+
+  useEffect(() => {
+    if (isOpen) {
+      setCounty(initialCounty || '')
+      setCampaignName('')
+    }
+  }, [isOpen, initialCounty])
 
   const handleSubmit = () => {
     onExport(county, campaignName)
