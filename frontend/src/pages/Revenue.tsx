@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { DollarSign, Download, Upload, AlertCircle, CheckCircle, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Edit2, Bug, ChevronDown, ChevronRight, RotateCcw, Filter } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel } from '../components'
+import { FileUpload, Modal, AiReviewPanel, MineralExportModal } from '../components'
 import { aiApi } from '../utils/api'
 import type { AiSuggestion } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
@@ -186,6 +186,9 @@ export default function Revenue() {
 
   // Row selection state (set of excluded row IDs)
   const [excludedRows, setExcludedRows] = useState<Set<string>>(new Set())
+
+  // Mineral export modal state
+  const [showMineralExport, setShowMineralExport] = useState(false)
 
   // Edit modal state
   const [editingRow, setEditingRow] = useState<{ statementIdx: number; rowIdx: number; row: RevenueRow } | null>(null)
@@ -432,7 +435,7 @@ export default function Revenue() {
     }
   }
 
-  const handleExport = async () => {
+  const handleExport = async (county: string, campaignName: string) => {
     if (!activeJob?.result?.statements) return
 
     // Build filtered statements with only selected rows
@@ -455,6 +458,8 @@ export default function Revenue() {
         },
         body: JSON.stringify({
           statements: filteredStatements,
+          county,
+          campaign_name: campaignName,
         }),
       })
 
@@ -464,7 +469,7 @@ export default function Revenue() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${activeJob.documentName.replace(/\.[^.]+$/, '')}_m1_export.csv`
+      a.download = `${activeJob.documentName.replace(/\.[^.]+$/, '')}_mineral.csv`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
@@ -762,7 +767,7 @@ export default function Revenue() {
                       </button>
                     )}
                     <button
-                      onClick={handleExport}
+                      onClick={() => setShowMineralExport(true)}
                       disabled={rowsToExport.length === 0}
                       className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm disabled:opacity-50"
                     >
@@ -1224,6 +1229,13 @@ export default function Revenue() {
           </div>
         )}
       </div>
+
+      {/* Mineral Export Modal */}
+      <MineralExportModal
+        isOpen={showMineralExport}
+        onClose={() => setShowMineralExport(false)}
+        onExport={handleExport}
+      />
 
       {/* Edit Row Modal */}
       <Modal

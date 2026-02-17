@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
@@ -14,7 +15,7 @@ from app.models.revenue import (
     HealthResponse,
     UploadResponse,
 )
-from app.services.revenue.export_service import export_to_csv, generate_summary_report
+from app.services.revenue.export_service import export_to_csv, generate_summary_report, to_mineral_csv
 from app.services.revenue.format_detector import detect_format, get_parser_for_format
 from app.services.revenue.pdf_extractor import (
     detect_garbled_text,
@@ -138,18 +139,18 @@ async def upload_pdfs(request: Request, files: list[UploadFile] = File(...)):
 
 @router.post("/export/csv")
 async def export_csv(request: ExportRequest):
-    """Export extracted data to M1 Upload CSV format."""
+    """Export extracted data to CRM mineral format CSV."""
     if not request.statements:
         raise HTTPException(status_code=400, detail="No statements provided for export")
 
     try:
-        csv_content, filename, row_count = export_to_csv(request.statements)
-        return file_response(
-            csv_content.encode("utf-8"),
-            filename,
-            media_type="text/csv",
-            extra_headers={"X-Row-Count": str(row_count)},
+        csv_bytes = to_mineral_csv(
+            request.statements,
+            county=request.county or "",
+            campaign_name=request.campaign_name or "",
         )
+        filename = f"revenue_mineral_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        return file_response(csv_bytes, filename)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Export failed: {e!s}") from e
 

@@ -135,6 +135,12 @@ class ExportRequest(BaseModel):
     """Request for export endpoint."""
 
     statements: list[RevenueStatement]
+    county: Optional[str] = Field(
+        None, description="County name to populate in mineral export"
+    )
+    campaign_name: Optional[str] = Field(
+        None, description="Campaign name to populate in mineral export"
+    )
 
 
 class ExportResponse(BaseModel):

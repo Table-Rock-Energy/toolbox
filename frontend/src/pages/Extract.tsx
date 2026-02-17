@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Wand2, Search } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel, EnrichmentPanel } from '../components'
+import { FileUpload, Modal, AiReviewPanel, EnrichmentPanel, MineralExportModal } from '../components'
 import EnrichmentProgress, { DEFAULT_STEPS, type EnrichmentStep, type EnrichmentSummary } from '../components/EnrichmentProgress'
 import { aiApi, enrichmentApi } from '../utils/api'
 import type { AiSuggestion } from '../utils/api'
@@ -118,6 +118,9 @@ export default function Extract() {
   const [enrichSummary, setEnrichSummary] = useState<EnrichmentSummary | null>(null)
   const [enrichComplete, setEnrichComplete] = useState(false)
   const [enrichmentEnabled, setEnrichmentEnabled] = useState(false)
+
+  // Mineral export modal state
+  const [showMineralExport, setShowMineralExport] = useState(false)
 
   // Edit modal state
   const [editingEntry, setEditingEntry] = useState<PartyEntry | null>(null)
@@ -347,14 +350,14 @@ export default function Extract() {
     }
   }
 
-  const handleExport = async (format: 'csv' | 'excel') => {
+  const handleExport = async (county: string, campaignName: string) => {
     if (entriesToExport.length === 0) {
       setError('No entries selected for export')
       return
     }
 
     try {
-      const response = await fetch(`${API_BASE}/extract/export/${format}`, {
+      const response = await fetch(`${API_BASE}/extract/export/csv`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -362,6 +365,8 @@ export default function Extract() {
         body: JSON.stringify({
           entries: entriesToExport,
           filename: activeJob?.documentName?.replace(/\.[^.]+$/, '') || 'extract',
+          county,
+          campaign_name: campaignName,
         }),
       })
 
@@ -371,7 +376,7 @@ export default function Extract() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${activeJob?.documentName?.replace(/\.[^.]+$/, '') || 'extract'}_mineral.${format === 'csv' ? 'csv' : 'xlsx'}`
+      a.download = `${activeJob?.documentName?.replace(/\.[^.]+$/, '') || 'extract'}_mineral.csv`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
@@ -689,7 +694,7 @@ export default function Extract() {
                       </button>
                     )}
                     <button
-                      onClick={() => handleExport('csv')}
+                      onClick={() => setShowMineralExport(true)}
                       className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
                     >
                       <Download className="w-4 h-4" />
@@ -1090,6 +1095,13 @@ export default function Extract() {
         steps={enrichSteps}
         summary={enrichSummary}
         isComplete={enrichComplete}
+      />
+
+      {/* Mineral Export Modal */}
+      <MineralExportModal
+        isOpen={showMineralExport}
+        onClose={() => setShowMineralExport(false)}
+        onExport={handleExport}
       />
 
       {/* Edit Modal */}

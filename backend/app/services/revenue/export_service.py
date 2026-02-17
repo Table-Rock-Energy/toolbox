@@ -1,11 +1,20 @@
 """Export service for generating CSV files in M1 Upload format."""
 
+from __future__ import annotations
+
 import csv
 import io
 from datetime import datetime
+from typing import Any
+
+import pandas as pd
 
 from app.models.revenue import M1_COLUMNS, RevenueStatement
 from app.services.revenue.m1_transformer import get_m1_row_as_dict, transform_to_m1
+from app.services.shared.export_utils import (
+    MINERAL_EXPORT_COLUMNS,
+    dataframe_to_csv_bytes,
+)
 
 
 def export_to_csv(statements: list[RevenueStatement]) -> tuple[str, str, int]:
@@ -116,3 +125,72 @@ def generate_summary_report(statements: list[RevenueStatement]) -> dict:
         "by_payor": by_payor,
         "by_format": by_format
     }
+
+
+def to_mineral_csv(
+    statements: list[RevenueStatement],
+    *,
+    county: str = "",
+    campaign_name: str = "",
+) -> bytes:
+    """Export revenue statements to CRM mineral format CSV."""
+    df = _statements_to_mineral_dataframe(
+        statements, county=county, campaign_name=campaign_name
+    )
+    return dataframe_to_csv_bytes(df)
+
+
+def _statements_to_mineral_dataframe(
+    statements: list[RevenueStatement],
+    *,
+    county: str = "",
+    campaign_name: str = "",
+) -> pd.DataFrame:
+    """Convert revenue statements to a pandas DataFrame in CRM mineral format.
+
+    Groups by unique owner name across all statements, collecting properties
+    and financial totals per owner.
+    """
+    # Aggregate by owner name
+    owners: dict[str, dict[str, Any]] = {}
+
+    for statement in statements:
+        owner_name = statement.owner_name or ""
+        if not owner_name:
+            continue
+
+        if owner_name not in owners:
+            owners[owner_name] = {
+                "operator": statement.operator_name or "",
+                "payor": statement.payor or "",
+                "properties": set(),
+                "gross": 0.0,
+                "net": 0.0,
+            }
+
+        info = owners[owner_name]
+        for row in statement.rows:
+            if row.property_name:
+                info["properties"].add(row.property_name)
+            if row.owner_value:
+                info["gross"] += float(row.owner_value)
+            if row.owner_net_revenue:
+                info["net"] += float(row.owner_net_revenue)
+
+    data: list[dict[str, Any]] = []
+    for name, info in owners.items():
+        row: dict[str, Any] = {col: "" for col in MINERAL_EXPORT_COLUMNS}
+        row["Full Name"] = name
+        row["County"] = county
+        row["Campaign Name"] = campaign_name
+        row["Company Name"] = info["operator"]
+        row["Territory"] = ", ".join(sorted(info["properties"]))
+        notes_parts = []
+        if info["payor"]:
+            notes_parts.append(f"Payor: {info['payor']}")
+        notes_parts.append(f"Gross: ${info['gross']:.2f}")
+        notes_parts.append(f"Net: ${info['net']:.2f}")
+        row["Notes/Comments"] = "; ".join(notes_parts)
+        data.append(row)
+
+    return pd.DataFrame(data, columns=MINERAL_EXPORT_COLUMNS)

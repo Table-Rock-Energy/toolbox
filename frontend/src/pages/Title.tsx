@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Filter, RotateCcw, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Wand2 } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel } from '../components'
+import { FileUpload, Modal, AiReviewPanel, MineralExportModal } from '../components'
 import EnrichmentProgress, { DEFAULT_STEPS, type EnrichmentStep, type EnrichmentSummary } from '../components/EnrichmentProgress'
 import { aiApi } from '../utils/api'
 import type { AiSuggestion } from '../utils/api'
@@ -132,6 +132,9 @@ export default function Title() {
   const [enrichSteps, setEnrichSteps] = useState<EnrichmentStep[]>([])
   const [enrichSummary, setEnrichSummary] = useState<EnrichmentSummary | null>(null)
   const [enrichComplete, setEnrichComplete] = useState(false)
+
+  // Mineral export modal state
+  const [showMineralExport, setShowMineralExport] = useState(false)
 
   // Edit modal state
   const [editingEntry, setEditingEntry] = useState<OwnerEntry | null>(null)
@@ -469,7 +472,7 @@ export default function Title() {
     }
   }
 
-  const handleExport = async (format: 'csv' | 'excel' | 'mineral') => {
+  const handleExport = async (format: 'csv' | 'excel' | 'mineral', county = '', campaignName = '') => {
     if (entriesToExport.length === 0) {
       setError('No entries selected for export')
       return
@@ -495,6 +498,8 @@ export default function Title() {
           },
           filename: activeJob?.documentName?.replace(/\.[^.]+$/, '') || 'title_export',
           format_type: format === 'mineral' ? 'mineral' : 'standard',
+          county,
+          campaign_name: campaignName,
         }),
       })
 
@@ -767,7 +772,7 @@ export default function Title() {
                       </button>
                     )}
                     <button
-                      onClick={() => handleExport('mineral')}
+                      onClick={() => setShowMineralExport(true)}
                       className="flex items-center gap-2 px-3 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
                     >
                       <Download className="w-4 h-4" />
@@ -1222,6 +1227,13 @@ export default function Title() {
         steps={enrichSteps}
         summary={enrichSummary}
         isComplete={enrichComplete}
+      />
+
+      {/* Mineral Export Modal */}
+      <MineralExportModal
+        isOpen={showMineralExport}
+        onClose={() => setShowMineralExport(false)}
+        onExport={(county, campaignName) => handleExport('mineral', county, campaignName)}
       />
 
       {/* Edit Entry Modal */}
