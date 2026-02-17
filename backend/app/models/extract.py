@@ -92,3 +92,9 @@ class ExportRequest(BaseModel):
     filename: Optional[str] = Field(
         "exhibit_a_export", description="Base filename for export (without extension)"
     )
+    county: Optional[str] = Field(
+        None, description="County name to populate in mineral export"
+    )
+    campaign_name: Optional[str] = Field(
+        None, description="Campaign name to populate in mineral export"
+    )

@@ -103,6 +103,12 @@ class ExportRequest(BaseModel):
     format_type: Optional[str] = Field(
         "standard", description="Export format type: 'standard' or 'mineral'"
     )
+    county: Optional[str] = Field(
+        None, description="County name to populate in mineral export"
+    )
+    campaign_name: Optional[str] = Field(
+        None, description="Campaign name to populate in mineral export"
+    )
 
 
 # Column definitions for CSV/Excel export

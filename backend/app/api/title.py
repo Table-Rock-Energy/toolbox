@@ -177,7 +177,12 @@ async def export_csv(request: ExportRequest):
 
     try:
         if request.format_type == "mineral":
-            csv_bytes = to_mineral_csv(request.entries, request.filters)
+            csv_bytes = to_mineral_csv(
+                request.entries,
+                request.filters,
+                county=request.county or "",
+                campaign_name=request.campaign_name or "",
+            )
             filename = generate_filename(
                 (request.filename or "title_export") + "_mineral", "csv"
             )
@@ -198,7 +203,12 @@ async def export_excel(request: ExportRequest):
 
     try:
         if request.format_type == "mineral":
-            excel_bytes = to_mineral_excel(request.entries, request.filters)
+            excel_bytes = to_mineral_excel(
+                request.entries,
+                request.filters,
+                county=request.county or "",
+                campaign_name=request.campaign_name or "",
+            )
             filename = generate_filename(
                 (request.filename or "title_export") + "_mineral", "xlsx"
             )

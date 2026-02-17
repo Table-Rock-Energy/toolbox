@@ -14,83 +14,43 @@ from app.services.extract.name_parser import (
     split_multiple_names,
 )
 from app.services.shared.export_utils import (
+    MINERAL_EXPORT_COLUMNS,
     dataframe_to_csv_bytes,
     dataframe_to_excel_bytes,
 )
 
-# CRM contact import column names
-COLUMNS = [
-    "Contact Id",
-    "Full Name",
-    "First Name",
-    "Last Name",
-    "Middle Name",
-    "County",
-    "Suffix",
-    "Age",
-    "Relative Names",
-    "Primary Address 1",
-    "Primary Address 2",
-    "Primary Address City",
-    "Primary Address State",
-    "Primary Address Zip",
-    "Primary Address Country",
-    "Secondary Address 1",
-    "Secondary Address 2",
-    "Secondary Address City",
-    "Secondary Address State",
-    "Secondary Address Zip",
-    "Secondary Address Country",
-    "Owner Type",
-    "Global Owner",
-    "Primary Email",
-    "Email 2",
-    "Email 3",
-    "Primary Home Phone",
-    "Home Phone 2",
-    "Home Phone 3",
-    "Primary Mobile Phone",
-    "Mobile Phone 2",
-    "Mobile Phone 3",
-    "Primary Work Phone",
-    "Work Phone 2",
-    "Work Phone 3",
-    "Company Name",
-    "Job Title",
-    "Industry Type",
-    "LinkedIn Profile",
-    "Facebook Profile",
-    "Twitter Profile",
-    "Lead Source",
-    "Stage",
-    "Territory",
-    "Campaign Name",
-    "Status",
-    "Website",
-    "Contact Owner",
-    "Notes/Comments",
-    "Tags",
-    "Mineral Holders Link",
-    "Mineral Holders Property Count (2025)",
-    "Mineral Holders Property Count (2024)",
-    "Link to Summary",
-    "Link to OneDrive Folder",
-]
+# Alias for backward compatibility
+COLUMNS = MINERAL_EXPORT_COLUMNS
 
 
-def to_csv(entries: list[PartyEntry]) -> bytes:
+def to_csv(
+    entries: list[PartyEntry],
+    *,
+    county: str = "",
+    campaign_name: str = "",
+) -> bytes:
     """Convert party entries to CSV format."""
-    df = _entries_to_dataframe(entries)
+    df = _entries_to_dataframe(entries, county=county, campaign_name=campaign_name)
     return dataframe_to_csv_bytes(df)
 
 
-def to_excel(entries: list[PartyEntry]) -> bytes:
+def to_excel(
+    entries: list[PartyEntry],
+    *,
+    county: str = "",
+    campaign_name: str = "",
+) -> bytes:
     """Convert party entries to Excel format."""
-    df = _entries_to_dataframe(entries)
+    df = _entries_to_dataframe(entries, county=county, campaign_name=campaign_name)
     return dataframe_to_excel_bytes(df, sheet_name="Contacts")
 
 
-def _entries_to_dataframe(entries: list[PartyEntry]) -> pd.DataFrame:
+def _entries_to_dataframe(
+    entries: list[PartyEntry],
+    *,
+    county: str = "",
+    campaign_name: str = "",
+) -> pd.DataFrame:
     """Convert party entries to a pandas DataFrame in CRM contact format."""
     data: list[dict[str, Any]] = []
     for entry in entries:
@@ -113,6 +73,8 @@ def _entries_to_dataframe(entries: list[PartyEntry]) -> pd.DataFrame:
             row["Primary Address Zip"] = entry.zip_code or ""
             row["Owner Type"] = entity_type
             row["Notes/Comments"] = entry.notes or ""
+            row["County"] = county
+            row["Campaign Name"] = campaign_name
 
             if entity_type == "Individual" and not is_business_name(name):
                 parsed = parse_name(name, "Individual")

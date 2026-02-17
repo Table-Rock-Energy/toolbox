@@ -136,7 +136,11 @@ async def export_csv(request: ExportRequest):
         raise HTTPException(status_code=400, detail="No entries provided for export")
 
     try:
-        csv_bytes = to_csv(request.entries)
+        csv_bytes = to_csv(
+            request.entries,
+            county=request.county or "",
+            campaign_name=request.campaign_name or "",
+        )
         filename = f"{request.filename or 'exhibit_a_export'}.csv"
         return file_response(csv_bytes, filename)
     except Exception as e:
@@ -151,7 +155,11 @@ async def export_excel(request: ExportRequest):
         raise HTTPException(status_code=400, detail="No entries provided for export")
 
     try:
-        excel_bytes = to_excel(request.entries)
+        excel_bytes = to_excel(
+            request.entries,
+            county=request.county or "",
+            campaign_name=request.campaign_name or "",
+        )
         filename = f"{request.filename or 'exhibit_a_export'}.xlsx"
         return file_response(excel_bytes, filename)
     except Exception as e:
