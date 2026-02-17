@@ -9,7 +9,7 @@ from typing import Optional
 
 import pandas as pd
 
-from app.models.title import OwnerEntry
+from app.models.title import EntityType, OwnerEntry
 from app.services.title.address_parser import (
     extract_address_annotations,
     parse_address_with_notes,
@@ -104,6 +104,24 @@ def _detect_delimiter(sample: str) -> str:
     return max_delim if counts[max_delim] > 0 else ","
 
 
+def _is_campaign_name_column(name: str) -> bool:
+    """Check if a column name is a campaign name column (handles misspellings)."""
+    normalized = name.replace("_", " ").replace("-", " ").lower().strip()
+    known = {"campaign name", "campain name", "campaignname", "campainname", "campaign"}
+    if normalized in known:
+        return True
+    return normalized.startswith("camp") and "name" in normalized
+
+
+def _parse_entity_type_value(value: str) -> EntityType | None:
+    """Try to parse an entity type string into an EntityType enum value."""
+    normalized = value.strip().upper()
+    for et in EntityType:
+        if et.value == normalized:
+            return et
+    return None
+
+
 def _identify_columns(df: pd.DataFrame) -> dict[str, Optional[int]]:
     """
     Identify column meanings based on header names.
@@ -124,6 +142,9 @@ def _identify_columns(df: pd.DataFrame) -> dict[str, Optional[int]]:
         "zip": None,
         "legal_description": None,
         "notes": None,
+        "entity_type": None,
+        "county": None,
+        "campaign_name": None,
     }
 
     col_names = [str(c).lower().strip() for c in df.columns]
@@ -147,6 +168,12 @@ def _identify_columns(df: pd.DataFrame) -> dict[str, Optional[int]]:
             mapping["legal_description"] = i
         elif name in ["notes", "comments", "remarks"]:
             mapping["notes"] = i
+        elif name in ["entity type", "entity_type", "type"]:
+            mapping["entity_type"] = i
+        elif name == "county":
+            mapping["county"] = i
+        elif _is_campaign_name_column(name):
+            mapping["campaign_name"] = i
 
     # If no name column found, try first column
     if mapping["name"] is None and mapping["first_name"] is None:
@@ -221,8 +248,13 @@ def _process_row(
     cleaned_name, name_notes = extract_address_annotations(raw_name)
     full_name = clean_name(cleaned_name)
 
-    # Detect entity type
-    entity_type = detect_entity_type(full_name)
+    # Read entity type from file if present, otherwise auto-detect
+    file_entity_type_str = _get_value(row, col_mapping.get("entity_type"))
+    if file_entity_type_str:
+        parsed_et = _parse_entity_type_value(file_entity_type_str)
+        entity_type = parsed_et if parsed_et else detect_entity_type(full_name)
+    else:
+        entity_type = detect_entity_type(full_name)
 
     # Get or parse first/last names
     first_name = _get_value(row, col_mapping["first_name"])
@@ -281,6 +313,10 @@ def _process_row(
 
     has_address = bool(address or city or state or zip_code)
 
+    # Read county and campaign_name from columns
+    file_county = _get_value(row, col_mapping.get("county"))
+    file_campaign = _get_value(row, col_mapping.get("campaign_name"))
+
     return OwnerEntry(
         full_name=full_name,
         first_name=first_name,
@@ -294,6 +330,8 @@ def _process_row(
         zip_code=zip_code,
         legal_description=legal_description,
         notes=all_notes,
+        campaign_name=file_campaign,
+        county=file_county,
         duplicate_flag=False,
         has_address=has_address,
     )

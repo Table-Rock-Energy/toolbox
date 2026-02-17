@@ -10,7 +10,7 @@ from typing import Optional
 
 import pandas as pd
 
-from app.models.title import OwnerEntry
+from app.models.title import EntityType, OwnerEntry
 from app.services.title.ownership_report_parser import (
     is_ownership_report,
     process_ownership_report,
@@ -204,7 +204,8 @@ def _detect_headers(df: pd.DataFrame) -> bool:
     # Common header keywords
     header_keywords = [
         "name", "owner", "address", "city", "state", "zip",
-        "contact", "mailing", "street", "full name"
+        "contact", "mailing", "street", "full name",
+        "entity type", "county", "legal description", "campaign", "notes",
     ]
 
     # Check if any cell in first row contains header keywords
@@ -338,17 +339,33 @@ def _process_multi_column(
         if address:
             address, address_line_2 = split_address_lines(address)
 
-        # Detect entity type
-        entity_type = detect_entity_type(full_name)
+        # Read entity type from file if present, otherwise auto-detect
+        file_entity_type_str = _get_cell_value(row, col_mapping.get("entity_type"))
+        if file_entity_type_str:
+            parsed_et = _parse_entity_type_value(file_entity_type_str)
+            entity_type = parsed_et if parsed_et else detect_entity_type(full_name)
+        else:
+            entity_type = detect_entity_type(full_name)
 
         # Parse name for individuals
         first_name, middle_name, last_name = parse_name(full_name, entity_type)
+
+        # Read legal description from column if present, prefer over sheet name
+        file_legal = _get_cell_value(row, col_mapping.get("legal_description"))
+        effective_legal = file_legal or legal_description
+
+        # Read notes from column and merge with extracted annotations
+        file_notes = _get_cell_value(row, col_mapping.get("notes"))
+
+        # Read county and campaign_name from columns
+        file_county = _get_cell_value(row, col_mapping.get("county"))
+        file_campaign = _get_cell_value(row, col_mapping.get("campaign_name"))
 
         # Determine if has address
         has_address = bool(address or city or state or zip_code)
 
         # Merge notes
-        all_notes = _merge_notes(name_notes, address_notes)
+        all_notes = _merge_notes(file_notes, name_notes, address_notes)
 
         entry = OwnerEntry(
             full_name=full_name,
@@ -361,8 +378,10 @@ def _process_multi_column(
             city=city,
             state=state.upper() if state else None,
             zip_code=zip_code,
-            legal_description=legal_description,
+            legal_description=effective_legal,
             notes=all_notes,
+            campaign_name=file_campaign,
+            county=file_county,
             duplicate_flag=False,
             has_address=has_address,
         )
@@ -463,6 +482,24 @@ def _process_two_column(
     return entries
 
 
+def _is_campaign_name_column(name: str) -> bool:
+    """Check if a column name is a campaign name column (handles misspellings)."""
+    normalized = name.replace("_", " ").replace("-", " ").lower().strip()
+    known = {"campaign name", "campain name", "campaignname", "campainname", "campaign"}
+    if normalized in known:
+        return True
+    return normalized.startswith("camp") and "name" in normalized
+
+
+def _parse_entity_type_value(value: str) -> EntityType | None:
+    """Try to parse an entity type string into an EntityType enum value."""
+    normalized = value.strip().upper()
+    for et in EntityType:
+        if et.value == normalized:
+            return et
+    return None
+
+
 def _identify_columns(df: pd.DataFrame) -> dict[str, int]:
     """
     Identify column meanings based on header names or data patterns.
@@ -478,25 +515,51 @@ def _identify_columns(df: pd.DataFrame) -> dict[str, int]:
     # If columns have names, use them
     col_names = [str(c).lower().strip() for c in df.columns]
 
+    # Track whether any header was detected by name (not just positional)
+    has_named_headers = False
+
     for i, name in enumerate(col_names):
         if name in ("full name", "full_name"):
             mapping["name"] = i
+            has_named_headers = True
         elif name in ("first name", "first_name"):
             mapping["first_name"] = i
+            has_named_headers = True
         elif name in ("last name", "last_name"):
             mapping["last_name"] = i
+            has_named_headers = True
+        elif _is_campaign_name_column(name):
+            mapping["campaign_name"] = i
+            has_named_headers = True
         elif "name" in name or "owner" in name:
             # Generic name/owner column - only set if no specific match yet
             if "name" not in mapping:
                 mapping["name"] = i
+                has_named_headers = True
         elif "address" in name or "street" in name or "mailing" in name:
             mapping["address"] = i
+            has_named_headers = True
         elif "city" in name:
             mapping["city"] = i
+            has_named_headers = True
         elif "state" in name:
             mapping["state"] = i
+            has_named_headers = True
         elif "zip" in name or "postal" in name:
             mapping["zip"] = i
+            has_named_headers = True
+        elif name in ("entity type", "entity_type", "type"):
+            mapping["entity_type"] = i
+            has_named_headers = True
+        elif name == "county":
+            mapping["county"] = i
+            has_named_headers = True
+        elif name in ("legal description", "legal_description", "legal", "section"):
+            mapping["legal_description"] = i
+            has_named_headers = True
+        elif name in ("notes", "comments", "remarks"):
+            mapping["notes"] = i
+            has_named_headers = True
 
     # If no "full name" column but we have first+last, use first_name as the
     # name column (full_name will be reconstructed in _process_multi_column)
@@ -506,17 +569,22 @@ def _identify_columns(df: pd.DataFrame) -> dict[str, int]:
         elif "last_name" in mapping:
             mapping["name"] = mapping["last_name"]
 
-    # Default mappings if not found
-    if "name" not in mapping:
-        mapping["name"] = 0
-    if "address" not in mapping and len(df.columns) > 1:
-        mapping["address"] = 1
-    if "city" not in mapping and len(df.columns) > 2:
-        mapping["city"] = 2
-    if "state" not in mapping and len(df.columns) > 3:
-        mapping["state"] = 3
-    if "zip" not in mapping and len(df.columns) > 4:
-        mapping["zip"] = 4
+    # Default positional mappings only when no headers were detected by name
+    if not has_named_headers:
+        if "name" not in mapping:
+            mapping["name"] = 0
+        if "address" not in mapping and len(df.columns) > 1:
+            mapping["address"] = 1
+        if "city" not in mapping and len(df.columns) > 2:
+            mapping["city"] = 2
+        if "state" not in mapping and len(df.columns) > 3:
+            mapping["state"] = 3
+        if "zip" not in mapping and len(df.columns) > 4:
+            mapping["zip"] = 4
+    else:
+        # Even with named headers, ensure we have a name column
+        if "name" not in mapping:
+            mapping["name"] = 0
 
     return mapping
 

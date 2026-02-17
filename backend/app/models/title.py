@@ -37,6 +37,8 @@ class OwnerEntry(BaseModel):
     zip_code: Optional[str] = Field(None, description="ZIP code")
     legal_description: str = Field(..., description="Section-Township-Range")
     notes: Optional[str] = Field(None, description="Additional info, a/k/a, references")
+    campaign_name: Optional[str] = Field(None, description="Campaign name from uploaded file")
+    county: Optional[str] = Field(None, description="County from uploaded file")
     duplicate_flag: bool = Field(
         default=False, description="TRUE if name appears multiple times with different info"
     )

@@ -20,6 +20,8 @@ interface OwnerEntry {
   zip_code?: string
   legal_description: string
   notes?: string
+  campaign_name?: string
+  county?: string
   property_type?: string
   property_value?: number
   duplicate_flag: boolean
@@ -76,6 +78,8 @@ const COLUMNS: ColumnConfig[] = [
   { key: 'zip_code', label: 'ZIP' },
   { key: 'legal_description', label: 'Legal Desc' },
   { key: 'notes', label: 'Notes' },
+  { key: 'campaign_name', label: 'Campaign' },
+  { key: 'county', label: 'County' },
   { key: 'interest', label: 'Interest' },
   { key: 'net_acres', label: 'Net Acres' },
   { key: 'leasehold', label: 'Leasehold' },
@@ -780,8 +784,13 @@ export default function Title() {
                     )}
                     <button
                       onClick={() => {
-                        if (activeJob?.result?.county) {
-                          handleExport('mineral', activeJob.result.county, '')
+                        const hasPerEntryCampaign = entriesToExport.some(e => e.campaign_name)
+                        if (hasPerEntryCampaign) {
+                          // Per-entry values will flow through; global fallback handles the rest
+                          handleExport('mineral', activeJob?.result?.county || '', '')
+                        } else if (activeJob?.result?.county) {
+                          // County known but no per-entry campaign - still need campaign name
+                          setShowMineralExport(true)
                         } else {
                           setShowMineralExport(true)
                         }
@@ -1012,6 +1021,12 @@ export default function Title() {
                         {isColumnVisible('notes') && (
                           <th className="text-left py-2 px-3 font-medium text-gray-600">Notes</th>
                         )}
+                        {isColumnVisible('campaign_name') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">Campaign</th>
+                        )}
+                        {isColumnVisible('county') && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600">County</th>
+                        )}
                         {isColumnVisible('interest') && (
                           <th className="text-left py-2 px-3 font-medium text-gray-600">Interest</th>
                         )}
@@ -1104,6 +1119,12 @@ export default function Title() {
                             )}
                             {isColumnVisible('notes') && (
                               <td className="py-2 px-3 text-gray-600 text-xs max-w-[200px] truncate" title={entry.notes}>{entry.notes || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                            )}
+                            {isColumnVisible('campaign_name') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.campaign_name || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                            )}
+                            {isColumnVisible('county') && (
+                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.county || <span className="text-gray-400">{'\u2014'}</span>}</td>
                             )}
                             {isColumnVisible('interest') && (
                               <td className="py-2 px-3 text-gray-600 text-xs">

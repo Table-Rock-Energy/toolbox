@@ -65,6 +65,12 @@ async def upload_file(
             entries = process_csv(file_bytes, file.filename)
             county = None
 
+        # Derive document-level county from per-entry values when not already set
+        if not county and entries:
+            counties = {e.county for e in entries if e.county}
+            if len(counties) == 1:
+                county = counties.pop()
+
         if not entries:
             return UploadResponse(
                 message="No owner entries found",

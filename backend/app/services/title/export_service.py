@@ -153,8 +153,8 @@ def entries_to_mineral_dataframe(
             notes_parts.append(f"Net Acres: {entry.net_acres}")
         row["Notes/Comments"] = "; ".join(p for p in notes_parts if p)
         row["Territory"] = entry.legal_description
-        row["County"] = county
-        row["Campaign Name"] = campaign_name
+        row["County"] = entry.county or county
+        row["Campaign Name"] = entry.campaign_name or campaign_name
 
         if entry.entity_type.value != "INDIVIDUAL":
             row["Company Name"] = entry.full_name
