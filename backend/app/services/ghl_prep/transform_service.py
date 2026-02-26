@@ -222,7 +222,20 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
     else:
         logger.info("'Contact Owner' column already exists")
 
-    # 5. Drop columns not needed for GHL import
+    # 5. Normalize checkbox columns to "Yes"/"No" for GHL import
+    checkbox_columns_lower = {"bankruptcy", "deceased", "lien"}
+    for col in df.columns:
+        if col.lower() in checkbox_columns_lower:
+            def normalize_checkbox(val: Any) -> str:
+                if pd.isna(val) or val is None:
+                    return "No"
+                s = str(val).strip().lower()
+                if s in ("true", "1", "1.0", "yes", "y"):
+                    return "Yes"
+                return "No"
+            df[col] = df[col].apply(normalize_checkbox)
+
+    # 6. Drop columns not needed for GHL import
     drop_columns_lower = {
         "department", "title", "stage", "status", "outcome",
         "lead source", "purchased data exists", "campaigns",
