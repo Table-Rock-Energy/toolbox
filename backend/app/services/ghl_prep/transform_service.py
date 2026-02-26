@@ -318,6 +318,24 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
                 return "No"
             df[col] = df[col].apply(normalize_checkbox)
 
+    # 5b. Rename columns to match GHL field names for auto-mapping
+    rename_map = {}
+    for col in df.columns:
+        cl = col.lower()
+        if cl.startswith("phone") and "purchased data" in cl:
+            # "Phone 1 (Purchased Data)" -> "Phone 1", etc.
+            num = cl.split()[1] if len(cl.split()) > 1 else ""
+            rename_map[col] = f"Phone {num}" if num else col
+        elif "bankruptcy" in cl:
+            rename_map[col] = "Bankruptcy"
+        elif "deceased" in cl:
+            rename_map[col] = "Deceased"
+        elif "lien" in cl:
+            rename_map[col] = "Lien"
+    if rename_map:
+        df.rename(columns=rename_map, inplace=True)
+        logger.info("Renamed columns: %s", rename_map)
+
     # 6. Drop columns not needed for GHL import
     drop_columns_lower = {
         "department", "title", "stage", "status", "outcome",
