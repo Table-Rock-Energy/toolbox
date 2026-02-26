@@ -117,6 +117,88 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
     # Track original column order
     original_columns = df.columns.tolist()
 
+    # 0. Re-split Name into First Name / Middle Name / Last Name
+    # The source export often has incorrect splits, so we re-derive from the full Name column
+    name_col = None
+    first_col = None
+    middle_col = None
+    last_col = None
+    for col in df.columns:
+        cl = col.lower().strip()
+        if cl == "name" or cl == "full name":
+            name_col = col
+        elif cl == "first name":
+            first_col = col
+        elif cl == "middle name":
+            middle_col = col
+        elif cl == "last name":
+            last_col = col
+
+    if name_col and first_col and last_col:
+        for idx in df.index:
+            full = df.at[idx, name_col]
+            if pd.isna(full) or str(full).strip() == "":
+                continue
+
+            parts = str(full).strip().split()
+            if len(parts) < 2:
+                continue
+
+            # Detect O' prefix names: ["Donny", "O'Burns"] or ["Donny", "O", "'Burns"]
+            # Detect hyphenated/apostrophe last names by rejoining O + next part
+            merged: list[str] = []
+            i = 0
+            while i < len(parts):
+                p = parts[i]
+                # "O" followed by another part that doesn't start with apostrophe -> "O'Next"
+                if p.upper() == "O" and i + 1 < len(parts) and not parts[i + 1].startswith("'"):
+                    merged.append(f"O'{parts[i + 1]}")
+                    i += 2
+                    continue
+                # "Mc" or "MC" as standalone -> merge with next
+                if p.upper() == "MC" and i + 1 < len(parts):
+                    merged.append(f"Mc{parts[i + 1]}")
+                    i += 2
+                    continue
+                merged.append(p)
+                i += 1
+
+            parts = merged
+
+            # Pull trailing suffixes (JR, SR, II, III, IV, V) to attach to last name
+            name_suffixes = {"JR", "SR", "II", "III", "IV", "V"}
+            suffix_parts: list[str] = []
+            while len(parts) > 2 and parts[-1].upper().rstrip(".") in name_suffixes:
+                suffix_parts.insert(0, parts.pop())
+
+            if len(parts) == 1:
+                last_name = parts[0]
+                if suffix_parts:
+                    last_name += " " + " ".join(suffix_parts)
+                df.at[idx, first_col] = last_name  # single word = just put in first
+                if middle_col:
+                    df.at[idx, middle_col] = ""
+                df.at[idx, last_col] = ""
+            elif len(parts) == 2:
+                last_name = parts[1]
+                if suffix_parts:
+                    last_name += " " + " ".join(suffix_parts)
+                df.at[idx, first_col] = parts[0]
+                if middle_col:
+                    df.at[idx, middle_col] = ""
+                df.at[idx, last_col] = last_name
+            else:
+                # First word = first name, last word = last name, everything else = middle
+                last_name = parts[-1]
+                if suffix_parts:
+                    last_name += " " + " ".join(suffix_parts)
+                df.at[idx, first_col] = parts[0]
+                df.at[idx, last_col] = last_name
+                if middle_col:
+                    df.at[idx, middle_col] = " ".join(parts[1:-1])
+
+        logger.info("Re-split names from '%s' into first/middle/last", name_col)
+
     # 1. Title-case name fields
     name_patterns = ["name", "city", "county", "territory", "address"]
     title_case_columns = []
