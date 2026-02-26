@@ -223,17 +223,16 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
         logger.info("'Contact Owner' column already exists")
 
     # 5. Normalize checkbox columns to "Yes"/"No" for GHL import
-    checkbox_columns_lower = {"bankruptcy", "deceased", "lien"}
+    # Match columns containing bankruptcy, deceased, or lien (covers "Bankruptcy", "Bankruptcy Flag", etc.)
+    checkbox_keywords = ("bankruptcy", "deceased", "lien")
     for col in df.columns:
-        if col.lower() in checkbox_columns_lower:
+        if any(kw in col.lower() for kw in checkbox_keywords):
             def normalize_checkbox(val: Any) -> str:
                 if pd.isna(val) or val is None:
                     return "No"
                 s = str(val).strip().lower()
                 if s in ("true", "1", "1.0", "yes", "y"):
                     return "Yes"
-                if s in ("false", "0", "0.0", "no", "n", ""):
-                    return "No"
                 return "No"
             df[col] = df[col].apply(normalize_checkbox)
 
@@ -248,27 +247,31 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
         df.drop(columns=cols_to_drop, inplace=True)
         logger.info("Dropped columns: %s", cols_to_drop)
 
-    # 7. Reorder columns: regular cols, then purchased/flag cols, then system IDs last
-    tail_columns_lower = {
-        "phone 1", "bankruptcy", "deceased", "lien",
-    }
-    last_columns_lower = {
-        "mineral system id", "campaign system id",
-    }
-
+    # 7. Reorder columns:
+    #    Regular cols -> Phone 1-5 (Purchased Data) -> Flag cols -> Campaign System Id -> Mineral Contact System Id
+    purchased_phone_cols = []  # Phone 1-5 (Purchased Data)
+    flag_cols = []             # Bankruptcy, Deceased, Lien
+    campaign_system_col = []   # Campaign System Id
+    mineral_system_col = []    # Mineral Contact System Id (very last)
     regular_cols = []
-    tail_cols = []
-    last_cols = []
+
     for col in df.columns:
         cl = col.lower()
-        if cl in last_columns_lower or cl.startswith("mineral system id") or cl.startswith("campaign system id"):
-            last_cols.append(col)
-        elif cl in tail_columns_lower or cl.startswith("phone 1"):
-            tail_cols.append(col)
+        if cl.startswith("phone") and "purchased data" in cl:
+            purchased_phone_cols.append(col)
+        elif any(kw in cl for kw in ("bankruptcy", "deceased", "lien")):
+            flag_cols.append(col)
+        elif "campaign system" in cl:
+            campaign_system_col.append(col)
+        elif "mineral" in cl and "system" in cl:
+            mineral_system_col.append(col)
         else:
             regular_cols.append(col)
 
-    new_order = regular_cols + tail_cols + last_cols
+    # Sort purchased phone cols by number (Phone 1, Phone 2, ... Phone 5)
+    purchased_phone_cols.sort(key=lambda c: c.lower())
+
+    new_order = regular_cols + purchased_phone_cols + flag_cols + campaign_system_col + mineral_system_col
     df = df[new_order]
 
     # Convert to list of dicts (preserves column order)
