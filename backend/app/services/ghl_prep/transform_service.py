@@ -222,6 +222,16 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
     else:
         logger.info("'Contact Owner' column already exists")
 
+    # 5. Drop columns not needed for GHL import
+    drop_columns_lower = {
+        "department", "title", "stage", "status", "outcome",
+        "lead source", "purchased data exists", "campaigns",
+    }
+    cols_to_drop = [col for col in df.columns if col.lower() in drop_columns_lower]
+    if cols_to_drop:
+        df.drop(columns=cols_to_drop, inplace=True)
+        logger.info("Dropped columns: %s", cols_to_drop)
+
     # Convert to list of dicts (preserves all columns)
     rows = df.to_dict(orient="records")
 
