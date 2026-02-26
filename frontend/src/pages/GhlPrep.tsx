@@ -32,10 +32,6 @@ export default function GhlPrep() {
   const [result, setResult] = useState<TransformResult | null>(null)
   const [sortColumn, setSortColumn] = useState<string | null>(null)
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
-  const [currentPage, setCurrentPage] = useState(0)
-
-  const ROWS_PER_PAGE = 50
-
   // Get dynamic columns from first row
   const columns = useMemo(() => {
     if (!result?.rows || result.rows.length === 0) return []
@@ -60,14 +56,6 @@ export default function GhlPrep() {
     return sorted
   }, [result?.rows, sortColumn, sortDirection])
 
-  // Paginate rows
-  const paginatedRows = useMemo(() => {
-    const startIndex = currentPage * ROWS_PER_PAGE
-    return sortedRows.slice(startIndex, startIndex + ROWS_PER_PAGE)
-  }, [sortedRows, currentPage])
-
-  const totalPages = Math.ceil(sortedRows.length / ROWS_PER_PAGE)
-
   const handleColumnClick = (column: string) => {
     if (sortColumn === column) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
@@ -75,7 +63,6 @@ export default function GhlPrep() {
       setSortColumn(column)
       setSortDirection('asc')
     }
-    setCurrentPage(0)
   }
 
   const handleFilesSelected = async (files: File[]) => {
@@ -85,8 +72,6 @@ export default function GhlPrep() {
     setIsProcessing(true)
     setError(null)
     setResult(null)
-    setCurrentPage(0)
-
     try {
       const formData = new FormData()
       formData.append('file', file)
@@ -156,7 +141,6 @@ export default function GhlPrep() {
     setError(null)
     setSortColumn(null)
     setSortDirection('asc')
-    setCurrentPage(0)
   }
 
   return (
@@ -235,34 +219,6 @@ export default function GhlPrep() {
             </div>
           </div>
 
-          {/* Stats Bar */}
-          <div className="grid grid-cols-4 gap-4 p-6 border-b border-gray-100">
-            <div className="text-center">
-              <p className="text-2xl font-oswald font-semibold text-tre-navy">
-                {result.total_count}
-              </p>
-              <p className="text-sm text-gray-500">Total Rows</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-oswald font-semibold text-green-600">
-                {result.transformed_fields.title_cased}
-              </p>
-              <p className="text-sm text-gray-500">Names Title-Cased</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-oswald font-semibold text-blue-600">
-                {result.transformed_fields.campaigns_extracted}
-              </p>
-              <p className="text-sm text-gray-500">Campaigns Extracted</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-oswald font-semibold text-purple-600">
-                {result.transformed_fields.phone_mapped}
-              </p>
-              <p className="text-sm text-gray-500">Phones Mapped</p>
-            </div>
-          </div>
-
           {/* Warnings */}
           {result.warnings && result.warnings.length > 0 && (
             <div className="mx-6 mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
@@ -283,17 +239,17 @@ export default function GhlPrep() {
           {/* Preview Table */}
           <div className="p-6">
             <h4 className="font-medium text-gray-900 mb-3">
-              Data Preview ({sortedRows.length} rows)
+              {sortedRows.length} rows
             </h4>
-            <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto overflow-y-auto max-h-[75vh]">
+              <table className="text-sm">
                 <thead className="sticky top-0 bg-white z-10">
                   <tr className="border-b border-gray-200">
                     {columns.map((column) => (
                       <th
                         key={column}
                         onClick={() => handleColumnClick(column)}
-                        className="text-left py-2 px-3 font-medium text-gray-600 cursor-pointer hover:bg-gray-50 transition-colors"
+                        className="text-left py-2 px-4 font-medium text-gray-600 cursor-pointer hover:bg-gray-50 transition-colors whitespace-nowrap"
                         title="Click to sort"
                       >
                         <div className="flex items-center gap-1">
@@ -309,18 +265,16 @@ export default function GhlPrep() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {paginatedRows.map((row, i) => (
+                  {sortedRows.map((row, i) => (
                     <tr key={i} className="hover:bg-gray-50">
                       {columns.map((column) => {
-                        const value = row[column] || ''
-                        const truncated = value.length > 50 ? `${value.substring(0, 50)}...` : value
+                        const value = String(row[column] ?? '')
                         return (
                           <td
                             key={column}
-                            className="py-2 px-3 text-gray-600"
-                            title={value}
+                            className="py-2 px-4 text-gray-600 whitespace-nowrap"
                           >
-                            {truncated || <span className="text-gray-400">{'\u2014'}</span>}
+                            {value || <span className="text-gray-400">{'\u2014'}</span>}
                           </td>
                         )
                       })}
@@ -329,31 +283,6 @@ export default function GhlPrep() {
                 </tbody>
               </table>
             </div>
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="mt-4 flex items-center justify-between">
-                <p className="text-sm text-gray-500">
-                  Page {currentPage + 1} of {totalPages}
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setCurrentPage(Math.max(0, currentPage - 1))}
-                    disabled={currentPage === 0}
-                    className="px-3 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Previous
-                  </button>
-                  <button
-                    onClick={() => setCurrentPage(Math.min(totalPages - 1, currentPage + 1))}
-                    disabled={currentPage === totalPages - 1}
-                    className="px-3 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}
