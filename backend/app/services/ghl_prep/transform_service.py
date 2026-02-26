@@ -196,9 +196,9 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
             # Overwrite existing Phone column
             df[phone_col] = df[phone1_col]
         else:
-            # Add new Phone column (insert after Phone 1 for logical ordering)
+            # Add new Phone column before Phone 1
             phone1_idx = df.columns.tolist().index(phone1_col)
-            df.insert(phone1_idx + 1, "Phone", df[phone1_col])
+            df.insert(phone1_idx, "Phone", df[phone1_col])
 
         # Count non-empty phone mappings
         non_empty = df[phone1_col].notna().sum()
@@ -232,6 +232,8 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
                 s = str(val).strip().lower()
                 if s in ("true", "1", "1.0", "yes", "y"):
                     return "Yes"
+                if s in ("false", "0", "0.0", "no", "n", ""):
+                    return "No"
                 return "No"
             df[col] = df[col].apply(normalize_checkbox)
 
@@ -246,7 +248,30 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
         df.drop(columns=cols_to_drop, inplace=True)
         logger.info("Dropped columns: %s", cols_to_drop)
 
-    # Convert to list of dicts (preserves all columns)
+    # 7. Reorder columns: regular cols, then purchased/flag cols, then system IDs last
+    tail_columns_lower = {
+        "phone 1", "bankruptcy", "deceased", "lien",
+    }
+    last_columns_lower = {
+        "mineral system id", "campaign system id",
+    }
+
+    regular_cols = []
+    tail_cols = []
+    last_cols = []
+    for col in df.columns:
+        cl = col.lower()
+        if cl in last_columns_lower or cl.startswith("mineral system id") or cl.startswith("campaign system id"):
+            last_cols.append(col)
+        elif cl in tail_columns_lower or cl.startswith("phone 1"):
+            tail_cols.append(col)
+        else:
+            regular_cols.append(col)
+
+    new_order = regular_cols + tail_cols + last_cols
+    df = df[new_order]
+
+    # Convert to list of dicts (preserves column order)
     rows = df.to_dict(orient="records")
 
     return TransformResult(
