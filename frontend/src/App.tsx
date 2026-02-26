@@ -6,6 +6,7 @@ import Extract from './pages/Extract'
 import Title from './pages/Title'
 import Proration from './pages/Proration'
 import Revenue from './pages/Revenue'
+import GhlPrep from './pages/GhlPrep'
 import Settings from './pages/Settings'
 import AdminSettings from './pages/AdminSettings'
 import Login from './pages/Login'
@@ -57,6 +58,7 @@ function AppRoutes() {
         <Route path="title" element={<Title />} />
         <Route path="proration" element={<Proration />} />
         <Route path="revenue" element={<Revenue />} />
+        <Route path="ghl-prep" element={<GhlPrep />} />
         <Route path="settings" element={<Settings />} />
         <Route path="admin" element={<AdminRoute><AdminSettings /></AdminRoute>} />
       </Route>

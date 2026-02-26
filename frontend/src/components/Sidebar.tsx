@@ -6,6 +6,7 @@ import {
   FileText,
   Calculator,
   DollarSign,
+  Repeat,
   LogOut,
   ChevronRight,
   ChevronLeft,
@@ -43,6 +44,7 @@ const navGroups: NavGroup[] = [
       { name: 'Title', path: '/title', icon: FileText },
       { name: 'Proration', path: '/proration', icon: Calculator },
       { name: 'Revenue', path: '/revenue', icon: DollarSign },
+      { name: 'GHL Prep', path: '/ghl-prep', icon: Repeat },
     ],
   },
 ]

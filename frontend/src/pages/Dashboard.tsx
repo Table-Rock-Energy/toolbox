@@ -5,6 +5,7 @@ import {
   FileText,
   Calculator,
   DollarSign,
+  Repeat,
   ArrowRight,
   Activity,
   CheckCircle,
@@ -55,6 +56,14 @@ const toolConfigs: ToolConfig[] = [
     path: '/revenue',
     color: 'bg-amber-500',
   },
+  {
+    name: 'GHL Prep',
+    tool: 'ghl_prep',
+    description: 'Transform Mineral export CSVs for GoHighLevel import',
+    icon: Repeat,
+    path: '/ghl-prep',
+    color: 'bg-orange-500',
+  },
 ]
 
 interface RecentJob {
@@ -76,6 +85,7 @@ const toolColors: Record<string, string> = {
   title: 'bg-green-100 text-green-700',
   proration: 'bg-purple-100 text-purple-700',
   revenue: 'bg-amber-100 text-amber-700',
+  ghl_prep: 'bg-orange-100 text-orange-700',
 }
 
 const toolPaths: Record<string, string> = {
@@ -83,6 +93,7 @@ const toolPaths: Record<string, string> = {
   title: '/title',
   proration: '/proration',
   revenue: '/revenue',
+  ghl_prep: '/ghl-prep',
 }
 
 export default function Dashboard() {
