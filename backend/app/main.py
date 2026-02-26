@@ -22,6 +22,7 @@ from app.api.extract import router as extract_router
 from app.api.title import router as title_router
 from app.api.proration import router as proration_router
 from app.api.revenue import router as revenue_router
+from app.api.ghl_prep import router as ghl_prep_router
 from app.api.admin import router as admin_router
 from app.api.history import router as history_router
 from app.api.ai_validation import router as ai_router
@@ -61,7 +62,7 @@ async def health_check() -> dict:
         "status": "healthy",
         "service": "table-rock-toolbox",
         "version": settings.version,
-        "tools": ["extract", "title", "proration", "revenue", "etl"],
+        "tools": ["extract", "title", "proration", "revenue", "ghl_prep", "etl"],
     }
 
 
@@ -70,6 +71,7 @@ app.include_router(extract_router, prefix="/api/extract", tags=["extract"])
 app.include_router(title_router, prefix="/api/title", tags=["title"])
 app.include_router(proration_router, prefix="/api/proration", tags=["proration"])
 app.include_router(revenue_router, prefix="/api/revenue", tags=["revenue"])
+app.include_router(ghl_prep_router, prefix="/api/ghl-prep", tags=["ghl-prep"])
 app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
 app.include_router(history_router, prefix="/api/history", tags=["history"])
 app.include_router(ai_router, prefix="/api/ai", tags=["ai"])

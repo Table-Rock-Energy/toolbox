@@ -194,6 +194,10 @@ async def _save_entries(
         # Revenue saves each statement individually
         for entry in entries:
             await save_revenue_statement(job_id, entry)
+    elif tool == "ghl_prep":
+        # GHL Prep entries are transformations, not persistent entities
+        # Job metadata is sufficient - skip entry saving
+        pass
 
 
 # ---------------------------------------------------------------------------
