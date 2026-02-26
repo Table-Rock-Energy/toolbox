@@ -180,7 +180,7 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
     # 3. Map Phone 1 to Phone column
     phone1_col = None
     for col in df.columns:
-        if col.lower() == "phone 1":
+        if col.lower().startswith("phone 1"):
             phone1_col = col
             break
 
@@ -226,6 +226,7 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
     drop_columns_lower = {
         "department", "title", "stage", "status", "outcome",
         "lead source", "purchased data exists", "campaigns",
+        "well interest count",
     }
     cols_to_drop = [col for col in df.columns if col.lower() in drop_columns_lower]
     if cols_to_drop:
