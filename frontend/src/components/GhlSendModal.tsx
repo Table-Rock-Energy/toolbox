@@ -82,7 +82,7 @@ export default function GhlSendModal({
         setSelectedConnectionId('')
         setCampaignTag(defaultTag)
         setSelectedOwners([])
-        setSmartListName('')
+        setSmartListName(defaultTag)
         setManualSms(false)
         setUsers([])
         setSendStep('idle')
@@ -422,7 +422,7 @@ export default function GhlSendModal({
             <input
               type="text"
               value={campaignTag}
-              onChange={(e) => setCampaignTag(e.target.value)}
+              onChange={(e) => { setCampaignTag(e.target.value); setSmartListName(e.target.value) }}
               placeholder="e.g., Spring 2026 Mailing"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
             />
