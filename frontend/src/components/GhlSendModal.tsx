@@ -26,22 +26,31 @@ interface GhlSendModalProps {
 
 type SendStep = 'idle' | 'validating' | 'confirmed' | 'sending' | 'summary'
 
+// Coerce value to string or undefined (handles numeric values from pandas)
+function str(val: unknown): string | undefined {
+  if (val === undefined || val === null || val === '') return undefined
+  return String(val)
+}
+
 // Helper function to map rows to BulkContactData
+// Handles both Mineral export column names and normalized names
 function mapRowsToContacts(rows: Record<string, string>[]): BulkContactData[] {
   return rows.map(row => ({
-    mineral_contact_system_id: row['Mineral Contact System Id'] || row['mineral_contact_system_id'] || '',
-    first_name: row['First Name'] || row['first_name'] || undefined,
-    last_name: row['Last Name'] || row['last_name'] || undefined,
-    email: row['Email'] || row['email'] || undefined,
-    phone: row['Phone'] || row['phone'] || undefined,
-    phone2: row['Phone 2'] || row['phone2'] || undefined,
-    phone3: row['Phone 3'] || row['phone3'] || undefined,
-    phone4: row['Phone 4'] || row['phone4'] || undefined,
-    phone5: row['Phone 5'] || row['phone5'] || undefined,
-    address1: row['Address 1'] || row['address1'] || undefined,
-    city: row['City'] || row['city'] || undefined,
-    state: row['State'] || row['state'] || undefined,
-    postal_code: row['Postal Code'] || row['postal_code'] || undefined,
+    mineral_contact_system_id: String(
+      row['M1neral Contact System ID'] || row['Mineral Contact System Id'] || row['mineral_contact_system_id'] || ''
+    ),
+    first_name: str(row['First Name'] || row['first_name']),
+    last_name: str(row['Last Name'] || row['last_name']),
+    email: str(row['Primary Email'] || row['Email'] || row['email']),
+    phone: str(row['Phone'] || row['phone']),
+    phone2: str(row['Phone 2'] || row['phone2']),
+    phone3: str(row['Phone 3'] || row['phone3']),
+    phone4: str(row['Phone 4'] || row['phone4']),
+    phone5: str(row['Phone 5'] || row['phone5']),
+    address1: str(row['Primary Address'] || row['Address 1'] || row['address1']),
+    city: str(row['City'] || row['city']),
+    state: str(row['State'] || row['state']),
+    postal_code: str(row['Zip'] || row['Postal Code'] || row['postal_code']),
   })).filter(c => c.mineral_contact_system_id?.trim()) // Skip rows without ID
 }
 

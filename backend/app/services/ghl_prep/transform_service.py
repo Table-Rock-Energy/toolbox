@@ -5,6 +5,10 @@ Transforms Mineral export CSVs for GoHighLevel import by:
 2. Extracting campaign names from JSON
 3. Mapping Phone 1 to Phone column
 4. Adding Contact Owner column if missing
+5. Normalizing checkbox columns to Yes/No
+6. Renaming Phone N (Purchased Data) -> Phone N and flag columns
+7. Dropping columns not needed for GHL import
+8. Ensuring Phone 2-5 columns always exist
 """
 
 from __future__ import annotations
@@ -30,64 +34,52 @@ UPPERCASE_SUFFIXES = {
 # Company indicators (for context-aware title-casing)
 COMPANY_INDICATORS = {"LLC", "LP", "INC", "CORP", "CO", "TRUST", "ESTATE"}
 
+# Columns to drop after transformation (not needed for GHL import)
+DROP_COLUMNS_LOWER = {
+    "department", "title", "stage", "status", "outcome",
+    "lead source", "purchased data exists", "campaigns",
+    "well interest count",
+}
+
 
 def title_case_name(value: Any) -> str:
-    """Apply title case to a name with special prefix and suffix handling.
-
-    Handles:
-    - Mc prefix: McDonald (not Mcdonald)
-    - Mac prefix: MacArthur (not Macarthur)
-    - O' prefix: O'Brien (not O'brien)
-    - Uppercase suffixes: LLC, LP, Inc, Jr, Sr, II, III, IV
-
-    Args:
-        value: The name value to transform (may be NaN, None, or string)
-
-    Returns:
-        Title-cased string with proper prefix and suffix handling
-    """
+    """Apply title case to a name with special prefix and suffix handling."""
     if pd.isna(value) or value is None or str(value).strip() == "":
         return ""
 
     text = str(value).strip()
-
-    # Apply basic title case
     result = text.title()
 
     # Fix Mc prefix: Mcdonald -> McDonald
     result = re.sub(r'\bMc([a-z])', lambda m: f"Mc{m.group(1).upper()}", result)
-
     # Fix Mac prefix: Macarthur -> MacArthur
     result = re.sub(r'\bMac([a-z])', lambda m: f"Mac{m.group(1).upper()}", result)
-
     # Fix O' prefix: O'brien -> O'Brien
     result = re.sub(r"\bO'([a-z])", lambda m: f"O'{m.group(1).upper()}", result)
-
-    # Handle "MC DONALD" -> "McDonald" (space before prefix)
+    # Handle "MC DONALD" -> "McDonald"
     result = re.sub(r'\bMc\s+([A-Z][a-z]+)', r'Mc\1', result)
-
-    # Handle "O BRIEN" -> "O'Brien" (space instead of apostrophe)
+    # Handle "O BRIEN" -> "O'Brien"
     result = re.sub(r"\bO\s+([A-Z][a-z]+)", r"O'\1", result)
 
     # Preserve uppercase suffixes
     for suffix in UPPERCASE_SUFFIXES:
-        # Match word boundary + suffix (case-insensitive) + word boundary
         pattern = r'\b' + re.escape(suffix.title()) + r'\b'
         result = re.sub(pattern, suffix, result, flags=re.IGNORECASE)
 
     return result
 
 
+def _find_col(df: pd.DataFrame, *candidates: str) -> str | None:
+    """Find the first matching column name (case-insensitive, strip whitespace)."""
+    col_map = {c.lower().strip(): c for c in df.columns}
+    for candidate in candidates:
+        if candidate.lower().strip() in col_map:
+            return col_map[candidate.lower().strip()]
+    return None
+
+
 def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
-    """Transform a Mineral export CSV for GoHighLevel import.
-
-    Args:
-        file_bytes: CSV file contents as bytes
-        filename: Original filename
-
-    Returns:
-        TransformResult with transformed rows and metadata
-    """
+    """Transform a Mineral export CSV for GoHighLevel import."""
     warnings: list[str] = []
     transformed_fields: dict[str, int] = {
         "title_cased": 0,
@@ -106,33 +98,19 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
     if df.empty:
         warnings.append("CSV file is empty")
         return TransformResult(
-            success=False,
-            rows=[],
-            total_count=0,
+            success=False, rows=[], total_count=0,
             transformed_fields=transformed_fields,
-            warnings=warnings,
-            source_filename=filename
+            warnings=warnings, source_filename=filename
         )
 
-    # Track original column order
-    original_columns = df.columns.tolist()
+    # Strip whitespace from column names (handles "Bankruptcy Flag " trailing space)
+    df.columns = [c.strip() for c in df.columns]
 
     # 0. Re-split Name into First Name / Middle Name / Last Name
-    # The source export often has incorrect splits, so we re-derive from the full Name column
-    name_col = None
-    first_col = None
-    middle_col = None
-    last_col = None
-    for col in df.columns:
-        cl = col.lower().strip()
-        if cl == "name" or cl == "full name":
-            name_col = col
-        elif cl == "first name":
-            first_col = col
-        elif cl == "middle name":
-            middle_col = col
-        elif cl == "last name":
-            last_col = col
+    name_col = _find_col(df, "Name", "Full Name")
+    first_col = _find_col(df, "First Name")
+    middle_col = _find_col(df, "Middle Name")
+    last_col = _find_col(df, "Last Name")
 
     if name_col and first_col and last_col:
         for idx in df.index:
@@ -144,18 +122,14 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
             if len(parts) < 2:
                 continue
 
-            # Detect O' prefix names: ["Donny", "O'Burns"] or ["Donny", "O", "'Burns"]
-            # Detect hyphenated/apostrophe last names by rejoining O + next part
             merged: list[str] = []
             i = 0
             while i < len(parts):
                 p = parts[i]
-                # "O" followed by another part that doesn't start with apostrophe -> "O'Next"
                 if p.upper() == "O" and i + 1 < len(parts) and not parts[i + 1].startswith("'"):
                     merged.append(f"O'{parts[i + 1]}")
                     i += 2
                     continue
-                # "Mc" or "MC" as standalone -> merge with next
                 if p.upper() == "MC" and i + 1 < len(parts):
                     merged.append(f"Mc{parts[i + 1]}")
                     i += 2
@@ -164,8 +138,6 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
                 i += 1
 
             parts = merged
-
-            # Pull trailing suffixes (JR, SR, II, III, IV, V) to attach to last name
             name_suffixes = {"JR", "SR", "II", "III", "IV", "V"}
             suffix_parts: list[str] = []
             while len(parts) > 2 and parts[-1].upper().rstrip(".") in name_suffixes:
@@ -175,7 +147,7 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
                 last_name = parts[0]
                 if suffix_parts:
                     last_name += " " + " ".join(suffix_parts)
-                df.at[idx, first_col] = last_name  # single word = just put in first
+                df.at[idx, first_col] = last_name
                 if middle_col:
                     df.at[idx, middle_col] = ""
                 df.at[idx, last_col] = ""
@@ -188,7 +160,6 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
                     df.at[idx, middle_col] = ""
                 df.at[idx, last_col] = last_name
             else:
-                # First word = first name, last word = last name, everything else = middle
                 last_name = parts[-1]
                 if suffix_parts:
                     last_name += " " + " ".join(suffix_parts)
@@ -205,111 +176,104 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
 
     for col in df.columns:
         col_lower = col.lower()
-        # Check if column name contains any name pattern
         if any(pattern in col_lower for pattern in name_patterns):
-            # Don't title-case email, phone, state, zip
-            if not any(skip in col_lower for skip in ["email", "phone", "state", "zip"]):
+            if not any(skip in col_lower for skip in ["email", "phone", "state", "zip", "system", "campaign"]):
                 title_case_columns.append(col)
 
-    # Apply title-casing to identified columns
     for col in title_case_columns:
         original_values = df[col].copy()
         df[col] = df[col].apply(title_case_name)
-        # Count how many values actually changed
         changed = (original_values != df[col]).sum()
         transformed_fields["title_cased"] += int(changed)
 
     if title_case_columns:
         logger.info("Applied title-casing to columns: %s", title_case_columns)
 
-    # 2. Extract campaign names from JSON
-    campaigns_col = None
-    for col in df.columns:
-        if col.lower() == "campaigns":
-            campaigns_col = col
-            break
+    # 2. Extract campaign name
+    # Prefer plain text "Campaign Name" column if it exists
+    campaign_name_col = _find_col(df, "Campaign Name")
+    campaigns_json_col = _find_col(df, "Campaigns", "Campaign")
 
-    if campaigns_col:
+    extracted_campaign_name = None
+
+    if campaign_name_col:
+        campaign_values = df[campaign_name_col].dropna().astype(str).loc[lambda s: s.str.strip() != ""]
+        extracted_campaign_name = str(campaign_values.iloc[0]) if len(campaign_values) > 0 else None
+        if extracted_campaign_name:
+            logger.info("Campaign name from '%s' column: %s", campaign_name_col, extracted_campaign_name)
+
+    if not extracted_campaign_name and campaigns_json_col:
         def extract_campaign(value: Any) -> str:
-            """Extract first campaign unit_name from JSON array."""
+            """Extract first campaign name from JSON array."""
             if pd.isna(value) or value is None or str(value).strip() == "":
                 return ""
-
             text = str(value).strip()
             try:
-                # Try to parse as JSON array
                 data = json.loads(text)
                 if isinstance(data, list) and len(data) > 0:
-                    # Extract unit_name from first element
                     first_campaign = data[0]
-                    if isinstance(first_campaign, dict) and "unit_name" in first_campaign:
-                        return str(first_campaign["unit_name"])
+                    if isinstance(first_campaign, dict):
+                        for key in ("unit_name", "name"):
+                            if key in first_campaign:
+                                return str(first_campaign[key])
             except (json.JSONDecodeError, KeyError, TypeError):
-                # If JSON parsing fails, return the raw value as-is
                 pass
-
             return text
 
-        original_values = df[campaigns_col].copy()
-        df[campaigns_col] = df[campaigns_col].apply(extract_campaign)
-        # Count successful extractions (values that changed)
-        changed = (original_values != df[campaigns_col]).sum()
+        original_values = df[campaigns_json_col].copy()
+        df[campaigns_json_col] = df[campaigns_json_col].apply(extract_campaign)
+        changed = (original_values != df[campaigns_json_col]).sum()
         transformed_fields["campaigns_extracted"] = int(changed)
-        # Capture first non-empty campaign name for metadata
-        campaign_values = df[campaigns_col].dropna().loc[lambda s: s.str.strip() != ""]
+        campaign_values = df[campaigns_json_col].dropna().loc[lambda s: s.str.strip() != ""]
         extracted_campaign_name = str(campaign_values.iloc[0]) if len(campaign_values) > 0 else None
-        logger.info("Extracted campaign names from %d rows", changed)
-    else:
-        extracted_campaign_name = None
-        warnings.append("No 'Campaigns' column found")
+        logger.info("Extracted campaign names from JSON (%d rows)", changed)
 
-    # 3. Map Phone 1 to Phone column
+    if not extracted_campaign_name:
+        warnings.append("No campaign name found in upload")
+
+    # 3. Map phone to primary Phone column
+    # Use first non-empty: Primary Mobile Phone > Primary Home Phone > Phone 1 (Purchased Data)
+    primary_mobile_col = _find_col(df, "Primary Mobile Phone")
+    primary_home_col = _find_col(df, "Primary Home Phone")
     phone1_col = None
     for col in df.columns:
         if col.lower().startswith("phone 1"):
             phone1_col = col
             break
 
-    if phone1_col:
-        # Check if Phone column already exists
-        phone_col = None
-        for col in df.columns:
-            if col.lower() == "phone":
-                phone_col = col
+    # Prefer Phone 1 (Purchased Data) since it's the primary data column,
+    # then fall back to Primary Mobile / Primary Home
+    phone_source_col = None
+    for candidate_col in [phone1_col, primary_mobile_col, primary_home_col]:
+        if candidate_col:
+            non_empty = df[candidate_col].dropna().astype(str).loc[lambda s: s.str.strip() != ""]
+            if len(non_empty) > 0:
+                phone_source_col = candidate_col
                 break
+    if not phone_source_col and phone1_col:
+        phone_source_col = phone1_col
 
+    if phone_source_col:
+        phone_col = _find_col(df, "Phone")
         if phone_col:
-            # Overwrite existing Phone column
-            df[phone_col] = df[phone1_col]
+            df[phone_col] = df[phone_source_col]
         else:
-            # Add new Phone column before Phone 1
-            phone1_idx = df.columns.tolist().index(phone1_col)
-            df.insert(phone1_idx, "Phone", df[phone1_col])
+            phone_source_idx = df.columns.tolist().index(phone_source_col)
+            df.insert(phone_source_idx, "Phone", df[phone_source_col])
 
-        # Count non-empty phone mappings
-        non_empty = df[phone1_col].notna().sum()
+        non_empty = df[phone_source_col].notna().sum()
         transformed_fields["phone_mapped"] = int(non_empty)
-        logger.info("Mapped Phone 1 to Phone column (%d values)", non_empty)
+        logger.info("Mapped '%s' to Phone column (%d values)", phone_source_col, non_empty)
     else:
-        warnings.append("No 'Phone 1' column found")
+        warnings.append("No phone column found to map")
 
     # 4. Add Contact Owner column if missing
-    contact_owner_col = None
-    for col in df.columns:
-        if col.lower() == "contact owner":
-            contact_owner_col = col
-            break
-
-    if not contact_owner_col:
-        # Add Contact Owner column at the end with empty strings
+    if not _find_col(df, "Contact Owner"):
         df["Contact Owner"] = ""
         transformed_fields["contact_owner_added"] = len(df)
         logger.info("Added 'Contact Owner' column with %d empty rows", len(df))
-    else:
-        logger.info("'Contact Owner' column already exists")
 
-    # 5. Normalize checkbox columns to "Yes"/"No" for GHL import
-    # Match columns containing bankruptcy, deceased, or lien (covers "Bankruptcy", "Bankruptcy Flag", etc.)
+    # 5. Normalize checkbox columns to "Yes"/"No"
     checkbox_keywords = ("bankruptcy", "deceased", "lien")
     for col in df.columns:
         if any(kw in col.lower() for kw in checkbox_keywords):
@@ -322,21 +286,19 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
                 return "No"
             df[col] = df[col].apply(normalize_checkbox)
 
-    # 5b. Rename columns to match GHL field names for auto-mapping
+    # 6. Rename: Phone N (Purchased Data) -> Phone N, flag columns -> Bankruptcy/Deceased/Lien
     rename_map = {}
     cols_to_drop_post_rename = []
     existing_cols_lower = {c.lower() for c in df.columns}
     for col in df.columns:
         cl = col.lower()
         if cl.startswith("phone") and "purchased data" in cl:
-            # "Phone 1 (Purchased Data)" -> "Phone 1", etc.
             num = cl.split()[1] if len(cl.split()) > 1 else ""
             new_name = f"Phone {num}" if num else col
             if new_name.lower() not in existing_cols_lower:
                 rename_map[col] = new_name
                 existing_cols_lower.add(new_name.lower())
             else:
-                # Duplicate (e.g. Phone 1 already exists) — drop the Purchased Data column
                 cols_to_drop_post_rename.append(col)
                 logger.info("Dropping duplicate '%s' (keeping existing '%s')", col, new_name)
         elif "bankruptcy" in cl:
@@ -352,50 +314,41 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
         df.drop(columns=cols_to_drop_post_rename, inplace=True)
         logger.info("Dropped duplicate purchased data columns: %s", cols_to_drop_post_rename)
 
-    # 6. Drop columns not needed for GHL import
-    drop_columns_lower = {
-        "department", "title", "stage", "status", "outcome",
-        "lead source", "purchased data exists", "campaigns",
-        "well interest count",
-    }
-    cols_to_drop = [col for col in df.columns if col.lower() in drop_columns_lower]
+    # 7. Drop columns not needed for GHL import
+    cols_to_drop = [col for col in df.columns if col.lower().strip() in DROP_COLUMNS_LOWER]
     if cols_to_drop:
         df.drop(columns=cols_to_drop, inplace=True)
         logger.info("Dropped columns: %s", cols_to_drop)
 
-    # 7. Reorder columns:
-    #    Regular cols -> Phone 2-5 -> Flag cols -> Campaign System Id -> Mineral Contact System Id
-    extra_phone_cols = []      # Phone 2-5 (renamed or original)
-    flag_cols = []             # Bankruptcy, Deceased, Lien
-    campaign_system_col = []   # Campaign System Id
-    mineral_system_col = []    # Mineral Contact System Id (very last)
+    # 8. Reorder columns:
+    #    Regular cols -> Phone 2-5 -> Flag cols -> Campaign System Id -> Mineral system id
+    extra_phone_cols = []
+    flag_cols = []
+    campaign_system_col = []
+    mineral_system_col = []
     regular_cols = []
 
     for col in df.columns:
         cl = col.lower()
-        # Match "Phone 2" through "Phone 9" or "Phone N (Purchased Data)" variants
         if re.match(r"^phone\s+[2-9]", cl):
             extra_phone_cols.append(col)
         elif any(kw in cl for kw in ("bankruptcy", "deceased", "lien")):
             flag_cols.append(col)
         elif "campaign system" in cl:
             campaign_system_col.append(col)
-        elif "mineral" in cl and "system" in cl:
+        elif ("mineral" in cl or "m1neral" in cl) and "system" in cl:
             mineral_system_col.append(col)
         else:
             regular_cols.append(col)
 
-    # Sort extra phone cols by number (Phone 2, Phone 3, ... Phone 5)
     extra_phone_cols.sort(key=lambda c: c.lower())
-
-    new_order = regular_cols + extra_phone_cols + flag_cols + campaign_system_col + mineral_system_col
+    new_order = mineral_system_col + regular_cols + extra_phone_cols + flag_cols + campaign_system_col
     df = df[new_order]
 
-    # 8. Ensure Phone 2-5 columns always exist (even if source CSV lacks them)
+    # 9. Ensure Phone 2-5 columns always exist
     for phone_num in range(2, 6):
         col_name = f"Phone {phone_num}"
         if col_name not in df.columns:
-            # Insert after the last phone-related column in the current order
             df[col_name] = ""
             logger.info("Added missing column '%s' with empty values", col_name)
 
@@ -414,19 +367,24 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
             flag_cols_final.append(col)
         elif "campaign system" in cl:
             campaign_system_col_final.append(col)
-        elif "mineral" in cl and "system" in cl:
+        elif ("mineral" in cl or "m1neral" in cl) and "system" in cl:
             mineral_system_col_final.append(col)
         else:
             regular_cols_final.append(col)
 
     extra_phone_cols_final.sort(key=lambda c: c.lower())
-    final_order = regular_cols_final + extra_phone_cols_final + flag_cols_final + campaign_system_col_final + mineral_system_col_final
+    final_order = mineral_system_col_final + regular_cols_final + extra_phone_cols_final + flag_cols_final + campaign_system_col_final
     df = df[final_order]
 
-    # Replace NaN with empty string to avoid JSON serialization issues
+    # Replace NaN and convert all values to strings
     df = df.fillna("")
+    for col in df.columns:
+        df[col] = df[col].apply(
+            lambda v: "" if v == "" or (isinstance(v, str) and v.strip() == "")
+            else str(int(v)) if isinstance(v, (int, float)) and not isinstance(v, bool)
+            else str(v)
+        )
 
-    # Convert to list of dicts (preserves column order)
     rows = df.to_dict(orient="records")
 
     return TransformResult(
