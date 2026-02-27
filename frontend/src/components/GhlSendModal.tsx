@@ -2,13 +2,15 @@ import { useState, useEffect, useMemo } from 'react'
 import { Send, Loader2, CheckCircle, XCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react'
 import Modal from './Modal'
 import { ghlApi } from '../utils/api'
+import { useSSEProgress } from '../hooks/useSSEProgress'
 import type {
   GhlConnectionResponse,
   GhlUserResponse,
   BulkContactData,
   BulkSendRequest,
   BulkSendValidationResponse,
-  BulkSendResponse,
+  BulkSendStartResponse,
+  FailedContactDetail,
   ContactResult
 } from '../utils/api'
 
@@ -19,9 +21,12 @@ interface GhlSendModalProps {
   contactCount: number
   defaultTag?: string
   rows: Record<string, string>[]
+  activeJobId?: string | null
+  onJobStarted?: (jobId: string) => void
+  onViewFailedContacts?: (failedContacts: FailedContactDetail[]) => void
 }
 
-type SendStep = 'idle' | 'validating' | 'confirmed' | 'sending' | 'results'
+type SendStep = 'idle' | 'validating' | 'confirmed' | 'sending' | 'summary'
 
 // Helper function to map rows to BulkContactData
 function mapRowsToContacts(rows: Record<string, string>[]): BulkContactData[] {
@@ -45,6 +50,9 @@ export default function GhlSendModal({
   contactCount,
   defaultTag = '',
   rows,
+  activeJobId: propActiveJobId = null,
+  onJobStarted,
+  onViewFailedContacts,
 }: GhlSendModalProps) {
   const [selectedConnectionId, setSelectedConnectionId] = useState('')
   const [campaignTag, setCampaignTag] = useState(defaultTag)
@@ -57,26 +65,57 @@ export default function GhlSendModal({
   // Multi-step flow state
   const [sendStep, setSendStep] = useState<SendStep>('idle')
   const [validationResult, setValidationResult] = useState<BulkSendValidationResponse | null>(null)
-  const [sendResult, setSendResult] = useState<BulkSendResponse | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
-  const [showFailedContacts, setShowFailedContacts] = useState(false)
+  const [showUpdatedContacts, setShowUpdatedContacts] = useState(false)
+
+  // Active job ID for SSE connection
+  const [activeJobId, setActiveJobId] = useState<string | null>(propActiveJobId)
+
+  // SSE progress hook
+  const { progress, completionData, isComplete, error: sseError, disconnect } = useSSEProgress(activeJobId)
 
   // Reset form when modal opens
   useMemo(() => {
     if (isOpen) {
-      setSelectedConnectionId('')
-      setCampaignTag(defaultTag)
-      setContactOwner('')
-      setSmartListName('')
-      setManualSms(false)
-      setUsers([])
-      setSendStep('idle')
-      setValidationResult(null)
-      setSendResult(null)
-      setSendError(null)
-      setShowFailedContacts(false)
+      // Only reset if no active job (don't reset during reconnection)
+      if (!propActiveJobId) {
+        setSelectedConnectionId('')
+        setCampaignTag(defaultTag)
+        setContactOwner('')
+        setSmartListName('')
+        setManualSms(false)
+        setUsers([])
+        setSendStep('idle')
+        setValidationResult(null)
+        setSendError(null)
+        setShowUpdatedContacts(false)
+        setActiveJobId(null)
+      } else {
+        // Reconnecting to active job
+        setActiveJobId(propActiveJobId)
+        setSendStep('sending')
+      }
     }
-  }, [isOpen, defaultTag])
+  }, [isOpen, defaultTag, propActiveJobId])
+
+  // When SSE completes, transition to summary step
+  useEffect(() => {
+    if (isComplete && completionData) {
+      setSendStep('summary')
+    }
+  }, [isComplete, completionData])
+
+  // Navigation warning during active send
+  useEffect(() => {
+    if (sendStep === 'sending') {
+      const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+        e.preventDefault()
+        e.returnValue = 'Send in progress — leaving will disconnect from progress updates. The send will continue on the server.'
+      }
+      window.addEventListener('beforeunload', handleBeforeUnload)
+      return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [sendStep])
 
   // Fetch users when connection is selected
   useEffect(() => {
@@ -142,14 +181,14 @@ export default function GhlSendModal({
     }
   }
 
-  // Step 3 → 4: Send contacts
+  // Step 3 → 4: Send contacts (async job)
   const handleSend = async () => {
     setSendStep('sending')
     setSendError(null)
 
     try {
       const request = buildRequest()
-      const res = await ghlApi.bulkSend(request)
+      const res = await ghlApi.startBulkSend(request)
 
       if (res.error) {
         setSendError(res.error)
@@ -158,12 +197,32 @@ export default function GhlSendModal({
       }
 
       if (res.data) {
-        setSendResult(res.data)
-        setSendStep('results')
+        const jobId = res.data.job_id
+        setActiveJobId(jobId)
+        if (onJobStarted) {
+          onJobStarted(jobId)
+        }
+        // SSE hook will start automatically when activeJobId is set
       }
     } catch (err) {
       setSendError(err instanceof Error ? err.message : 'Send failed')
       setSendStep('confirmed')
+    }
+  }
+
+  // Cancel send
+  const handleCancel = async () => {
+    if (!activeJobId) return
+
+    const confirmed = window.confirm('Stop sending? Already-sent contacts will be kept.')
+    if (!confirmed) return
+
+    try {
+      await ghlApi.cancelJob(activeJobId)
+      disconnect()
+      setSendStep('summary')
+    } catch (err) {
+      console.error('Failed to cancel job:', err)
     }
   }
 
@@ -173,10 +232,22 @@ export default function GhlSendModal({
     setValidationResult(null)
   }
 
-  // Retry send after error
-  const handleRetry = () => {
-    setSendError(null)
-    handleSend()
+  // View failed contacts
+  const handleViewFailedContacts = () => {
+    if (completionData?.failed_contacts && onViewFailedContacts) {
+      onViewFailedContacts(completionData.failed_contacts)
+      onClose()
+    }
+  }
+
+  // Close modal
+  const handleClose = () => {
+    if (sendStep === 'sending') {
+      const confirmed = window.confirm('Send in progress — close anyway? Progress will continue in background.')
+      if (!confirmed) return
+    }
+    disconnect()
+    onClose()
   }
 
   // Render footer based on current step
@@ -186,7 +257,7 @@ export default function GhlSendModal({
       return (
         <>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
           >
             Cancel
@@ -239,22 +310,35 @@ export default function GhlSendModal({
     // Step 4: Sending
     if (sendStep === 'sending') {
       return (
-        <div className="flex items-center gap-2 text-gray-500 text-sm">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Sending contacts to GHL...
-        </div>
+        <button
+          onClick={handleCancel}
+          className="px-4 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 transition-colors text-sm"
+        >
+          Cancel Send
+        </button>
       )
     }
 
-    // Step 5: Results
-    if (sendStep === 'results') {
+    // Step 5: Summary
+    if (sendStep === 'summary') {
+      const failedCount = completionData?.failed || 0
       return (
-        <button
-          onClick={onClose}
-          className="px-4 py-2 bg-tre-teal text-white rounded-lg hover:bg-tre-teal/90 transition-colors text-sm"
-        >
-          Close
-        </button>
+        <div className="flex gap-2">
+          {failedCount > 0 && (
+            <button
+              onClick={handleViewFailedContacts}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+            >
+              View Failed Contacts
+            </button>
+          )}
+          <button
+            onClick={handleClose}
+            className="px-4 py-2 bg-tre-teal text-white rounded-lg hover:bg-tre-teal/90 transition-colors text-sm"
+          >
+            Close
+          </button>
+        </div>
       )
     }
 
@@ -431,87 +515,126 @@ export default function GhlSendModal({
       )
     }
 
-    // Step 4: Sending
+    // Step 4: Sending (progress view)
     if (sendStep === 'sending') {
+      const processed = progress?.processed || 0
+      const total = progress?.total || contactCount
+      const created = progress?.created || 0
+      const updated = progress?.updated || 0
+      const failed = progress?.failed || 0
+      const percent = total > 0 ? (processed / total) * 100 : 0
+
       return (
-        <div className="flex flex-col items-center justify-center py-8 text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-tre-teal mb-4" />
-          <p className="text-gray-600">Sending contacts to GHL...</p>
-          <p className="text-sm text-gray-500 mt-2">This may take a moment...</p>
+        <div className="space-y-4">
+          {sseError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2 text-red-700 text-sm">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <span>{sseError}</span>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {/* Progress bar */}
+            <div>
+              <div className="flex justify-between text-sm text-gray-600 mb-1">
+                <span>{processed} of {total} processed</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                <div
+                  className="bg-tre-teal h-full rounded-full transition-all duration-300"
+                  style={{ width: `${percent}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Counter boxes */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+                <div className="text-2xl font-bold text-green-600">{created}</div>
+                <div className="text-xs text-gray-600">Created</div>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+                <div className="text-2xl font-bold text-blue-600">{updated}</div>
+                <div className="text-xs text-gray-600">Updated</div>
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
+                <div className="text-2xl font-bold text-red-600">{failed}</div>
+                <div className="text-xs text-gray-600">Failed</div>
+              </div>
+            </div>
+          </div>
         </div>
       )
     }
 
-    // Step 5: Results
-    if (sendStep === 'results') {
-      const createdCount = sendResult?.created_count || 0
-      const updatedCount = sendResult?.updated_count || 0
-      const failedCount = sendResult?.failed_count || 0
-      const skippedCount = sendResult?.skipped_count || 0
-      const failedContacts = sendResult?.results.filter(r => r.status === 'failed') || []
+    // Step 5: Summary
+    if (sendStep === 'summary') {
+      const created = completionData?.created || 0
+      const updated = completionData?.updated || 0
+      const failed = completionData?.failed || 0
+      const status = completionData?.status || 'completed'
+      const updatedContacts = completionData?.updated_contacts || []
 
       return (
         <div className="space-y-4">
           <div className="text-center py-4">
-            <CheckCircle className="w-12 h-12 text-green-600 mx-auto mb-3" />
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Send Complete</h3>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            {createdCount > 0 && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold text-green-600">{createdCount}</div>
-                <div className="text-gray-600">Created</div>
-              </div>
-            )}
-            {updatedCount > 0 && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold text-blue-600">{updatedCount}</div>
-                <div className="text-gray-600">Updated</div>
-              </div>
-            )}
-            {failedCount > 0 && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold text-red-600">{failedCount}</div>
-                <div className="text-gray-600">Failed</div>
-              </div>
-            )}
-            {skippedCount > 0 && (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold text-amber-600">{skippedCount}</div>
-                <div className="text-gray-600">Skipped</div>
-              </div>
+            {status === 'cancelled' ? (
+              <>
+                <XCircle className="w-12 h-12 text-amber-600 mx-auto mb-3" />
+                <h3 className="text-lg font-medium text-gray-900">Send Cancelled</h3>
+              </>
+            ) : (
+              <>
+                <CheckCircle className="w-12 h-12 text-green-600 mx-auto mb-3" />
+                <h3 className="text-lg font-medium text-gray-900">Send Complete</h3>
+              </>
             )}
           </div>
 
-          {/* Failed contacts expandable section */}
-          {failedCount > 0 && failedContacts.length > 0 && (
-            <div className="border border-red-200 rounded-lg overflow-hidden">
+          {/* Count summary */}
+          <div className="grid grid-cols-3 gap-3 text-sm">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-green-600">{created}</div>
+              <div className="text-gray-600">Created</div>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-blue-600">{updated}</div>
+              <div className="text-gray-600">Updated</div>
+            </div>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-red-600">{failed}</div>
+              <div className="text-gray-600">Failed</div>
+            </div>
+          </div>
+
+          {/* Updated contacts expandable */}
+          {updated > 0 && updatedContacts.length > 0 && (
+            <div className="border border-blue-200 rounded-lg overflow-hidden">
               <button
-                onClick={() => setShowFailedContacts(!showFailedContacts)}
-                className="w-full flex items-center justify-between px-4 py-3 bg-red-50 hover:bg-red-100 transition-colors text-sm font-medium text-red-800"
+                onClick={() => setShowUpdatedContacts(!showUpdatedContacts)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-blue-50 hover:bg-blue-100 transition-colors text-sm font-medium text-blue-800"
               >
-                <span>View Failed Contacts</span>
-                {showFailedContacts ? (
+                <span>View Updated Contacts ({updatedContacts.length} shown)</span>
+                {showUpdatedContacts ? (
                   <ChevronUp className="w-4 h-4" />
                 ) : (
                   <ChevronDown className="w-4 h-4" />
                 )}
               </button>
-              {showFailedContacts && (
+              {showUpdatedContacts && (
                 <div className="p-3 bg-white max-h-60 overflow-y-auto">
                   <table className="w-full text-xs">
                     <thead className="text-left border-b border-gray-200">
                       <tr>
-                        <th className="pb-2 font-medium text-gray-700">Contact ID</th>
-                        <th className="pb-2 font-medium text-gray-700">Error</th>
+                        <th className="pb-2 font-medium text-gray-700">Mineral Contact ID</th>
+                        <th className="pb-2 font-medium text-gray-700">GHL Contact ID</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {failedContacts.map((contact, i) => (
+                      {updatedContacts.map((contact, i) => (
                         <tr key={i}>
                           <td className="py-2 text-gray-600">{contact.mineral_contact_system_id}</td>
-                          <td className="py-2 text-red-600">{contact.error || 'Unknown error'}</td>
+                          <td className="py-2 text-blue-600">{contact.ghl_contact_id || 'N/A'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -530,7 +653,7 @@ export default function GhlSendModal({
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={handleClose}
       title="Send to GoHighLevel"
       size="lg"
       footer={renderFooter()}
