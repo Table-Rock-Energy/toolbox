@@ -23,6 +23,10 @@ from app.models.ghl import (
     ContactUpsertResponse,
     GHLValidationResult,
     GHLUserResponse,
+    BulkSendRequest,
+    BulkSendResponse,
+    BulkSendValidationResponse,
+    ContactResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -265,3 +269,126 @@ async def upsert_contact(
     except Exception as e:
         logger.exception(f"Error upserting contact: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/contacts/validate-batch")
+async def validate_batch_endpoint(
+    data: BulkSendRequest,
+    user: dict = Depends(require_auth),
+) -> BulkSendValidationResponse:
+    """Validate a batch of contacts before sending.
+
+    Returns valid/invalid split without actually sending to GHL.
+    Frontend uses this to show validation results and get user confirmation.
+    """
+    from app.services.ghl.bulk_send_service import validate_batch
+
+    # Convert contacts to list of dicts
+    contact_dicts = [contact.model_dump() for contact in data.contacts]
+
+    # Validate batch
+    valid_contacts, invalid_results = validate_batch(contact_dicts)
+
+    # Convert invalid results to ContactResult models
+    invalid_contact_models = [ContactResult(**result) for result in invalid_results]
+
+    return BulkSendValidationResponse(
+        valid_count=len(valid_contacts),
+        invalid_count=len(invalid_results),
+        invalid_contacts=invalid_contact_models,
+    )
+
+
+@router.post("/contacts/bulk-send")
+async def bulk_send_endpoint(
+    data: BulkSendRequest,
+    user: dict = Depends(require_auth),
+) -> BulkSendResponse:
+    """Send a batch of contacts to GHL.
+
+    Validates contacts, processes valid ones through GHL API, and persists job results.
+    """
+    from app.services.ghl.bulk_send_service import validate_batch, process_batch, persist_send_job
+    from app.utils.helpers import generate_uid
+    from app.services.ghl.client import GHLAPIError, GHLAuthError, GHLRateLimitError
+
+    try:
+        # Generate job ID
+        job_id = generate_uid()
+
+        # Step 1: Validate batch
+        contact_dicts = [contact.model_dump() for contact in data.contacts]
+        valid_contacts, invalid_results = validate_batch(contact_dicts)
+
+        # Step 2: Build tags list
+        tags = [data.campaign_tag]
+        if data.manual_sms:
+            tags.append("manual sms")
+
+        # Step 3: Process valid contacts (skip if all invalid)
+        processing_results = {"created_count": 0, "updated_count": 0, "failed_count": 0, "results": []}
+
+        if valid_contacts:
+            processing_results = await process_batch(
+                connection_id=data.connection_id,
+                contacts=valid_contacts,
+                tags=tags,
+                assigned_to=data.assigned_to,
+            )
+
+        # Step 4: Combine results (invalid + processing)
+        all_results = invalid_results + processing_results.get("results", [])
+
+        # Calculate final counts
+        created_count = processing_results.get("created_count", 0)
+        updated_count = processing_results.get("updated_count", 0)
+        failed_count = processing_results.get("failed_count", 0)
+        skipped_count = len(invalid_results)
+        total_count = created_count + updated_count + failed_count + skipped_count
+
+        # Step 5: Persist job
+        result_data = {
+            "created_count": created_count,
+            "updated_count": updated_count,
+            "failed_count": failed_count,
+            "skipped_count": skipped_count,
+            "total_count": total_count,
+            "results": all_results,
+        }
+
+        campaign_name = data.smart_list_name or data.campaign_tag
+        await persist_send_job(
+            job_id=job_id,
+            connection_id=data.connection_id,
+            campaign_name=campaign_name,
+            result_data=result_data,
+            user_id=user.get("email"),
+        )
+
+        # Step 6: Return response
+        return BulkSendResponse(
+            job_id=job_id,
+            total_count=total_count,
+            created_count=created_count,
+            updated_count=updated_count,
+            failed_count=failed_count,
+            skipped_count=skipped_count,
+            results=[ContactResult(**r) for r in all_results],
+        )
+
+    except GHLAuthError as e:
+        logger.warning(f"GHL auth error during bulk send: {e}")
+        raise HTTPException(status_code=401, detail=str(e))
+
+    except GHLRateLimitError as e:
+        logger.warning(f"GHL rate limit error during bulk send: {e}")
+        raise HTTPException(status_code=429, detail=str(e))
+
+    except ValueError as e:
+        # Connection not found or validation error
+        logger.warning(f"Validation error during bulk send: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+    except Exception as e:
+        logger.exception(f"Error during bulk send: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
