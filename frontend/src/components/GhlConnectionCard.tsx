@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Trash2, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { Trash2, CheckCircle, XCircle, Loader2, RefreshCw, AlertCircle } from 'lucide-react'
+import { ghlApi } from '../utils/api'
 import type { GhlConnectionResponse } from '../utils/api'
 
 interface GhlConnectionCardProps {
@@ -9,6 +10,7 @@ interface GhlConnectionCardProps {
   onSave: (data: { name?: string; token?: string; location_id?: string }) => Promise<string | null>
   onDelete: () => Promise<void>
   onCancel: () => void
+  onRefresh: () => Promise<void>
 }
 
 export default function GhlConnectionCard({
@@ -18,6 +20,7 @@ export default function GhlConnectionCard({
   onSave,
   onDelete,
   onCancel,
+  onRefresh,
 }: GhlConnectionCardProps) {
   // Form state for edit mode
   const [name, setName] = useState(connection.name)
@@ -26,6 +29,8 @@ export default function GhlConnectionCard({
   const [validationError, setValidationError] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isTesting, setIsTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ valid: boolean; error?: string } | null>(null)
 
   // Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -37,7 +42,28 @@ export default function GhlConnectionCard({
     setLocationId(connection.location_id)
     setValidationError('')
     setShowDeleteConfirm(false)
+    setTestResult(null)
   }, [connection, isEditing])
+
+  const handleTestConnection = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setIsTesting(true)
+    setTestResult(null)
+    try {
+      const res = await ghlApi.validateConnection(connection.id)
+      if (res.data) {
+        setTestResult({ valid: res.data.valid, error: res.data.error })
+        // Refresh the parent's connection list so validation_status updates everywhere
+        await onRefresh()
+      } else if (res.error) {
+        setTestResult({ valid: false, error: res.error })
+      }
+    } catch {
+      setTestResult({ valid: false, error: 'Failed to reach server' })
+    } finally {
+      setIsTesting(false)
+    }
+  }
 
   const handleSaveClick = async () => {
     if (name.trim().length === 0 || locationId.trim().length === 0) {
@@ -96,11 +122,31 @@ export default function GhlConnectionCard({
     })
   }
 
-  const validationIcon = connection.validation_status === 'valid'
-    ? <CheckCircle className="w-4 h-4 text-green-500" />
-    : connection.validation_status === 'invalid'
-      ? <XCircle className="w-4 h-4 text-red-500" />
-      : null
+  const statusConfig = {
+    valid: {
+      icon: <CheckCircle className="w-4 h-4 text-green-500" />,
+      label: 'Connected',
+      bgColor: 'bg-green-50',
+      textColor: 'text-green-700',
+      borderColor: 'border-green-200',
+    },
+    invalid: {
+      icon: <XCircle className="w-4 h-4 text-red-500" />,
+      label: 'Invalid',
+      bgColor: 'bg-red-50',
+      textColor: 'text-red-700',
+      borderColor: 'border-red-200',
+    },
+    pending: {
+      icon: <AlertCircle className="w-4 h-4 text-amber-500" />,
+      label: 'Not tested',
+      bgColor: 'bg-amber-50',
+      textColor: 'text-amber-700',
+      borderColor: 'border-amber-200',
+    },
+  }
+
+  const status = statusConfig[connection.validation_status as keyof typeof statusConfig] || statusConfig.pending
 
   // Display mode
   if (!isEditing) {
@@ -131,29 +177,69 @@ export default function GhlConnectionCard({
     }
 
     return (
-      <div
-        onClick={onEdit}
-        className="bg-white rounded-xl border border-gray-200 p-6 hover:border-tre-teal cursor-pointer transition-colors relative"
-      >
-        <button
-          onClick={handleDeleteClick}
-          className="absolute top-4 right-4 text-gray-400 hover:text-red-600 transition-colors"
-          aria-label="Delete connection"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
-
-        <div className="pr-8">
-          <div className="flex items-center gap-2 mb-1">
-            <h3 className="font-semibold text-gray-900">{connection.name}</h3>
-            {validationIcon}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="flex items-start justify-between">
+          <div
+            onClick={onEdit}
+            className="flex-1 cursor-pointer hover:opacity-80 transition-opacity"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="font-semibold text-gray-900">{connection.name}</h3>
+            </div>
+            <p className="text-sm text-gray-500">Location ID: {connection.location_id}</p>
+            <p className="text-sm text-gray-500">Token: ****{connection.token_last4}</p>
+            <p className="text-xs text-gray-400 mt-2">
+              Added {formatDate(connection.created_at)}
+            </p>
           </div>
-          <p className="text-sm text-gray-500">Location ID: {connection.location_id}</p>
-          <p className="text-sm text-gray-500">Token: ****{connection.token_last4}</p>
-          <p className="text-xs text-gray-400 mt-2">
-            Added {formatDate(connection.created_at)}
-          </p>
+
+          <div className="flex items-center gap-2 ml-4">
+            <button
+              onClick={handleDeleteClick}
+              className="text-gray-400 hover:text-red-600 transition-colors p-1"
+              aria-label="Delete connection"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
         </div>
+
+        {/* Validation status bar */}
+        <div className={`mt-4 flex items-center justify-between rounded-lg border px-4 py-3 ${status.bgColor} ${status.borderColor}`}>
+          <div className="flex items-center gap-2">
+            {status.icon}
+            <span className={`text-sm font-medium ${status.textColor}`}>{status.label}</span>
+            {connection.validation_status === 'invalid' && (
+              <span className="text-xs text-red-500 ml-1">— credentials could not be verified</span>
+            )}
+          </div>
+          <button
+            onClick={handleTestConnection}
+            disabled={isTesting}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            {isTesting ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="w-3.5 h-3.5" />
+            )}
+            {isTesting ? 'Testing...' : 'Test Connection'}
+          </button>
+        </div>
+
+        {/* Test result feedback (shown briefly after test) */}
+        {testResult && !isTesting && (
+          <div className={`mt-2 text-sm px-3 py-2 rounded-lg ${
+            testResult.valid
+              ? 'bg-green-50 text-green-700'
+              : 'bg-red-50 text-red-700'
+          }`}>
+            {testResult.valid
+              ? 'Connection verified successfully!'
+              : `Connection failed: ${testResult.error || 'Unknown error'}`
+            }
+          </div>
+        )}
       </div>
     )
   }

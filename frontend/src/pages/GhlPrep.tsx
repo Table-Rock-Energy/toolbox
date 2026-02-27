@@ -423,7 +423,7 @@ export default function GhlPrep() {
                     <button
                       onClick={handleRetrySend}
                       disabled={connections.length === 0 || failedContacts.length === 0}
-                      title={connections.length === 0 ? 'Add a GHL connection in Settings first' : 'Retry sending failed contacts'}
+                      title={connections.length === 0 ? 'Add a GHL connection in Admin Settings first' : 'Retry sending failed contacts'}
                       className="flex items-center gap-2 px-3 py-2 bg-tre-teal text-white rounded-lg hover:bg-tre-teal/90 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Send className="w-4 h-4" />
@@ -446,9 +446,9 @@ export default function GhlPrep() {
                         disabled={connections.length === 0 || connections.every(c => c.validation_status !== 'valid') || (!!activeJobId)}
                         title={
                           connections.length === 0
-                            ? 'No GHL connection. Configure in Settings.'
+                            ? 'No GHL connection. Configure in Admin Settings.'
                             : connections.every(c => c.validation_status !== 'valid')
-                            ? 'No valid GHL connection. Configure in Settings.'
+                            ? 'No valid GHL connection. Configure in Admin Settings.'
                             : activeJobId
                             ? 'Send in progress'
                             : 'Send contacts to GoHighLevel'

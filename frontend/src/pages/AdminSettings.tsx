@@ -1072,6 +1072,7 @@ export default function AdminSettings() {
               onCancel={() => {
                 setEditingId(null)
               }}
+              onRefresh={fetchConnections}
             />
           ))}
 
