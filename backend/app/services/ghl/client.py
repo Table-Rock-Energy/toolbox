@@ -4,12 +4,14 @@ Provides async HTTP client for GHL API v2 with:
 - Token bucket rate limiting (50 requests per 10 seconds)
 - Exponential backoff retry on 429 (up to 3 retries)
 - Contact upsert (search by email, create or update)
+- Daily request tracking (200k/day limit)
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
@@ -33,6 +35,65 @@ class GHLRateLimitError(GHLAPIError):
 class GHLAuthError(GHLAPIError):
     """Raised when authentication fails (401)."""
     pass
+
+
+class DailyLimitTracker:
+    """Tracks daily API requests across all GHLClient instances."""
+    DAILY_LIMIT = 200_000
+
+    def __init__(self):
+        self._count = 0
+        self._reset_date = datetime.now(timezone.utc).date()
+
+    def _maybe_reset(self):
+        """Reset counter if date has changed."""
+        today = datetime.now(timezone.utc).date()
+        if today > self._reset_date:
+            self._count = 0
+            self._reset_date = today
+
+    def increment(self):
+        """Increment daily request count."""
+        self._maybe_reset()
+        self._count += 1
+
+    @property
+    def requests_today(self) -> int:
+        """Get current request count for today."""
+        self._maybe_reset()
+        return self._count
+
+    @property
+    def remaining(self) -> int:
+        """Get remaining requests for today."""
+        return max(0, self.DAILY_LIMIT - self.requests_today)
+
+    @property
+    def warning_level(self) -> str:
+        """Get warning level based on remaining requests."""
+        remaining = self.remaining
+        if remaining < 1000:
+            return "critical"
+        elif remaining < 10000:
+            return "warning"
+        return "normal"
+
+    def get_info(self) -> dict:
+        """Get full daily limit info for API response."""
+        self._maybe_reset()
+        tomorrow = self._reset_date + timedelta(days=1)
+        reset_at = datetime.combine(tomorrow, datetime.min.time(), tzinfo=timezone.utc)
+        return {
+            "daily_limit": self.DAILY_LIMIT,
+            "requests_today": self._count,
+            "remaining": self.remaining,
+            "resets_at": reset_at.isoformat(),
+            "warning_level": self.warning_level,
+        }
+
+
+# Module-level singleton
+daily_tracker = DailyLimitTracker()
 
 
 class RateLimiter:
@@ -145,6 +206,9 @@ class GHLClient:
             try:
                 response = await self.client.request(method, endpoint, **kwargs)
                 response.raise_for_status()
+
+                # Increment daily tracker after successful request
+                daily_tracker.increment()
 
                 # Log success
                 logger.info(f"{method} {endpoint} -> {response.status_code}")

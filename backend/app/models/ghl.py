@@ -93,7 +93,7 @@ class BulkSendRequest(BaseModel):
     contacts: list[BulkContactData] = Field(..., min_length=1, description="Contacts to send")
     campaign_tag: str = Field(..., min_length=1, description="Campaign tag to apply to all contacts")
     manual_sms: bool = Field(False, description="Apply 'manual sms' tag to all contacts")
-    assigned_to: Optional[str] = Field(None, description="GHL user ID for contact owner")
+    assigned_to_list: Optional[list[str]] = Field(None, max_length=2, description="1-2 GHL user IDs for contact owner assignment (even split)")
     smart_list_name: Optional[str] = Field(None, description="SmartList/campaign name for reference")
 
 
@@ -172,3 +172,12 @@ class BulkSendStartResponse(BaseModel):
     job_id: str
     status: str = "processing"
     total_count: int
+
+
+class DailyRateLimitInfo(BaseModel):
+    """Daily rate limit status for user display."""
+    daily_limit: int = Field(200000, description="Max requests per day")
+    requests_today: int = Field(0, description="Requests made today")
+    remaining: int = Field(200000, description="Remaining requests today")
+    resets_at: str = Field(description="ISO timestamp when daily count resets (midnight UTC)")
+    warning_level: str = Field("normal", description="normal | warning | critical")
