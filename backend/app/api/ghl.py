@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Optional
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sse_starlette import EventSourceResponse
@@ -319,11 +320,10 @@ async def bulk_send_endpoint(
     Returns immediately with job_id. Use /send/{job_id}/progress to stream progress.
     """
     from app.services.ghl.bulk_send_service import validate_batch, process_batch_async, create_send_job
-    from app.utils.helpers import generate_uid
 
     try:
         # Generate job ID
-        job_id = generate_uid()
+        job_id = str(uuid4())
 
         # Step 1: Validate batch
         contact_dicts = [contact.model_dump() for contact in data.contacts]
