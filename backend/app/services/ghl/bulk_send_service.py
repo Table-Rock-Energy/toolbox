@@ -358,26 +358,28 @@ async def process_batch_async(
     connection_id: str,
     contacts: list[dict],
     tags: list[str],
-    assigned_to: Optional[str] = None,
+    assigned_to_list: Optional[list[str]] = None,
 ) -> None:
     """Process a batch of validated contacts asynchronously with progress updates.
 
     This function runs as a background task. It:
     - Checks for cancellation before each contact
+    - Checks daily rate limit before each contact
     - Updates Firestore after each contact (for real-time progress)
     - Categorizes errors for actionable feedback
     - Stores failed contacts with full data for retry
     - Stores updated contacts for spot-checking
+    - Distributes contacts evenly across 1-2 owners (even split)
 
     Args:
         job_id: Job identifier for progress tracking
         connection_id: GHL connection ID
         contacts: List of normalized contact dicts (must include mineral_contact_system_id)
         tags: List of tags to apply to all contacts
-        assigned_to: Optional GHL user ID for contact owner
+        assigned_to_list: Optional list of 1-2 GHL user IDs for contact owner assignment (even split)
     """
     from app.services.ghl.connection_service import get_connection
-    from app.services.ghl.client import GHLClient, GHLAPIError
+    from app.services.ghl.client import GHLClient, GHLAPIError, daily_tracker
     from app.services.firestore_service import get_firestore_client
 
     db = get_firestore_client()
@@ -406,7 +408,7 @@ async def process_batch_async(
         # Create ONE GHLClient instance for the entire batch (shared rate limiter)
         async with GHLClient(token=token, location_id=location_id) as client:
             # Process contacts sequentially
-            for contact in contacts:
+            for i, contact in enumerate(contacts):
                 # Check for cancellation
                 job_doc = await doc_ref.get()
                 if job_doc.exists and job_doc.to_dict().get("cancelled_by_user", False):
@@ -414,6 +416,30 @@ async def process_batch_async(
                     await doc_ref.update({
                         "status": "cancelled",
                         "completed_at": datetime.now(timezone.utc),
+                    })
+                    return
+
+                # Check daily limit before each contact
+                if daily_tracker.remaining <= 0:
+                    logger.warning(f"Job {job_id}: Daily rate limit hit at {processed_count}/{len(contacts)} contacts")
+                    # Store remaining contacts as "skipped" with rate_limit category
+                    for remaining_contact in contacts[i:]:
+                        failed_contacts.append({
+                            "mineral_contact_system_id": remaining_contact.get("mineral_contact_system_id", "unknown"),
+                            "error_category": "rate_limit",
+                            "error_message": "Daily rate limit reached (200,000 requests/day). Remaining contacts can be sent after midnight UTC.",
+                            "contact_data": remaining_contact,
+                        })
+                        failed_count += 1
+                    # Update job with daily_limit_hit flag
+                    await doc_ref.update({
+                        "status": "daily_limit_hit",
+                        "processed": processed_count,
+                        "failed": failed_count,
+                        "daily_limit_hit": True,
+                        "daily_limit_hit_at": processed_count,
+                        "completed_at": datetime.now(timezone.utc),
+                        "failed_contacts": failed_contacts,
                     })
                     return
 
@@ -431,9 +457,19 @@ async def process_batch_async(
                     # Always add tags
                     contact_data["tags"] = tags
 
-                    # Add assigned_to if provided
-                    if assigned_to:
-                        contact_data["assigned_to"] = assigned_to
+                    # Determine owner for this contact (even split if 2 owners)
+                    contact_owner = None
+                    if assigned_to_list and len(assigned_to_list) > 0:
+                        if len(assigned_to_list) == 1:
+                            contact_owner = assigned_to_list[0]
+                        else:
+                            # Even split: first half to owner A, second half to owner B
+                            midpoint = (len(contacts) + 1) // 2
+                            contact_owner = assigned_to_list[0] if i < midpoint else assigned_to_list[1]
+
+                    # Add assigned_to if we have a contact owner
+                    if contact_owner:
+                        contact_data["assigned_to"] = contact_owner
 
                     # Upsert contact
                     result = await client.upsert_contact(contact_data)

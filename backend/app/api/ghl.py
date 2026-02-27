@@ -358,7 +358,7 @@ async def bulk_send_endpoint(
                     connection_id=data.connection_id,
                     contacts=valid_contacts,
                     tags=tags,
-                    assigned_to=data.assigned_to,
+                    assigned_to_list=data.assigned_to_list,
                 )
             )
         else:
@@ -542,3 +542,35 @@ async def get_send_status(job_id: str, user: dict = Depends(require_auth)):
         created_at=job_data.get("created_at"),
         completed_at=job_data.get("completed_at"),
     )
+
+
+@router.get("/daily-limit")
+async def get_daily_limit():
+    """Get current daily API rate limit status.
+
+    Returns daily limit info including requests made today, remaining, and warning level.
+    No auth required - lightweight status check for frontend display.
+    """
+    from app.services.ghl.client import daily_tracker
+
+    return daily_tracker.get_info()
+
+
+@router.post("/connections/{connection_id}/quick-check")
+async def quick_check_connection(connection_id: str, user: dict = Depends(require_auth)):
+    """Quick credential validation check for connection.
+
+    Used by frontend modal to validate credentials on open without updating connection record.
+    Returns pass/fail with error details if validation fails.
+    """
+    from app.services.ghl.connection_service import validate_connection
+
+    try:
+        result = await validate_connection(connection_id)
+        is_valid = result.get("validation_status") == "valid"
+        return {"valid": is_valid, "error": None if is_valid else result.get("validation_error")}
+    except HTTPException as e:
+        return {"valid": False, "error": e.detail}
+    except Exception as e:
+        logger.warning(f"Quick-check error for connection {connection_id}: {e}")
+        return {"valid": False, "error": str(e)}
