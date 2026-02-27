@@ -53,9 +53,8 @@ export default function GhlSendModal({
   onViewFailedContacts,
 }: GhlSendModalProps) {
   const [selectedConnectionId, setSelectedConnectionId] = useState('')
-  const [campaignTag, setCampaignTag] = useState(defaultTag)
   const [selectedOwners, setSelectedOwners] = useState<string[]>([])
-  const [smartListName, setSmartListName] = useState('')
+  const [smartListName, setSmartListName] = useState(defaultTag)
   const [manualSms, setManualSms] = useState(false)
   const [users, setUsers] = useState<GhlUserResponse[]>([])
   const [isLoadingUsers, setIsLoadingUsers] = useState(false)
@@ -80,7 +79,6 @@ export default function GhlSendModal({
       // Only reset if no active job (don't reset during reconnection)
       if (!propActiveJobId) {
         setSelectedConnectionId('')
-        setCampaignTag(defaultTag)
         setSelectedOwners([])
         setSmartListName(defaultTag)
         setManualSms(false)
@@ -168,13 +166,13 @@ export default function GhlSendModal({
 
   const selectedConnection = connections.find(c => c.id === selectedConnectionId)
   const selectedConnectionName = selectedConnection?.name || ''
-  const isReadyToValidate = selectedConnectionId && campaignTag && contactCount > 0 && !credentialError && !isCheckingCredentials
+  const isReadyToValidate = selectedConnectionId && smartListName && contactCount > 0 && !credentialError && !isCheckingCredentials
 
   // Build bulk send request from form state
   const buildRequest = (): BulkSendRequest => ({
     connection_id: selectedConnectionId,
     contacts: mapRowsToContacts(rows),
-    campaign_tag: campaignTag,
+    campaign_tag: smartListName,
     manual_sms: manualSms,
     assigned_to_list: selectedOwners.length > 0 ? selectedOwners : undefined,
     smart_list_name: smartListName || undefined,
@@ -414,20 +412,6 @@ export default function GhlSendModal({
             </select>
           </div>
 
-          {/* Campaign Tag Input */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Campaign Tag
-            </label>
-            <input
-              type="text"
-              value={campaignTag}
-              onChange={(e) => { setCampaignTag(e.target.value); setSmartListName(e.target.value) }}
-              placeholder="e.g., Spring 2026 Mailing"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
-            />
-          </div>
-
           {/* Contact Owner Multi-Select */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -489,8 +473,9 @@ export default function GhlSendModal({
           {/* SmartList Name Field */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              SmartList Name
+              Campaign Name
             </label>
+            <p className="text-xs text-gray-500 mb-1">Used as the campaign tag and SmartList name</p>
             <input
               type="text"
               value={smartListName}
@@ -517,7 +502,7 @@ export default function GhlSendModal({
           {/* Summary Line */}
           {selectedConnectionId && contactCount > 0 && (
             <div className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3 mt-4">
-              Sending {contactCount} contacts to {selectedConnectionName} with tag "{campaignTag || '(no tag)'}"
+              Sending {contactCount} contacts to {selectedConnectionName} with tag "{smartListName || '(no tag)'}"
             </div>
           )}
         </div>
@@ -562,7 +547,7 @@ export default function GhlSendModal({
 
           <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
             <p><strong>Sub-Account:</strong> {selectedConnectionName}</p>
-            <p><strong>Campaign Tag:</strong> {campaignTag}</p>
+            <p><strong>Campaign Tag:</strong> {smartListName}</p>
             {selectedOwners.length > 0 && (
               <p><strong>Contact Owner{selectedOwners.length > 1 ? 's' : ''}:</strong>{' '}
                 {selectedOwners.map(id => users.find(u => u.id === id)?.name || 'Unknown').join(', ')}

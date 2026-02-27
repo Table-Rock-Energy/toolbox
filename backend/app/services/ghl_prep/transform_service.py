@@ -255,8 +255,12 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
         # Count successful extractions (values that changed)
         changed = (original_values != df[campaigns_col]).sum()
         transformed_fields["campaigns_extracted"] = int(changed)
+        # Capture first non-empty campaign name for metadata
+        campaign_values = df[campaigns_col].dropna().loc[lambda s: s.str.strip() != ""]
+        extracted_campaign_name = str(campaign_values.iloc[0]) if len(campaign_values) > 0 else None
         logger.info("Extracted campaign names from %d rows", changed)
     else:
+        extracted_campaign_name = None
         warnings.append("No 'Campaigns' column found")
 
     # 3. Map Phone 1 to Phone column
@@ -383,5 +387,6 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
         total_count=len(rows),
         transformed_fields=transformed_fields,
         warnings=warnings,
-        source_filename=filename
+        source_filename=filename,
+        campaign_name=extracted_campaign_name,
     )

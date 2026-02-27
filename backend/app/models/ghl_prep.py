@@ -22,6 +22,7 @@ class TransformResult(BaseModel):
         description="Warnings about missing columns or malformed data"
     )
     source_filename: str = Field(..., description="Original filename")
+    campaign_name: Optional[str] = Field(None, description="Extracted campaign name from Campaigns column")
     job_id: Optional[str] = Field(None, description="Unique job identifier")
 
 

@@ -19,6 +19,7 @@ interface TransformResult {
   }
   warnings: string[]
   source_filename: string
+  campaign_name?: string
   job_id?: string
 }
 
@@ -122,12 +123,8 @@ export default function GhlPrep() {
     return result?.rows || []
   }, [result, viewMode, failedContacts])
 
-  // Derive campaign tag from result data
-  const defaultTag = useMemo(() => {
-    if (!result?.rows || result.rows.length === 0) return ''
-    const firstRow = result.rows[0]
-    return firstRow['Tags'] || firstRow['tags'] || firstRow['Campaigns'] || firstRow['campaigns'] || firstRow['Campaign'] || firstRow['campaign'] || ''
-  }, [result])
+  // Derive campaign name from transform result metadata
+  const defaultTag = result?.campaign_name || ''
 
   // Sort rows client-side
   const sortedRows = useMemo(() => {
