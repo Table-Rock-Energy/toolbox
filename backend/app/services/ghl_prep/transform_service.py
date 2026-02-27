@@ -34,12 +34,31 @@ UPPERCASE_SUFFIXES = {
 # Company indicators (for context-aware title-casing)
 COMPANY_INDICATORS = {"LLC", "LP", "INC", "CORP", "CO", "TRUST", "ESTATE"}
 
-# Columns to drop after transformation (not needed for GHL import)
-DROP_COLUMNS_LOWER = {
-    "department", "title", "stage", "status", "outcome",
-    "lead source", "purchased data exists", "campaigns",
-    "well interest count",
-}
+# Exact output columns in order. Only these columns appear in preview/export.
+# Source columns not in this list are consumed during transform then discarded.
+OUTPUT_COLUMNS = [
+    "M1neral Contact System ID",
+    "First Name",
+    "Last Name",
+    "Phone",
+    "Phone 1",
+    "Phone 2",
+    "Phone 3",
+    "Phone 4",
+    "Phone 5",
+    "Email",
+    "Address",
+    "City",
+    "State",
+    "County",
+    "Zip",
+    "Contact Owner",
+    "Campaign Name",
+    "Bankruptcy",
+    "Deceased",
+    "Lien",
+    "Campaign System ID",
+]
 
 
 def title_case_name(value: Any) -> str:
@@ -314,67 +333,28 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
         df.drop(columns=cols_to_drop_post_rename, inplace=True)
         logger.info("Dropped duplicate purchased data columns: %s", cols_to_drop_post_rename)
 
-    # 7. Drop columns not needed for GHL import
-    cols_to_drop = [col for col in df.columns if col.lower().strip() in DROP_COLUMNS_LOWER]
-    if cols_to_drop:
-        df.drop(columns=cols_to_drop, inplace=True)
-        logger.info("Dropped columns: %s", cols_to_drop)
+    # 7. Rename source columns to output names, then select only OUTPUT_COLUMNS.
+    #    This handles varying source exports (users can toggle columns in Mineral).
+    source_to_output = {
+        "Primary Email": "Email",
+        "Primary Address": "Address",
+    }
+    for src, dst in source_to_output.items():
+        src_col = _find_col(df, src)
+        if src_col and dst not in df.columns:
+            df.rename(columns={src_col: dst}, inplace=True)
 
-    # 8. Reorder columns:
-    #    Regular cols -> Phone 2-5 -> Flag cols -> Campaign System Id -> Mineral system id
-    extra_phone_cols = []
-    flag_cols = []
-    campaign_system_col = []
-    mineral_system_col = []
-    regular_cols = []
-
-    for col in df.columns:
-        cl = col.lower()
-        if re.match(r"^phone\s+[2-9]", cl):
-            extra_phone_cols.append(col)
-        elif any(kw in cl for kw in ("bankruptcy", "deceased", "lien")):
-            flag_cols.append(col)
-        elif "campaign system" in cl:
-            campaign_system_col.append(col)
-        elif ("mineral" in cl or "m1neral" in cl) and "system" in cl:
-            mineral_system_col.append(col)
+    # Build final DataFrame with only OUTPUT_COLUMNS (in order).
+    # Missing columns get empty strings; extra source columns are discarded.
+    final_df = pd.DataFrame()
+    for col_name in OUTPUT_COLUMNS:
+        matched = _find_col(df, col_name)
+        if matched:
+            final_df[col_name] = df[matched]
         else:
-            regular_cols.append(col)
-
-    extra_phone_cols.sort(key=lambda c: c.lower())
-    new_order = mineral_system_col + regular_cols + extra_phone_cols + flag_cols + campaign_system_col
-    df = df[new_order]
-
-    # 9. Ensure Phone 2-5 columns always exist
-    for phone_num in range(2, 6):
-        col_name = f"Phone {phone_num}"
-        if col_name not in df.columns:
-            df[col_name] = ""
-            logger.info("Added missing column '%s' with empty values", col_name)
-
-    # Re-run column ordering to place newly added Phone columns correctly
-    extra_phone_cols_final = []
-    flag_cols_final = []
-    campaign_system_col_final = []
-    mineral_system_col_final = []
-    regular_cols_final = []
-
-    for col in df.columns:
-        cl = col.lower()
-        if re.match(r"^phone\s+[2-9]", cl):
-            extra_phone_cols_final.append(col)
-        elif any(kw in cl for kw in ("bankruptcy", "deceased", "lien")):
-            flag_cols_final.append(col)
-        elif "campaign system" in cl:
-            campaign_system_col_final.append(col)
-        elif ("mineral" in cl or "m1neral" in cl) and "system" in cl:
-            mineral_system_col_final.append(col)
-        else:
-            regular_cols_final.append(col)
-
-    extra_phone_cols_final.sort(key=lambda c: c.lower())
-    final_order = mineral_system_col_final + regular_cols_final + extra_phone_cols_final + flag_cols_final + campaign_system_col_final
-    df = df[final_order]
+            final_df[col_name] = ""
+            logger.info("Output column '%s' not in source — added empty", col_name)
+    df = final_df
 
     # Replace NaN and convert all values to strings
     df = df.fillna("")

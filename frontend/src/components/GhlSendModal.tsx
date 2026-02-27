@@ -33,25 +33,23 @@ function str(val: unknown): string | undefined {
 }
 
 // Helper function to map rows to BulkContactData
-// Handles both Mineral export column names and normalized names
+// Column names match OUTPUT_COLUMNS from transform_service.py
 function mapRowsToContacts(rows: Record<string, string>[]): BulkContactData[] {
   return rows.map(row => ({
-    mineral_contact_system_id: String(
-      row['M1neral Contact System ID'] || row['Mineral Contact System Id'] || row['mineral_contact_system_id'] || ''
-    ),
-    first_name: str(row['First Name'] || row['first_name']),
-    last_name: str(row['Last Name'] || row['last_name']),
-    email: str(row['Primary Email'] || row['Email'] || row['email']),
-    phone: str(row['Phone'] || row['phone']),
-    phone2: str(row['Phone 2'] || row['phone2']),
-    phone3: str(row['Phone 3'] || row['phone3']),
-    phone4: str(row['Phone 4'] || row['phone4']),
-    phone5: str(row['Phone 5'] || row['phone5']),
-    address1: str(row['Primary Address'] || row['Address 1'] || row['address1']),
-    city: str(row['City'] || row['city']),
-    state: str(row['State'] || row['state']),
-    postal_code: str(row['Zip'] || row['Postal Code'] || row['postal_code']),
-  })).filter(c => c.mineral_contact_system_id?.trim()) // Skip rows without ID
+    mineral_contact_system_id: String(row['M1neral Contact System ID'] || ''),
+    first_name: str(row['First Name']),
+    last_name: str(row['Last Name']),
+    email: str(row['Email']),
+    phone: str(row['Phone']),
+    phone2: str(row['Phone 2']),
+    phone3: str(row['Phone 3']),
+    phone4: str(row['Phone 4']),
+    phone5: str(row['Phone 5']),
+    address1: str(row['Address']),
+    city: str(row['City']),
+    state: str(row['State']),
+    postal_code: str(row['Zip']),
+  })).filter(c => c.mineral_contact_system_id?.trim())
 }
 
 export default function GhlSendModal({
