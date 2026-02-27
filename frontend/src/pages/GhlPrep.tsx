@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Repeat, Download, Upload, AlertCircle, Send } from 'lucide-react'
+import { Repeat, Download, Upload, AlertCircle, Send, XCircle } from 'lucide-react'
 import { FileUpload, GhlSendModal } from '../components'
 import { useAuth } from '../contexts/AuthContext'
 import { ghlApi } from '../utils/api'
-import type { GhlConnectionResponse } from '../utils/api'
+import type { GhlConnectionResponse, FailedContactDetail } from '../utils/api'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
@@ -27,6 +27,8 @@ interface UploadResponse {
   result?: TransformResult
 }
 
+type ViewMode = 'normal' | 'failed-contacts'
+
 export default function GhlPrep() {
   const { user, userName } = useAuth()
   const [isProcessing, setIsProcessing] = useState(false)
@@ -36,6 +38,19 @@ export default function GhlPrep() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [connections, setConnections] = useState<GhlConnectionResponse[]>([])
   const [showSendModal, setShowSendModal] = useState(false)
+
+  // Active job tracking (stored in localStorage for persistence)
+  const [activeJobId, setActiveJobId] = useState<string | null>(null)
+
+  // Failed contacts management
+  const [viewMode, setViewMode] = useState<ViewMode>('normal')
+  const [failedContacts, setFailedContacts] = useState<FailedContactDetail[]>([])
+  const [originalSendSettings, setOriginalSendSettings] = useState<{
+    campaignTag: string
+    contactOwner: string
+    smartListName: string
+    manualSms: boolean
+  } | null>(null)
 
   // Fetch GHL connections from backend
   useEffect(() => {
@@ -47,11 +62,59 @@ export default function GhlPrep() {
     }
     fetchConnections()
   }, [])
-  // Get dynamic columns from first row
+
+  // Check for active job on mount
+  useEffect(() => {
+    const checkActiveJob = async () => {
+      const storedJobId = localStorage.getItem('ghl_active_job_id')
+      if (!storedJobId) return
+
+      try {
+        const res = await ghlApi.getJobStatus(storedJobId)
+        if (res.data) {
+          if (res.data.status === 'processing') {
+            // Job still active - auto-open modal to reconnect
+            setActiveJobId(storedJobId)
+            setShowSendModal(true)
+          } else {
+            // Job completed/failed/cancelled - clear localStorage
+            localStorage.removeItem('ghl_active_job_id')
+          }
+        }
+      } catch (err) {
+        // Job not found (404) or error - clear localStorage
+        console.error('Failed to check active job:', err)
+        localStorage.removeItem('ghl_active_job_id')
+      }
+    }
+
+    checkActiveJob()
+  }, [])
+
+  // Get dynamic columns from current data (normal result or failed contacts)
   const columns = useMemo(() => {
+    if (viewMode === 'failed-contacts' && failedContacts.length > 0) {
+      const firstContact = failedContacts[0].contact_data
+      const keys = Object.keys(firstContact)
+      // Add error columns at the end
+      return [...keys, 'Error Category', 'Error Message']
+    }
+
     if (!result?.rows || result.rows.length === 0) return []
     return Object.keys(result.rows[0])
-  }, [result])
+  }, [result, viewMode, failedContacts])
+
+  // Current rows being displayed
+  const currentRows = useMemo(() => {
+    if (viewMode === 'failed-contacts' && failedContacts.length > 0) {
+      return failedContacts.map(fc => ({
+        ...fc.contact_data,
+        'Error Category': fc.error_category,
+        'Error Message': fc.error_message,
+      }))
+    }
+    return result?.rows || []
+  }, [result, viewMode, failedContacts])
 
   // Derive campaign tag from result data
   const defaultTag = useMemo(() => {
@@ -62,21 +125,21 @@ export default function GhlPrep() {
 
   // Sort rows client-side
   const sortedRows = useMemo(() => {
-    if (!result?.rows || !sortColumn) return result?.rows || []
+    if (currentRows.length === 0 || !sortColumn) return currentRows
 
-    const sorted = [...result.rows].sort((a, b) => {
+    const sorted = [...currentRows].sort((a, b) => {
       const aVal = a[sortColumn] || ''
       const bVal = b[sortColumn] || ''
 
       if (sortDirection === 'asc') {
-        return aVal.localeCompare(bVal)
+        return String(aVal).localeCompare(String(bVal))
       } else {
-        return bVal.localeCompare(aVal)
+        return String(bVal).localeCompare(String(aVal))
       }
     })
 
     return sorted
-  }, [result?.rows, sortColumn, sortDirection])
+  }, [currentRows, sortColumn, sortDirection])
 
   const handleColumnClick = (column: string) => {
     if (sortColumn === column) {
@@ -94,6 +157,8 @@ export default function GhlPrep() {
     setIsProcessing(true)
     setError(null)
     setResult(null)
+    setViewMode('normal')
+    setFailedContacts([])
     try {
       const formData = new FormData()
       formData.append('file', file)
@@ -158,11 +223,116 @@ export default function GhlPrep() {
     }
   }
 
+  // Download failed contacts as CSV
+  const handleExportFailedContacts = () => {
+    if (failedContacts.length === 0) {
+      setError('No failed contacts to export')
+      return
+    }
+
+    // Generate CSV content
+    const headers = [
+      'Mineral Contact System Id',
+      'First Name',
+      'Last Name',
+      'Email',
+      'Phone',
+      'Address 1',
+      'City',
+      'State',
+      'Postal Code',
+      'Error Category',
+      'Error Message',
+    ]
+
+    const rows = failedContacts.map(fc => {
+      const cd = fc.contact_data
+      return [
+        cd.mineral_contact_system_id || '',
+        cd.first_name || '',
+        cd.last_name || '',
+        cd.email || '',
+        cd.phone || '',
+        cd.address1 || '',
+        cd.city || '',
+        cd.state || '',
+        cd.postal_code || '',
+        fc.error_category,
+        fc.error_message,
+      ]
+    })
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
+    ].join('\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'failed_contacts.csv'
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+  }
+
   const handleReset = () => {
     setResult(null)
     setError(null)
     setSortColumn(null)
     setSortDirection('asc')
+    setViewMode('normal')
+    setFailedContacts([])
+  }
+
+  // Handle viewing failed contacts from send modal
+  const handleViewFailedContacts = (contacts: FailedContactDetail[]) => {
+    setFailedContacts(contacts)
+    setViewMode('failed-contacts')
+    setShowSendModal(false)
+  }
+
+  // Back to normal view
+  const handleBackToNormalView = () => {
+    setViewMode('normal')
+    setFailedContacts([])
+  }
+
+  // Retry send with failed contacts
+  const handleRetrySend = () => {
+    // Convert failed contacts back to rows format for the modal
+    const retryRows = failedContacts.map(fc => fc.contact_data)
+    setResult({
+      success: true,
+      rows: retryRows,
+      total_count: retryRows.length,
+      transformed_fields: {
+        title_cased: 0,
+        campaigns_extracted: 0,
+        phone_mapped: 0,
+        contact_owner_added: 0,
+      },
+      warnings: [],
+      source_filename: 'failed_contacts_retry',
+    })
+    setViewMode('normal')
+    setShowSendModal(true)
+  }
+
+  // Handle job started (store in localStorage)
+  const handleJobStarted = (jobId: string) => {
+    setActiveJobId(jobId)
+    localStorage.setItem('ghl_active_job_id', jobId)
+  }
+
+  // Handle modal close (clear activeJobId if job complete)
+  const handleModalClose = () => {
+    setShowSendModal(false)
+    // Clear activeJobId and localStorage (modal only closes after job completes)
+    setActiveJobId(null)
+    localStorage.removeItem('ghl_active_job_id')
   }
 
   return (
@@ -216,42 +386,79 @@ export default function GhlPrep() {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-oswald font-semibold text-tre-navy">
-                  {result.source_filename}
+                  {viewMode === 'failed-contacts' ? 'Failed Contacts' : result.source_filename}
                 </h3>
                 <p className="text-sm text-gray-500">
-                  Transformation complete
+                  {viewMode === 'failed-contacts' ? 'Review and retry failed contacts' : 'Transformation complete'}
                 </p>
               </div>
               <div className="flex gap-2">
-                <button
-                  onClick={handleReset}
-                  className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-                >
-                  <Upload className="w-4 h-4" />
-                  Upload New File
-                </button>
-                <button
-                  onClick={() => setShowSendModal(true)}
-                  disabled={connections.length === 0}
-                  title={connections.length === 0 ? 'Add a GHL connection in Settings first' : 'Send contacts to GoHighLevel'}
-                  className="flex items-center gap-2 px-3 py-2 bg-tre-teal text-white rounded-lg hover:bg-tre-teal/90 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Send className="w-4 h-4" />
-                  Send to GHL
-                </button>
-                <button
-                  onClick={handleExport}
-                  className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-                >
-                  <Download className="w-4 h-4" />
-                  Download CSV
-                </button>
+                {viewMode === 'failed-contacts' && (
+                  <>
+                    <button
+                      onClick={handleBackToNormalView}
+                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      Back to Results
+                    </button>
+                    <button
+                      onClick={handleExportFailedContacts}
+                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download Failed CSV
+                    </button>
+                    <button
+                      onClick={handleRetrySend}
+                      disabled={connections.length === 0 || failedContacts.length === 0}
+                      title={connections.length === 0 ? 'Add a GHL connection in Settings first' : 'Retry sending failed contacts'}
+                      className="flex items-center gap-2 px-3 py-2 bg-tre-teal text-white rounded-lg hover:bg-tre-teal/90 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Send className="w-4 h-4" />
+                      Retry Send
+                    </button>
+                  </>
+                )}
+                {viewMode === 'normal' && (
+                  <>
+                    <button
+                      onClick={handleReset}
+                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                    >
+                      <Upload className="w-4 h-4" />
+                      Upload New File
+                    </button>
+                    <button
+                      onClick={() => setShowSendModal(true)}
+                      disabled={connections.length === 0 || (!!activeJobId)}
+                      title={
+                        connections.length === 0
+                          ? 'Add a GHL connection in Settings first'
+                          : activeJobId
+                          ? 'Send in progress'
+                          : 'Send contacts to GoHighLevel'
+                      }
+                      className="flex items-center gap-2 px-3 py-2 bg-tre-teal text-white rounded-lg hover:bg-tre-teal/90 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Send className="w-4 h-4" />
+                      Send to GHL
+                    </button>
+                    <button
+                      onClick={handleExport}
+                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download CSV
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
 
           {/* Warnings */}
-          {result.warnings && result.warnings.length > 0 && (
+          {viewMode === 'normal' && result.warnings && result.warnings.length > 0 && (
             <div className="mx-6 mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
               <div className="flex items-start gap-2">
                 <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
@@ -300,10 +507,11 @@ export default function GhlPrep() {
                     <tr key={i} className="hover:bg-gray-50">
                       {columns.map((column) => {
                         const value = String(row[column] ?? '')
+                        const isError = column === 'Error Category' || column === 'Error Message'
                         return (
                           <td
                             key={column}
-                            className="py-2 px-4 text-gray-600 whitespace-nowrap"
+                            className={`py-2 px-4 whitespace-nowrap ${isError ? 'text-red-600' : 'text-gray-600'}`}
                           >
                             {value || <span className="text-gray-400">{'\u2014'}</span>}
                           </td>
@@ -321,11 +529,14 @@ export default function GhlPrep() {
       {/* Send to GHL Modal */}
       <GhlSendModal
         isOpen={showSendModal}
-        onClose={() => setShowSendModal(false)}
+        onClose={handleModalClose}
         connections={connections}
         contactCount={result?.rows?.length || 0}
         defaultTag={defaultTag}
         rows={result?.rows || []}
+        activeJobId={activeJobId}
+        onJobStarted={handleJobStarted}
+        onViewFailedContacts={handleViewFailedContacts}
       />
     </div>
   )
