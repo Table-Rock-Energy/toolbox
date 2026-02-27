@@ -126,7 +126,7 @@ export default function GhlPrep() {
   const defaultTag = useMemo(() => {
     if (!result?.rows || result.rows.length === 0) return ''
     const firstRow = result.rows[0]
-    return firstRow['Tags'] || firstRow['tags'] || firstRow['Campaign'] || firstRow['campaign'] || ''
+    return firstRow['Tags'] || firstRow['tags'] || firstRow['Campaigns'] || firstRow['campaigns'] || firstRow['Campaign'] || firstRow['campaign'] || ''
   }, [result])
 
   // Sort rows client-side

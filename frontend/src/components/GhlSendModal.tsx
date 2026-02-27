@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Send, Loader2, CheckCircle, XCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Send, Loader2, XCircle, AlertCircle, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react'
 import Modal from './Modal'
 import { ghlApi } from '../utils/api'
 import { useSSEProgress } from '../hooks/useSSEProgress'
@@ -38,7 +38,7 @@ function mapRowsToContacts(rows: Record<string, string>[]): BulkContactData[] {
     city: row['City'] || row['city'] || undefined,
     state: row['State'] || row['state'] || undefined,
     postal_code: row['Postal Code'] || row['postal_code'] || undefined,
-  })).filter(c => c.mineral_contact_system_id) // Skip rows without ID
+  })).filter(c => c.mineral_contact_system_id?.trim()) // Skip rows without ID
 }
 
 export default function GhlSendModal({
@@ -60,6 +60,7 @@ export default function GhlSendModal({
   const [users, setUsers] = useState<GhlUserResponse[]>([])
   const [isLoadingUsers, setIsLoadingUsers] = useState(false)
   const [credentialError, setCredentialError] = useState<string | null>(null)
+  const [isCheckingCredentials, setIsCheckingCredentials] = useState(false)
 
   // Multi-step flow state
   const [sendStep, setSendStep] = useState<SendStep>('idle')
@@ -74,7 +75,7 @@ export default function GhlSendModal({
   const { progress, completionData, isComplete, error: sseError, disconnect } = useSSEProgress(activeJobId)
 
   // Reset form when modal opens
-  useMemo(() => {
+  useEffect(() => {
     if (isOpen) {
       // Only reset if no active job (don't reset during reconnection)
       if (!propActiveJobId) {
@@ -121,6 +122,7 @@ export default function GhlSendModal({
   useEffect(() => {
     if (isOpen && selectedConnectionId && sendStep === 'idle') {
       const checkCredentials = async () => {
+        setIsCheckingCredentials(true)
         try {
           const res = await ghlApi.quickCheckConnection(selectedConnectionId)
           if (res.data && !res.data.valid) {
@@ -130,6 +132,8 @@ export default function GhlSendModal({
           }
         } catch {
           setCredentialError('Failed to verify credentials')
+        } finally {
+          setIsCheckingCredentials(false)
         }
       }
       checkCredentials()
@@ -164,7 +168,7 @@ export default function GhlSendModal({
 
   const selectedConnection = connections.find(c => c.id === selectedConnectionId)
   const selectedConnectionName = selectedConnection?.name || ''
-  const isReadyToValidate = selectedConnectionId && campaignTag && contactCount > 0 && !credentialError
+  const isReadyToValidate = selectedConnectionId && campaignTag && contactCount > 0 && !credentialError && !isCheckingCredentials
 
   // Build bulk send request from form state
   const buildRequest = (): BulkSendRequest => ({
@@ -378,7 +382,7 @@ export default function GhlSendModal({
               <div className="flex-1">
                 <p className="font-medium mb-1">GHL connection expired</p>
                 <p>{credentialError}</p>
-                <a href="/settings" className="text-red-800 underline hover:text-red-900 mt-2 inline-block">
+                <a href="/admin#ghl-connections" className="text-red-800 underline hover:text-red-900 mt-2 inline-block">
                   Go to Settings to reconnect
                 </a>
               </div>

@@ -567,8 +567,8 @@ async def quick_check_connection(connection_id: str, user: dict = Depends(requir
 
     try:
         result = await validate_connection(connection_id)
-        is_valid = result.get("validation_status") == "valid"
-        return {"valid": is_valid, "error": None if is_valid else result.get("validation_error")}
+        is_valid = result.get("valid", False)
+        return {"valid": is_valid, "error": None if is_valid else result.get("error")}
     except HTTPException as e:
         return {"valid": False, "error": e.detail}
     except Exception as e:

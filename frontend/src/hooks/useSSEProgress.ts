@@ -83,21 +83,6 @@ export function useSSEProgress(jobId: string | null): UseSSEProgressReturn {
           updated: data.updated,
           failed: data.failed,
         })
-
-        // Check for daily limit hit status
-        if (data.status === 'daily_limit_hit') {
-          setCompletionData({
-            status: data.status,
-            created: data.created,
-            updated: data.updated,
-            failed: data.failed,
-            failed_contacts: data.failed_contacts || [],
-            updated_contacts: data.updated_contacts || [],
-            dailyLimitHit: true,
-          })
-          setIsComplete(true)
-          eventSource.close()
-        }
       })
 
       eventSource.addEventListener('complete', (e: MessageEvent) => {

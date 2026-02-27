@@ -20,8 +20,10 @@ def categorize_error(error: Exception, status_code: int = None) -> tuple[str, st
         return "rate_limit", "Rate limit exceeded. Retry after delay."
     if status_code == 400:
         return "validation", str(error)
-    if status_code in (401, 403):
-        return "api_error", "Authentication failed. Check token and location ID."
+    if status_code == 401:
+        return "api_error", "Authentication failed. Check token."
+    if status_code == 403:
+        return "api_error", "Permission denied. Check token scopes and location ID."
     if status_code and status_code >= 500:
         return "api_error", "GHL server error. Retry later."
     if "timeout" in str(error).lower() or "connection" in str(error).lower():

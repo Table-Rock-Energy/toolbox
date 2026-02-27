@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Shield,
   Users,
@@ -129,6 +129,14 @@ export default function AdminSettings() {
   const [newConnection, setNewConnection] = useState({ name: '', token: '', location_id: '' })
   const [newConnectionError, setNewConnectionError] = useState('')
   const [isSavingConnection, setIsSavingConnection] = useState(false)
+
+  // Scroll to hash anchor on mount (e.g., #ghl-connections)
+  const ghlSectionRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (window.location.hash === '#ghl-connections' && ghlSectionRef.current) {
+      ghlSectionRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [isLoadingConnections])
 
   const fetchConnections = async () => {
     setIsLoadingConnections(true)
@@ -1017,7 +1025,7 @@ export default function AdminSettings() {
       </div>
 
       {/* GoHighLevel Connections */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <div id="ghl-connections" ref={ghlSectionRef} className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Link2 className="w-5 h-5 text-tre-navy" />
