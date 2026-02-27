@@ -337,7 +337,7 @@ export interface BulkSendRequest {
   contacts: BulkContactData[]
   campaign_tag: string
   manual_sms: boolean
-  assigned_to?: string
+  assigned_to_list?: string[]
   smart_list_name?: string
 }
 
@@ -380,6 +380,19 @@ export interface BulkSendStartResponse {
   total_count: number
 }
 
+export interface DailyRateLimitInfo {
+  daily_limit: number
+  requests_today: number
+  remaining: number
+  resets_at: string
+  warning_level: 'normal' | 'warning' | 'critical'
+}
+
+export interface QuickCheckResponse {
+  valid: boolean
+  error: string | null
+}
+
 export const ghlApi = {
   listConnections: () =>
     api.get<{ connections: GhlConnectionResponse[] }>('/ghl/connections'),
@@ -418,6 +431,12 @@ export const ghlApi = {
 
   cancelJob: (jobId: string) =>
     api.post<{ cancelled: boolean }>(`/ghl/send/${jobId}/cancel`),
+
+  getDailyLimit: () =>
+    api.get<DailyRateLimitInfo>('/ghl/daily-limit'),
+
+  quickCheckConnection: (id: string) =>
+    api.post<QuickCheckResponse>(`/ghl/connections/${id}/quick-check`),
 }
 
 export default api
