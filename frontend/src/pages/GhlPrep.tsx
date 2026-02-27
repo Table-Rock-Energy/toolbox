@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react'
-import { Repeat, Download, Upload, AlertCircle } from 'lucide-react'
-import { FileUpload } from '../components'
+import { Repeat, Download, Upload, AlertCircle, Send } from 'lucide-react'
+import { FileUpload, GhlSendModal } from '../components'
 import { useAuth } from '../contexts/AuthContext'
+import useLocalStorage from '../hooks/useLocalStorage'
+import type { GhlConnection } from '../hooks/useLocalStorage'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
@@ -32,10 +34,19 @@ export default function GhlPrep() {
   const [result, setResult] = useState<TransformResult | null>(null)
   const [sortColumn, setSortColumn] = useState<string | null>(null)
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [connections] = useLocalStorage<GhlConnection[]>('ghl_connections', [])
+  const [showSendModal, setShowSendModal] = useState(false)
   // Get dynamic columns from first row
   const columns = useMemo(() => {
     if (!result?.rows || result.rows.length === 0) return []
     return Object.keys(result.rows[0])
+  }, [result])
+
+  // Derive campaign tag from result data
+  const defaultTag = useMemo(() => {
+    if (!result?.rows || result.rows.length === 0) return ''
+    const firstRow = result.rows[0]
+    return firstRow['Tags'] || firstRow['tags'] || firstRow['Campaign'] || firstRow['campaign'] || ''
   }, [result])
 
   // Sort rows client-side
@@ -209,8 +220,17 @@ export default function GhlPrep() {
                   Upload New File
                 </button>
                 <button
+                  onClick={() => setShowSendModal(true)}
+                  disabled={connections.length === 0}
+                  title={connections.length === 0 ? 'Add a GHL connection in Settings first' : 'Send contacts to GoHighLevel'}
+                  className="flex items-center gap-2 px-3 py-2 bg-tre-teal text-white rounded-lg hover:bg-tre-teal/90 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Send className="w-4 h-4" />
+                  Send to GHL
+                </button>
+                <button
                   onClick={handleExport}
-                  className="flex items-center gap-2 px-3 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
+                  className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
                 >
                   <Download className="w-4 h-4" />
                   Download CSV
@@ -286,6 +306,15 @@ export default function GhlPrep() {
           </div>
         </div>
       )}
+
+      {/* Send to GHL Modal */}
+      <GhlSendModal
+        isOpen={showSendModal}
+        onClose={() => setShowSendModal(false)}
+        connections={connections}
+        contactCount={result?.rows?.length || 0}
+        defaultTag={defaultTag}
+      />
     </div>
   )
 }
