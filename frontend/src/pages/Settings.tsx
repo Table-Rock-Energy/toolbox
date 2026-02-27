@@ -8,8 +8,8 @@ import {
   reauthenticateWithCredential,
 } from 'firebase/auth'
 import { GhlConnectionCard } from '../components'
-import useLocalStorage from '../hooks/useLocalStorage'
-import type { GhlConnection } from '../hooks/useLocalStorage'
+import { ghlApi } from '../utils/api'
+import type { GhlConnectionResponse } from '../utils/api'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 

@@ -113,6 +113,14 @@ class ApiClient {
     return this.request<T>(endpoint, { ...options, method: 'POST', body })
   }
 
+  async put<T>(endpoint: string, body?: unknown, options?: Omit<ApiRequestOptions, 'method' | 'body'>) {
+    return this.request<T>(endpoint, { ...options, method: 'PUT', body })
+  }
+
+  async delete<T>(endpoint: string, options?: Omit<ApiRequestOptions, 'method' | 'body'>) {
+    return this.request<T>(endpoint, { ...options, method: 'DELETE' })
+  }
+
   async uploadFile<T>(
     endpoint: string,
     file: File,
@@ -261,6 +269,56 @@ export const enrichmentApi = {
     api.post<{ success: boolean; message: string; status: EnrichmentStatusResponse }>('/enrichment/config', config),
   lookup: (persons: { name: string; address?: string; city?: string; state?: string; zip_code?: string }[]) =>
     api.post<EnrichmentResponse>('/enrichment/lookup', { persons }, { timeout: 60000 }),
+}
+
+// GHL Connection types (matches backend Pydantic models)
+export interface GhlConnectionResponse {
+  id: string
+  name: string
+  token_last4: string
+  location_id: string
+  notes: string
+  validation_status: string
+  created_at: string
+  updated_at: string
+}
+
+export interface GhlUserResponse {
+  id: string
+  name: string
+  email: string
+  role?: string
+}
+
+export interface GhlValidationResult {
+  valid: boolean
+  error?: string
+  location_name?: string
+  users: GhlUserResponse[]
+}
+
+export const ghlApi = {
+  listConnections: () =>
+    api.get<{ connections: GhlConnectionResponse[] }>('/ghl/connections'),
+
+  createConnection: (data: { name: string; token: string; location_id: string }) =>
+    api.post<{ connection: GhlConnectionResponse; validation: GhlValidationResult }>(
+      '/ghl/connections', data
+    ),
+
+  updateConnection: (id: string, data: { name?: string; token?: string; location_id?: string }) =>
+    api.put<{ connection: GhlConnectionResponse; validation?: GhlValidationResult }>(
+      `/ghl/connections/${id}`, data
+    ),
+
+  deleteConnection: (id: string) =>
+    api.delete<{ deleted: boolean }>(`/ghl/connections/${id}`),
+
+  validateConnection: (id: string) =>
+    api.post<GhlValidationResult>(`/ghl/connections/${id}/validate`),
+
+  getUsers: (connectionId: string) =>
+    api.get<{ users: GhlUserResponse[] }>(`/ghl/connections/${connectionId}/users`),
 }
 
 export default api
