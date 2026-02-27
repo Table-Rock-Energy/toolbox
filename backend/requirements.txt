@@ -61,5 +61,8 @@ httpx>=0.26.0
 # Encryption (API key storage)
 cryptography>=42.0.0
 
+# Phone number parsing (GHL integration)
+phonenumbers>=8.13.0
+
 # Linting (dev only)
 ruff>=0.1.0
