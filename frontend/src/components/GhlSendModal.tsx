@@ -152,7 +152,19 @@ export default function GhlSendModal({
       try {
         const res = await ghlApi.getUsers(selectedConnectionId)
         if (res.data) {
-          setUsers(res.data.users)
+          // Sort users: Preston first, Ashlyn second, then alphabetical
+          const priorityNames = ['preston', 'ashlyn']
+          const sorted = [...res.data.users].sort((a, b) => {
+            const aFirst = a.name.toLowerCase().split(' ')[0]
+            const bFirst = b.name.toLowerCase().split(' ')[0]
+            const aIdx = priorityNames.indexOf(aFirst)
+            const bIdx = priorityNames.indexOf(bFirst)
+            if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx
+            if (aIdx !== -1) return -1
+            if (bIdx !== -1) return 1
+            return a.name.localeCompare(b.name)
+          })
+          setUsers(sorted)
         }
       } catch {
         setUsers([])

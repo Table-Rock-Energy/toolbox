@@ -67,9 +67,24 @@ class ApiClient {
       }
 
       if (!response.ok) {
+        // FastAPI 422 returns detail as array of validation errors; extract readable message
+        const rawDetail = (data as { detail?: unknown })?.detail
+        let errorMsg: string
+        if (Array.isArray(rawDetail)) {
+          errorMsg = rawDetail
+            .map((e: { msg?: string; loc?: string[] }) => {
+              const field = e.loc?.slice(1).join('.') || 'unknown'
+              return `${field}: ${e.msg || 'invalid'}`
+            })
+            .join('; ')
+        } else if (typeof rawDetail === 'string') {
+          errorMsg = rawDetail
+        } else {
+          errorMsg = `HTTP error ${response.status}`
+        }
         return {
           data: null,
-          error: (data as { detail?: string })?.detail || `HTTP error ${response.status}`,
+          error: errorMsg,
           status: response.status,
         }
       }
@@ -148,9 +163,23 @@ class ApiClient {
       const data = await response.json()
 
       if (!response.ok) {
+        const rawDetail = data?.detail
+        let errorMsg: string
+        if (Array.isArray(rawDetail)) {
+          errorMsg = rawDetail
+            .map((e: { msg?: string; loc?: string[] }) => {
+              const field = e.loc?.slice(1).join('.') || 'unknown'
+              return `${field}: ${e.msg || 'invalid'}`
+            })
+            .join('; ')
+        } else if (typeof rawDetail === 'string') {
+          errorMsg = rawDetail
+        } else {
+          errorMsg = `HTTP error ${response.status}`
+        }
         return {
           data: null,
-          error: data?.detail || `HTTP error ${response.status}`,
+          error: errorMsg,
           status: response.status,
         }
       }
