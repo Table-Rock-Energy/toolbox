@@ -71,3 +71,52 @@ class GHLValidationResult(BaseModel):
     error: Optional[str] = None
     location_name: Optional[str] = None
     users: list[GHLUserResponse] = Field(default_factory=list)
+
+
+class BulkContactData(BaseModel):
+    """Single contact in a bulk send request. All field names match GHL field names."""
+    mineral_contact_system_id: str = Field(..., description="Stable source identifier for result tracking")
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    address1: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    postal_code: Optional[str] = None
+
+
+class BulkSendRequest(BaseModel):
+    """Request model for bulk contact send."""
+    connection_id: str = Field(..., description="GHL connection ID")
+    contacts: list[BulkContactData] = Field(..., min_length=1, description="Contacts to send")
+    campaign_tag: str = Field(..., min_length=1, description="Campaign tag to apply to all contacts")
+    manual_sms: bool = Field(False, description="Apply 'manual sms' tag to all contacts")
+    assigned_to: Optional[str] = Field(None, description="GHL user ID for contact owner")
+    smart_list_name: Optional[str] = Field(None, description="SmartList/campaign name for reference")
+
+
+class ContactResult(BaseModel):
+    """Per-contact result in bulk send response."""
+    mineral_contact_system_id: str
+    status: str = Field(description="created | updated | failed | skipped")
+    ghl_contact_id: Optional[str] = None
+    error: Optional[str] = None
+
+
+class BulkSendValidationResponse(BaseModel):
+    """Response from batch validation (before sending)."""
+    valid_count: int
+    invalid_count: int
+    invalid_contacts: list[ContactResult] = Field(default_factory=list, description="Contacts that failed validation with error details")
+
+
+class BulkSendResponse(BaseModel):
+    """Response from bulk send operation."""
+    job_id: str
+    total_count: int
+    created_count: int
+    updated_count: int
+    failed_count: int
+    skipped_count: int
+    results: list[ContactResult]
