@@ -297,6 +297,50 @@ export interface GhlValidationResult {
   users: GhlUserResponse[]
 }
 
+export interface BulkContactData {
+  mineral_contact_system_id: string
+  first_name?: string
+  last_name?: string
+  email?: string
+  phone?: string
+  address1?: string
+  city?: string
+  state?: string
+  postal_code?: string
+}
+
+export interface ContactResult {
+  mineral_contact_system_id: string
+  status: 'created' | 'updated' | 'failed' | 'skipped'
+  ghl_contact_id?: string
+  error?: string
+}
+
+export interface BulkSendValidationResponse {
+  valid_count: number
+  invalid_count: number
+  invalid_contacts: ContactResult[]
+}
+
+export interface BulkSendResponse {
+  job_id: string
+  total_count: number
+  created_count: number
+  updated_count: number
+  failed_count: number
+  skipped_count: number
+  results: ContactResult[]
+}
+
+export interface BulkSendRequest {
+  connection_id: string
+  contacts: BulkContactData[]
+  campaign_tag: string
+  manual_sms: boolean
+  assigned_to?: string
+  smart_list_name?: string
+}
+
 export const ghlApi = {
   listConnections: () =>
     api.get<{ connections: GhlConnectionResponse[] }>('/ghl/connections'),
@@ -319,6 +363,12 @@ export const ghlApi = {
 
   getUsers: (connectionId: string) =>
     api.get<{ users: GhlUserResponse[] }>(`/ghl/connections/${connectionId}/users`),
+
+  validateBatch: (data: BulkSendRequest) =>
+    api.post<BulkSendValidationResponse>('/ghl/contacts/validate-batch', data),
+
+  bulkSend: (data: BulkSendRequest) =>
+    api.post<BulkSendResponse>('/ghl/contacts/bulk-send', data),
 }
 
 export default api
