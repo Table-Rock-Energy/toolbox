@@ -324,6 +324,7 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
 
     # 5b. Rename columns to match GHL field names for auto-mapping
     rename_map = {}
+    cols_to_drop_post_rename = []
     existing_cols_lower = {c.lower() for c in df.columns}
     for col in df.columns:
         cl = col.lower()
@@ -331,12 +332,13 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
             # "Phone 1 (Purchased Data)" -> "Phone 1", etc.
             num = cl.split()[1] if len(cl.split()) > 1 else ""
             new_name = f"Phone {num}" if num else col
-            # Only rename if it won't create a duplicate column name
             if new_name.lower() not in existing_cols_lower:
                 rename_map[col] = new_name
                 existing_cols_lower.add(new_name.lower())
             else:
-                logger.info("Skipping rename '%s' -> '%s' (duplicate)", col, new_name)
+                # Duplicate (e.g. Phone 1 already exists) — drop the Purchased Data column
+                cols_to_drop_post_rename.append(col)
+                logger.info("Dropping duplicate '%s' (keeping existing '%s')", col, new_name)
         elif "bankruptcy" in cl:
             rename_map[col] = "Bankruptcy"
         elif "deceased" in cl:
@@ -346,6 +348,9 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
     if rename_map:
         df.rename(columns=rename_map, inplace=True)
         logger.info("Renamed columns: %s", rename_map)
+    if cols_to_drop_post_rename:
+        df.drop(columns=cols_to_drop_post_rename, inplace=True)
+        logger.info("Dropped duplicate purchased data columns: %s", cols_to_drop_post_rename)
 
     # 6. Drop columns not needed for GHL import
     drop_columns_lower = {
