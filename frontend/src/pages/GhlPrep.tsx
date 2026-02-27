@@ -1,9 +1,9 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Repeat, Download, Upload, AlertCircle, Send } from 'lucide-react'
 import { FileUpload, GhlSendModal } from '../components'
 import { useAuth } from '../contexts/AuthContext'
-import useLocalStorage from '../hooks/useLocalStorage'
-import type { GhlConnection } from '../hooks/useLocalStorage'
+import { ghlApi } from '../utils/api'
+import type { GhlConnectionResponse } from '../utils/api'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
@@ -34,8 +34,19 @@ export default function GhlPrep() {
   const [result, setResult] = useState<TransformResult | null>(null)
   const [sortColumn, setSortColumn] = useState<string | null>(null)
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
-  const [connections] = useLocalStorage<GhlConnection[]>('ghl_connections', [])
+  const [connections, setConnections] = useState<GhlConnectionResponse[]>([])
   const [showSendModal, setShowSendModal] = useState(false)
+
+  // Fetch GHL connections from backend
+  useEffect(() => {
+    const fetchConnections = async () => {
+      const res = await ghlApi.listConnections()
+      if (res.data) {
+        setConnections(res.data.connections)
+      }
+    }
+    fetchConnections()
+  }, [])
   // Get dynamic columns from first row
   const columns = useMemo(() => {
     if (!result?.rows || result.rows.length === 0) return []
@@ -314,6 +325,7 @@ export default function GhlPrep() {
         connections={connections}
         contactCount={result?.rows?.length || 0}
         defaultTag={defaultTag}
+        rows={result?.rows || []}
       />
     </div>
   )
