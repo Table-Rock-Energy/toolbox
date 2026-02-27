@@ -341,6 +341,45 @@ export interface BulkSendRequest {
   smart_list_name?: string
 }
 
+// New async job types (matching backend Plan 01)
+export interface ProgressEvent {
+  job_id: string
+  processed: number
+  total: number
+  created: number
+  updated: number
+  failed: number
+  status: 'processing' | 'completed' | 'failed' | 'cancelled'
+}
+
+export interface FailedContactDetail {
+  mineral_contact_system_id: string
+  error_category: 'validation' | 'api_error' | 'rate_limit' | 'network' | 'unknown'
+  error_message: string
+  contact_data: Record<string, string>
+}
+
+export interface JobStatusResponse {
+  job_id: string
+  status: 'processing' | 'completed' | 'failed' | 'cancelled'
+  total_count: number
+  processed_count: number
+  created_count: number
+  updated_count: number
+  failed_count: number
+  skipped_count: number
+  failed_contacts: FailedContactDetail[]
+  updated_contacts: ContactResult[]
+  created_at: string | null
+  completed_at: string | null
+}
+
+export interface BulkSendStartResponse {
+  job_id: string
+  status: string
+  total_count: number
+}
+
 export const ghlApi = {
   listConnections: () =>
     api.get<{ connections: GhlConnectionResponse[] }>('/ghl/connections'),
@@ -369,6 +408,16 @@ export const ghlApi = {
 
   bulkSend: (data: BulkSendRequest) =>
     api.post<BulkSendResponse>('/ghl/contacts/bulk-send', data),
+
+  // New async job methods
+  startBulkSend: (data: BulkSendRequest) =>
+    api.post<BulkSendStartResponse>('/ghl/contacts/bulk-send', data, { timeout: 60000 }),
+
+  getJobStatus: (jobId: string) =>
+    api.get<JobStatusResponse>(`/ghl/send/${jobId}/status`),
+
+  cancelJob: (jobId: string) =>
+    api.post<{ cancelled: boolean }>(`/ghl/send/${jobId}/cancel`),
 }
 
 export default api
