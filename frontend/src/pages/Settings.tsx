@@ -114,11 +114,36 @@ export default function Settings() {
   const isGoogleUser = user?.providerData?.[0]?.providerId === 'google.com'
 
   // GHL Connections state
-  const [connections, setConnections] = useLocalStorage<GhlConnection[]>('ghl_connections', [])
+  const [connections, setConnections] = useState<GhlConnectionResponse[]>([])
+  const [isLoadingConnections, setIsLoadingConnections] = useState(false)
+  const [connectionsError, setConnectionsError] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isAddingNew, setIsAddingNew] = useState(false)
-  const [newConnection, setNewConnection] = useState({ name: '', token: '', locationId: '' })
+  const [newConnection, setNewConnection] = useState({ name: '', token: '', location_id: '' })
   const [newConnectionError, setNewConnectionError] = useState('')
+  const [isSavingConnection, setIsSavingConnection] = useState(false)
+
+  // Fetch GHL connections from backend
+  const fetchConnections = async () => {
+    setIsLoadingConnections(true)
+    setConnectionsError('')
+    try {
+      const res = await ghlApi.listConnections()
+      if (res.data) {
+        setConnections(res.data.connections)
+      } else if (res.error) {
+        setConnectionsError(res.error)
+      }
+    } catch {
+      setConnectionsError('Failed to load connections')
+    } finally {
+      setIsLoadingConnections(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchConnections()
+  }, [])
 
   const scrollToSection = (ref: React.RefObject<HTMLDivElement | null>) => {
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -257,29 +282,36 @@ export default function Settings() {
     }
   }
 
-  const handleAddConnection = () => {
-    // Validate required fields
-    if (newConnection.name.trim().length === 0 || newConnection.locationId.trim().length === 0) {
+  const handleAddConnection = async () => {
+    if (newConnection.name.trim().length === 0 || newConnection.location_id.trim().length === 0) {
       setNewConnectionError('Connection name and Location ID are required')
       return
     }
 
-    const connection: GhlConnection = {
-      id: crypto.randomUUID(),
-      name: newConnection.name.trim(),
-      token: newConnection.token.trim(),
-      locationId: newConnection.locationId.trim(),
-      createdAt: new Date().toISOString(),
-    }
-
-    setConnections((prev) => [...prev, connection])
-    setNewConnection({ name: '', token: '', locationId: '' })
+    setIsSavingConnection(true)
     setNewConnectionError('')
-    setIsAddingNew(false)
+    try {
+      const res = await ghlApi.createConnection({
+        name: newConnection.name.trim(),
+        token: newConnection.token.trim(),
+        location_id: newConnection.location_id.trim(),
+      })
+      if (res.data) {
+        await fetchConnections()
+        setNewConnection({ name: '', token: '', location_id: '' })
+        setIsAddingNew(false)
+      } else if (res.error) {
+        setNewConnectionError(res.error)
+      }
+    } catch {
+      setNewConnectionError('Failed to create connection')
+    } finally {
+      setIsSavingConnection(false)
+    }
   }
 
   const handleCancelAdd = () => {
-    setNewConnection({ name: '', token: '', locationId: '' })
+    setNewConnection({ name: '', token: '', location_id: '' })
     setNewConnectionError('')
     setIsAddingNew(false)
   }
@@ -642,14 +674,9 @@ export default function Settings() {
           {/* GoHighLevel Connections Section */}
           <div ref={ghlRef} className="bg-white rounded-xl border border-gray-200 p-6 scroll-mt-6">
             <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-oswald font-semibold text-tre-navy">
-                  GoHighLevel Connections
-                </h2>
-                <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded">
-                  Preview
-                </span>
-              </div>
+              <h2 className="text-lg font-oswald font-semibold text-tre-navy">
+                GoHighLevel Connections
+              </h2>
               <button
                 onClick={() => {
                   setIsAddingNew(true)
@@ -664,6 +691,14 @@ export default function Settings() {
 
             <div className="space-y-4">
               {/* Existing connections */}
+              {isLoadingConnections && (
+                <div className="text-center py-4 text-gray-500 text-sm">Loading connections...</div>
+              )}
+
+              {connectionsError && (
+                <div className="text-sm text-red-600 bg-red-50 rounded-lg p-3">{connectionsError}</div>
+              )}
+
               {connections.map((connection) => (
                 <GhlConnectionCard
                   key={connection.id}
@@ -673,14 +708,19 @@ export default function Settings() {
                     setEditingId(connection.id)
                     setIsAddingNew(false)
                   }}
-                  onSave={(updated) => {
-                    setConnections((prev) =>
-                      prev.map((c) => (c.id === updated.id ? updated : c))
-                    )
-                    setEditingId(null)
+                  onSave={async (data) => {
+                    const res = await ghlApi.updateConnection(connection.id, data)
+                    if (res.data) {
+                      await fetchConnections()
+                      setEditingId(null)
+                    }
+                    return res.error || null
                   }}
-                  onDelete={() => {
-                    setConnections((prev) => prev.filter((c) => c.id !== connection.id))
+                  onDelete={async () => {
+                    const res = await ghlApi.deleteConnection(connection.id)
+                    if (res.data) {
+                      await fetchConnections()
+                    }
                   }}
                   onCancel={() => {
                     setEditingId(null)
@@ -725,8 +765,8 @@ export default function Settings() {
                       </label>
                       <input
                         type="text"
-                        value={newConnection.locationId}
-                        onChange={(e) => setNewConnection((prev) => ({ ...prev, locationId: e.target.value }))}
+                        value={newConnection.location_id}
+                        onChange={(e) => setNewConnection((prev) => ({ ...prev, location_id: e.target.value }))}
                         placeholder="e.g., abc123xyz"
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
                       />
@@ -747,9 +787,10 @@ export default function Settings() {
                       </button>
                       <button
                         onClick={handleAddConnection}
-                        className="flex-1 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors"
+                        disabled={isSavingConnection}
+                        className="flex-1 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors disabled:opacity-50"
                       >
-                        Save
+                        {isSavingConnection ? 'Saving...' : 'Save'}
                       </button>
                     </div>
                   </div>

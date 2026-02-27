@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
-import { Trash2 } from 'lucide-react'
-import type { GhlConnection } from '../hooks/useLocalStorage'
+import { Trash2, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import type { GhlConnectionResponse } from '../utils/api'
 
 interface GhlConnectionCardProps {
-  connection: GhlConnection
+  connection: GhlConnectionResponse
   isEditing: boolean
   onEdit: () => void
-  onSave: (updated: GhlConnection) => void
-  onDelete: () => void
+  onSave: (data: { name?: string; token?: string; location_id?: string }) => Promise<string | null>
+  onDelete: () => Promise<void>
   onCancel: () => void
 }
 
@@ -21,54 +21,66 @@ export default function GhlConnectionCard({
 }: GhlConnectionCardProps) {
   // Form state for edit mode
   const [name, setName] = useState(connection.name)
-  const [token, setToken] = useState(connection.token)
-  const [locationId, setLocationId] = useState(connection.locationId)
+  const [token, setToken] = useState('')
+  const [locationId, setLocationId] = useState(connection.location_id)
   const [validationError, setValidationError] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
-  // Reset form data when connection prop changes (handles card switching)
+  // Reset form data when connection prop changes or editing starts
   useEffect(() => {
     setName(connection.name)
-    setToken(connection.token)
-    setLocationId(connection.locationId)
+    setToken('')
+    setLocationId(connection.location_id)
     setValidationError('')
     setShowDeleteConfirm(false)
-  }, [connection])
+  }, [connection, isEditing])
 
-  const handleSaveClick = () => {
-    // Validate required fields
+  const handleSaveClick = async () => {
     if (name.trim().length === 0 || locationId.trim().length === 0) {
       setValidationError('Connection name and Location ID are required')
       return
     }
 
     setValidationError('')
-    onSave({
-      ...connection,
-      name: name.trim(),
-      token: token.trim(),
-      locationId: locationId.trim(),
-    })
+    setIsSaving(true)
+    try {
+      const data: { name?: string; token?: string; location_id?: string } = {
+        name: name.trim(),
+        location_id: locationId.trim(),
+      }
+      if (token.trim()) {
+        data.token = token.trim()
+      }
+      const error = await onSave(data)
+      if (error) {
+        setValidationError(error)
+      }
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleCancelClick = () => {
-    // Reset form state to original connection data
     setName(connection.name)
-    setToken(connection.token)
-    setLocationId(connection.locationId)
+    setToken('')
+    setLocationId(connection.location_id)
     setValidationError('')
     onCancel()
   }
 
   const handleDeleteClick = (e: React.MouseEvent) => {
-    e.stopPropagation() // Prevent triggering onEdit
+    e.stopPropagation()
     setShowDeleteConfirm(true)
   }
 
-  const handleDeleteConfirm = () => {
-    onDelete()
+  const handleDeleteConfirm = async () => {
+    setIsDeleting(true)
+    await onDelete()
+    setIsDeleting(false)
   }
 
   const handleDeleteCancel = () => {
@@ -84,6 +96,12 @@ export default function GhlConnectionCard({
     })
   }
 
+  const validationIcon = connection.validation_status === 'valid'
+    ? <CheckCircle className="w-4 h-4 text-green-500" />
+    : connection.validation_status === 'invalid'
+      ? <XCircle className="w-4 h-4 text-red-500" />
+      : null
+
   // Display mode
   if (!isEditing) {
     if (showDeleteConfirm) {
@@ -95,15 +113,17 @@ export default function GhlConnectionCard({
           <div className="flex gap-3">
             <button
               onClick={handleDeleteCancel}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+              disabled={isDeleting}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               onClick={handleDeleteConfirm}
-              className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+              disabled={isDeleting}
+              className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm disabled:opacity-50"
             >
-              Delete
+              {isDeleting ? 'Deleting...' : 'Delete'}
             </button>
           </div>
         </div>
@@ -124,10 +144,14 @@ export default function GhlConnectionCard({
         </button>
 
         <div className="pr-8">
-          <h3 className="font-semibold text-gray-900 mb-1">{connection.name}</h3>
-          <p className="text-sm text-gray-500">Location ID: {connection.locationId}</p>
+          <div className="flex items-center gap-2 mb-1">
+            <h3 className="font-semibold text-gray-900">{connection.name}</h3>
+            {validationIcon}
+          </div>
+          <p className="text-sm text-gray-500">Location ID: {connection.location_id}</p>
+          <p className="text-sm text-gray-500">Token: ****{connection.token_last4}</p>
           <p className="text-xs text-gray-400 mt-2">
-            Added {formatDate(connection.createdAt)}
+            Added {formatDate(connection.created_at)}
           </p>
         </div>
       </div>
@@ -159,10 +183,11 @@ export default function GhlConnectionCard({
             type="password"
             value={token}
             onChange={(e) => setToken(e.target.value)}
-            placeholder="Enter token"
+            placeholder="Leave blank to keep current token"
             autoComplete="new-password"
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
           />
+          <p className="text-xs text-gray-500 mt-1">Current token: ****{connection.token_last4}</p>
         </div>
 
         <div>
@@ -187,15 +212,22 @@ export default function GhlConnectionCard({
         <div className="flex gap-3 pt-2">
           <button
             onClick={handleCancelClick}
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            disabled={isSaving}
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onClick={handleSaveClick}
-            className="flex-1 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors"
+            disabled={isSaving}
+            className="flex-1 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors disabled:opacity-50"
           >
-            Save
+            {isSaving ? (
+              <span className="flex items-center justify-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Saving...
+              </span>
+            ) : 'Save'}
           </button>
         </div>
       </div>
