@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, Field
 
@@ -120,3 +121,54 @@ class BulkSendResponse(BaseModel):
     failed_count: int
     skipped_count: int
     results: list[ContactResult]
+
+
+class ErrorCategory(str, Enum):
+    """Error categorization for actionable user feedback."""
+    VALIDATION = "validation"
+    API_ERROR = "api_error"
+    RATE_LIMIT = "rate_limit"
+    NETWORK = "network"
+    UNKNOWN = "unknown"
+
+
+class ProgressEvent(BaseModel):
+    """SSE progress event data."""
+    job_id: str
+    processed: int
+    total: int
+    created: int
+    updated: int
+    failed: int
+    status: str = Field(description="processing | completed | failed | cancelled")
+
+
+class FailedContactDetail(BaseModel):
+    """Failed contact with error category for retry decisions."""
+    mineral_contact_system_id: str
+    error_category: ErrorCategory
+    error_message: str
+    contact_data: dict = Field(default_factory=dict, description="Original contact data for retry")
+
+
+class JobStatusResponse(BaseModel):
+    """Full job status for reconnection and summary display."""
+    job_id: str
+    status: str = Field(description="processing | completed | failed | cancelled")
+    total_count: int = 0
+    processed_count: int = 0
+    created_count: int = 0
+    updated_count: int = 0
+    failed_count: int = 0
+    skipped_count: int = 0
+    failed_contacts: list[FailedContactDetail] = Field(default_factory=list)
+    updated_contacts: list[ContactResult] = Field(default_factory=list, description="Updated contacts for spot-checking")
+    created_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+
+class BulkSendStartResponse(BaseModel):
+    """Response from async bulk-send start (returns immediately)."""
+    job_id: str
+    status: str = "processing"
+    total_count: int

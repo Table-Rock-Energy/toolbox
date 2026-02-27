@@ -66,3 +66,7 @@ phonenumbers>=8.13.0
 
 # Linting (dev only)
 ruff>=0.1.0
+
+# Server-Sent Events for progress streaming
+sse-starlette>=2.0
+anyio>=4.0
