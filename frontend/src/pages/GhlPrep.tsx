@@ -3,7 +3,7 @@ import { Repeat, Download, Upload, AlertCircle, Send, XCircle } from 'lucide-rea
 import { FileUpload, GhlSendModal } from '../components'
 import { useAuth } from '../contexts/AuthContext'
 import { ghlApi } from '../utils/api'
-import type { GhlConnectionResponse, FailedContactDetail } from '../utils/api'
+import type { GhlConnectionResponse, FailedContactDetail, DailyRateLimitInfo } from '../utils/api'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
@@ -38,6 +38,7 @@ export default function GhlPrep() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [connections, setConnections] = useState<GhlConnectionResponse[]>([])
   const [showSendModal, setShowSendModal] = useState(false)
+  const [dailyLimit, setDailyLimit] = useState<DailyRateLimitInfo | null>(null)
 
   // Active job tracking (stored in localStorage for persistence)
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
@@ -62,6 +63,18 @@ export default function GhlPrep() {
     }
     fetchConnections()
   }, [])
+
+  // Fetch daily limit info on mount
+  useEffect(() => {
+    const fetchDailyLimit = async () => {
+      if (connections.length === 0) return
+      const res = await ghlApi.getDailyLimit()
+      if (res.data) {
+        setDailyLimit(res.data)
+      }
+    }
+    fetchDailyLimit()
+  }, [connections])
 
   // Check for active job on mount
   useEffect(() => {
@@ -328,11 +341,16 @@ export default function GhlPrep() {
   }
 
   // Handle modal close (clear activeJobId if job complete)
-  const handleModalClose = () => {
+  const handleModalClose = async () => {
     setShowSendModal(false)
     // Clear activeJobId and localStorage (modal only closes after job completes)
     setActiveJobId(null)
     localStorage.removeItem('ghl_active_job_id')
+    // Refresh daily limit after send completes
+    const res = await ghlApi.getDailyLimit()
+    if (res.data) {
+      setDailyLimit(res.data)
+    }
   }
 
   return (
@@ -429,21 +447,34 @@ export default function GhlPrep() {
                       <Upload className="w-4 h-4" />
                       Upload New File
                     </button>
-                    <button
-                      onClick={() => setShowSendModal(true)}
-                      disabled={connections.length === 0 || (!!activeJobId)}
-                      title={
-                        connections.length === 0
-                          ? 'Add a GHL connection in Settings first'
-                          : activeJobId
-                          ? 'Send in progress'
-                          : 'Send contacts to GoHighLevel'
-                      }
-                      className="flex items-center gap-2 px-3 py-2 bg-tre-teal text-white rounded-lg hover:bg-tre-teal/90 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Send className="w-4 h-4" />
-                      Send to GHL
-                    </button>
+                    <div className="flex flex-col items-end gap-1">
+                      <button
+                        onClick={() => setShowSendModal(true)}
+                        disabled={connections.length === 0 || connections.every(c => c.validation_status !== 'valid') || (!!activeJobId)}
+                        title={
+                          connections.length === 0
+                            ? 'No GHL connection. Configure in Settings.'
+                            : connections.every(c => c.validation_status !== 'valid')
+                            ? 'No valid GHL connection. Configure in Settings.'
+                            : activeJobId
+                            ? 'Send in progress'
+                            : 'Send contacts to GoHighLevel'
+                        }
+                        className="flex items-center gap-2 px-3 py-2 bg-tre-teal text-white rounded-lg hover:bg-tre-teal/90 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Send className="w-4 h-4" />
+                        Send to GHL
+                      </button>
+                      {dailyLimit && connections.length > 0 && (
+                        <p className={`text-xs ${
+                          dailyLimit.warning_level === 'critical' ? 'text-red-600 font-medium' :
+                          dailyLimit.warning_level === 'warning' ? 'text-yellow-600' :
+                          'text-gray-400'
+                        }`}>
+                          Daily capacity: {dailyLimit.remaining.toLocaleString()} remaining
+                        </p>
+                      )}
+                    </div>
                     <button
                       onClick={handleExport}
                       className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"

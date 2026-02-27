@@ -56,11 +56,12 @@ export default function GhlSendModal({
 }: GhlSendModalProps) {
   const [selectedConnectionId, setSelectedConnectionId] = useState('')
   const [campaignTag, setCampaignTag] = useState(defaultTag)
-  const [contactOwner, setContactOwner] = useState('')
+  const [selectedOwners, setSelectedOwners] = useState<string[]>([])
   const [smartListName, setSmartListName] = useState('')
   const [manualSms, setManualSms] = useState(false)
   const [users, setUsers] = useState<GhlUserResponse[]>([])
   const [isLoadingUsers, setIsLoadingUsers] = useState(false)
+  const [credentialError, setCredentialError] = useState<string | null>(null)
 
   // Multi-step flow state
   const [sendStep, setSendStep] = useState<SendStep>('idle')
@@ -81,7 +82,7 @@ export default function GhlSendModal({
       if (!propActiveJobId) {
         setSelectedConnectionId('')
         setCampaignTag(defaultTag)
-        setContactOwner('')
+        setSelectedOwners([])
         setSmartListName('')
         setManualSms(false)
         setUsers([])
@@ -90,6 +91,7 @@ export default function GhlSendModal({
         setSendError(null)
         setShowUpdatedContacts(false)
         setActiveJobId(null)
+        setCredentialError(null)
       } else {
         // Reconnecting to active job
         setActiveJobId(propActiveJobId)
@@ -117,11 +119,31 @@ export default function GhlSendModal({
     }
   }, [sendStep])
 
+  // Quick check credentials when modal opens with a selected connection
+  useEffect(() => {
+    if (isOpen && selectedConnectionId && sendStep === 'idle') {
+      const checkCredentials = async () => {
+        try {
+          const res = await ghlApi.quickCheckConnection(selectedConnectionId)
+          if (res.data && !res.data.valid) {
+            setCredentialError(res.data.error || 'Invalid credentials')
+          } else {
+            setCredentialError(null)
+          }
+        } catch {
+          setCredentialError('Failed to verify credentials')
+        }
+      }
+      checkCredentials()
+    }
+  }, [isOpen, selectedConnectionId, sendStep])
+
   // Fetch users when connection is selected
   useEffect(() => {
     if (!selectedConnectionId) {
       setUsers([])
-      setContactOwner('')
+      setSelectedOwners([])
+      setCredentialError(null)
       return
     }
 
@@ -144,7 +166,7 @@ export default function GhlSendModal({
 
   const selectedConnection = connections.find(c => c.id === selectedConnectionId)
   const selectedConnectionName = selectedConnection?.name || ''
-  const isReadyToValidate = selectedConnectionId && campaignTag && contactCount > 0
+  const isReadyToValidate = selectedConnectionId && campaignTag && contactCount > 0 && !credentialError
 
   // Build bulk send request from form state
   const buildRequest = (): BulkSendRequest => ({
@@ -152,7 +174,7 @@ export default function GhlSendModal({
     contacts: mapRowsToContacts(rows),
     campaign_tag: campaignTag,
     manual_sms: manualSms,
-    assigned_to: contactOwner || undefined,
+    assigned_to_list: selectedOwners.length > 0 ? selectedOwners : undefined,
     smart_list_name: smartListName || undefined,
   })
 
@@ -322,6 +344,7 @@ export default function GhlSendModal({
     // Step 5: Summary
     if (sendStep === 'summary') {
       const failedCount = completionData?.failed || 0
+      const dailyLimitHit = completionData?.dailyLimitHit || false
       return (
         <div className="flex gap-2">
           {failedCount > 0 && (
@@ -329,7 +352,7 @@ export default function GhlSendModal({
               onClick={handleViewFailedContacts}
               className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
             >
-              View Failed Contacts
+              {dailyLimitHit ? 'View Remaining Contacts' : 'View Failed Contacts'}
             </button>
           )}
           <button
@@ -351,6 +374,18 @@ export default function GhlSendModal({
     if (sendStep === 'idle') {
       return (
         <div className="space-y-4">
+          {credentialError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2 text-red-700 text-sm">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium mb-1">GHL connection expired</p>
+                <p>{credentialError}</p>
+                <a href="/settings" className="text-red-800 underline hover:text-red-900 mt-2 inline-block">
+                  Go to Settings to reconnect
+                </a>
+              </div>
+            </div>
+          )}
           {sendError && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2 text-red-700 text-sm">
               <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
@@ -391,36 +426,61 @@ export default function GhlSendModal({
             />
           </div>
 
-          {/* Contact Owner Dropdown */}
+          {/* Contact Owner Multi-Select */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Contact Owner
+              Contact Owner {selectedOwners.length > 0 && `(${selectedOwners.length} selected)`}
             </label>
+            {selectedOwners.length === 2 && (
+              <p className="text-xs text-gray-500 mb-2">
+                Contacts will be split evenly between selected owners
+              </p>
+            )}
             {!selectedConnectionId ? (
-              <select
-                disabled
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
-              >
-                <option>Select a connection first</option>
-              </select>
+              <div className="px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm">
+                Select a connection first
+              </div>
             ) : isLoadingUsers ? (
               <div className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 Loading users...
               </div>
+            ) : users.length === 0 ? (
+              <div className="px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm">
+                No users available
+              </div>
             ) : (
-              <select
-                value={contactOwner}
-                onChange={(e) => setContactOwner(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
-              >
-                <option value="">No owner (optional)</option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name} ({user.email})
-                  </option>
-                ))}
-              </select>
+              <div className="border border-gray-300 rounded-lg p-3 space-y-2 max-h-48 overflow-y-auto">
+                {users.map((user) => {
+                  const isSelected = selectedOwners.includes(user.id)
+                  const isDisabled = !isSelected && selectedOwners.length >= 2
+                  return (
+                    <label
+                      key={user.id}
+                      className={`flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer ${
+                        isDisabled ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        disabled={isDisabled}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedOwners([...selectedOwners, user.id])
+                          } else {
+                            setSelectedOwners(selectedOwners.filter(id => id !== user.id))
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-gray-300 text-tre-teal focus:ring-tre-teal disabled:cursor-not-allowed"
+                      />
+                      <span className="text-sm text-gray-700">
+                        {user.name} ({user.email})
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
             )}
           </div>
 
@@ -501,8 +561,11 @@ export default function GhlSendModal({
           <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
             <p><strong>Sub-Account:</strong> {selectedConnectionName}</p>
             <p><strong>Campaign Tag:</strong> {campaignTag}</p>
-            {contactOwner && (
-              <p><strong>Contact Owner:</strong> {users.find(u => u.id === contactOwner)?.name || 'Unknown'}</p>
+            {selectedOwners.length > 0 && (
+              <p><strong>Contact Owner{selectedOwners.length > 1 ? 's' : ''}:</strong>{' '}
+                {selectedOwners.map(id => users.find(u => u.id === id)?.name || 'Unknown').join(', ')}
+                {selectedOwners.length === 2 && ' (even split)'}
+              </p>
             )}
             {smartListName && (
               <p><strong>SmartList:</strong> {smartListName}</p>
@@ -526,6 +589,15 @@ export default function GhlSendModal({
 
       return (
         <div className="space-y-4">
+          {completionData?.dailyLimitHit && (
+            <div className="p-3 bg-yellow-50 border border-yellow-300 rounded-lg flex items-start gap-2 text-yellow-800 text-sm">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium">Daily limit reached</p>
+                <p>{processed} of {total} contacts sent. Remaining contacts can be sent after midnight UTC.</p>
+              </div>
+            </div>
+          )}
           {sseError && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2 text-red-700 text-sm">
               <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
@@ -574,14 +646,29 @@ export default function GhlSendModal({
       const failed = completionData?.failed || 0
       const status = completionData?.status || 'completed'
       const updatedContacts = completionData?.updated_contacts || []
+      const dailyLimitHit = completionData?.dailyLimitHit || false
 
       return (
         <div className="space-y-4">
+          {dailyLimitHit && (
+            <div className="p-3 bg-yellow-50 border border-yellow-300 rounded-lg flex items-start gap-2 text-yellow-800 text-sm">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium">Daily limit reached</p>
+                <p>{created + updated} of {contactCount} contacts sent. Remaining contacts can be sent after midnight UTC.</p>
+              </div>
+            </div>
+          )}
           <div className="text-center py-4">
             {status === 'cancelled' ? (
               <>
                 <XCircle className="w-12 h-12 text-amber-600 mx-auto mb-3" />
                 <h3 className="text-lg font-medium text-gray-900">Send Cancelled</h3>
+              </>
+            ) : dailyLimitHit ? (
+              <>
+                <AlertCircle className="w-12 h-12 text-yellow-600 mx-auto mb-3" />
+                <h3 className="text-lg font-medium text-gray-900">Partial Send (Daily Limit)</h3>
               </>
             ) : (
               <>
