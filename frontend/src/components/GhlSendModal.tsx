@@ -9,9 +9,7 @@ import type {
   BulkContactData,
   BulkSendRequest,
   BulkSendValidationResponse,
-  BulkSendStartResponse,
   FailedContactDetail,
-  ContactResult
 } from '../utils/api'
 
 interface GhlSendModalProps {

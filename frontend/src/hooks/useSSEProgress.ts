@@ -15,7 +15,7 @@ interface CompletionData {
   failed: number
   failed_contacts: Array<{
     mineral_contact_system_id: string
-    error_category: string
+    error_category: 'validation' | 'api_error' | 'rate_limit' | 'network' | 'unknown'
     error_message: string
     contact_data: Record<string, string>
   }>

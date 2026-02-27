@@ -46,13 +46,6 @@ export default function GhlPrep() {
   // Failed contacts management
   const [viewMode, setViewMode] = useState<ViewMode>('normal')
   const [failedContacts, setFailedContacts] = useState<FailedContactDetail[]>([])
-  const [originalSendSettings, setOriginalSendSettings] = useState<{
-    campaignTag: string
-    contactOwner: string
-    smartListName: string
-    manualSms: boolean
-  } | null>(null)
-
   // Fetch GHL connections from backend
   useEffect(() => {
     const fetchConnections = async () => {
@@ -118,11 +111,11 @@ export default function GhlPrep() {
   }, [result, viewMode, failedContacts])
 
   // Current rows being displayed
-  const currentRows = useMemo(() => {
+  const currentRows: Record<string, string>[] = useMemo(() => {
     if (viewMode === 'failed-contacts' && failedContacts.length > 0) {
       return failedContacts.map(fc => ({
         ...fc.contact_data,
-        'Error Category': fc.error_category,
+        'Error Category': fc.error_category as string,
         'Error Message': fc.error_message,
       }))
     }
