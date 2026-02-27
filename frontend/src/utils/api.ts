@@ -332,6 +332,10 @@ export interface BulkContactData {
   last_name?: string
   email?: string
   phone?: string
+  phone2?: string
+  phone3?: string
+  phone4?: string
+  phone5?: string
   address1?: string
   city?: string
   state?: string

@@ -324,12 +324,19 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
 
     # 5b. Rename columns to match GHL field names for auto-mapping
     rename_map = {}
+    existing_cols_lower = {c.lower() for c in df.columns}
     for col in df.columns:
         cl = col.lower()
         if cl.startswith("phone") and "purchased data" in cl:
             # "Phone 1 (Purchased Data)" -> "Phone 1", etc.
             num = cl.split()[1] if len(cl.split()) > 1 else ""
-            rename_map[col] = f"Phone {num}" if num else col
+            new_name = f"Phone {num}" if num else col
+            # Only rename if it won't create a duplicate column name
+            if new_name.lower() not in existing_cols_lower:
+                rename_map[col] = new_name
+                existing_cols_lower.add(new_name.lower())
+            else:
+                logger.info("Skipping rename '%s' -> '%s' (duplicate)", col, new_name)
         elif "bankruptcy" in cl:
             rename_map[col] = "Bankruptcy"
         elif "deceased" in cl:
@@ -352,8 +359,8 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
         logger.info("Dropped columns: %s", cols_to_drop)
 
     # 7. Reorder columns:
-    #    Regular cols -> Phone 1-5 (Purchased Data) -> Flag cols -> Campaign System Id -> Mineral Contact System Id
-    purchased_phone_cols = []  # Phone 1-5 (Purchased Data)
+    #    Regular cols -> Phone 2-5 -> Flag cols -> Campaign System Id -> Mineral Contact System Id
+    extra_phone_cols = []      # Phone 2-5 (renamed or original)
     flag_cols = []             # Bankruptcy, Deceased, Lien
     campaign_system_col = []   # Campaign System Id
     mineral_system_col = []    # Mineral Contact System Id (very last)
@@ -361,8 +368,9 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
 
     for col in df.columns:
         cl = col.lower()
-        if cl.startswith("phone") and "purchased data" in cl:
-            purchased_phone_cols.append(col)
+        # Match "Phone 2" through "Phone 9" or "Phone N (Purchased Data)" variants
+        if re.match(r"^phone\s+[2-9]", cl):
+            extra_phone_cols.append(col)
         elif any(kw in cl for kw in ("bankruptcy", "deceased", "lien")):
             flag_cols.append(col)
         elif "campaign system" in cl:
@@ -372,11 +380,46 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
         else:
             regular_cols.append(col)
 
-    # Sort purchased phone cols by number (Phone 1, Phone 2, ... Phone 5)
-    purchased_phone_cols.sort(key=lambda c: c.lower())
+    # Sort extra phone cols by number (Phone 2, Phone 3, ... Phone 5)
+    extra_phone_cols.sort(key=lambda c: c.lower())
 
-    new_order = regular_cols + purchased_phone_cols + flag_cols + campaign_system_col + mineral_system_col
+    new_order = regular_cols + extra_phone_cols + flag_cols + campaign_system_col + mineral_system_col
     df = df[new_order]
+
+    # 8. Ensure Phone 2-5 columns always exist (even if source CSV lacks them)
+    for phone_num in range(2, 6):
+        col_name = f"Phone {phone_num}"
+        if col_name not in df.columns:
+            # Insert after the last phone-related column in the current order
+            df[col_name] = ""
+            logger.info("Added missing column '%s' with empty values", col_name)
+
+    # Re-run column ordering to place newly added Phone columns correctly
+    extra_phone_cols_final = []
+    flag_cols_final = []
+    campaign_system_col_final = []
+    mineral_system_col_final = []
+    regular_cols_final = []
+
+    for col in df.columns:
+        cl = col.lower()
+        if re.match(r"^phone\s+[2-9]", cl):
+            extra_phone_cols_final.append(col)
+        elif any(kw in cl for kw in ("bankruptcy", "deceased", "lien")):
+            flag_cols_final.append(col)
+        elif "campaign system" in cl:
+            campaign_system_col_final.append(col)
+        elif "mineral" in cl and "system" in cl:
+            mineral_system_col_final.append(col)
+        else:
+            regular_cols_final.append(col)
+
+    extra_phone_cols_final.sort(key=lambda c: c.lower())
+    final_order = regular_cols_final + extra_phone_cols_final + flag_cols_final + campaign_system_col_final + mineral_system_col_final
+    df = df[final_order]
+
+    # Replace NaN with empty string to avoid JSON serialization issues
+    df = df.fillna("")
 
     # Convert to list of dicts (preserves column order)
     rows = df.to_dict(orient="records")

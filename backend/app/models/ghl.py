@@ -81,6 +81,10 @@ class BulkContactData(BaseModel):
     last_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    phone2: Optional[str] = None
+    phone3: Optional[str] = None
+    phone4: Optional[str] = None
+    phone5: Optional[str] = None
     address1: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
