@@ -18,9 +18,12 @@ import {
   RefreshCw,
   Copy,
   Lock,
+  Link2,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { enrichmentApi } from '../utils/api'
+import { enrichmentApi, ghlApi } from '../utils/api'
+import { GhlConnectionCard } from '../components'
+import type { GhlConnectionResponse } from '../utils/api'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
@@ -117,12 +120,74 @@ export default function AdminSettings() {
   const [pdlConfigured, setPdlConfigured] = useState(false)
   const [searchbugConfigured, setSearchbugConfigured] = useState(false)
 
+  // GHL Connections state
+  const [connections, setConnections] = useState<GhlConnectionResponse[]>([])
+  const [isLoadingConnections, setIsLoadingConnections] = useState(false)
+  const [connectionsError, setConnectionsError] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [isAddingNew, setIsAddingNew] = useState(false)
+  const [newConnection, setNewConnection] = useState({ name: '', token: '', location_id: '' })
+  const [newConnectionError, setNewConnectionError] = useState('')
+  const [isSavingConnection, setIsSavingConnection] = useState(false)
+
+  const fetchConnections = async () => {
+    setIsLoadingConnections(true)
+    setConnectionsError('')
+    try {
+      const res = await ghlApi.listConnections()
+      if (res.data) {
+        setConnections(res.data.connections)
+      } else if (res.error) {
+        setConnectionsError(res.error)
+      }
+    } catch {
+      setConnectionsError('Failed to load connections')
+    } finally {
+      setIsLoadingConnections(false)
+    }
+  }
+
+  const handleAddConnection = async () => {
+    if (newConnection.name.trim().length === 0 || newConnection.location_id.trim().length === 0) {
+      setNewConnectionError('Connection name and Location ID are required')
+      return
+    }
+
+    setIsSavingConnection(true)
+    setNewConnectionError('')
+    try {
+      const res = await ghlApi.createConnection({
+        name: newConnection.name.trim(),
+        token: newConnection.token.trim(),
+        location_id: newConnection.location_id.trim(),
+      })
+      if (res.data) {
+        await fetchConnections()
+        setNewConnection({ name: '', token: '', location_id: '' })
+        setIsAddingNew(false)
+      } else if (res.error) {
+        setNewConnectionError(res.error)
+      }
+    } catch {
+      setNewConnectionError('Failed to create connection')
+    } finally {
+      setIsSavingConnection(false)
+    }
+  }
+
+  const handleCancelAdd = () => {
+    setNewConnection({ name: '', token: '', location_id: '' })
+    setNewConnectionError('')
+    setIsAddingNew(false)
+  }
+
   useEffect(() => {
     fetchUsers()
     fetchOptions()
     fetchGeminiSettings()
     fetchGoogleMapsSettings()
     loadEnrichmentConfig()
+    fetchConnections()
   }, [])
 
   const fetchUsers = async () => {
@@ -949,6 +1014,143 @@ export default function AdminSettings() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* GoHighLevel Connections */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Link2 className="w-5 h-5 text-tre-navy" />
+            <h2 className="text-lg font-oswald font-semibold text-tre-navy">
+              GoHighLevel Connections
+            </h2>
+          </div>
+          <button
+            onClick={() => {
+              setIsAddingNew(true)
+              setEditingId(null)
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add Connection
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {isLoadingConnections && (
+            <div className="text-center py-4 text-gray-500 text-sm">Loading connections...</div>
+          )}
+
+          {connectionsError && (
+            <div className="text-sm text-red-600 bg-red-50 rounded-lg p-3">{connectionsError}</div>
+          )}
+
+          {connections.map((connection) => (
+            <GhlConnectionCard
+              key={connection.id}
+              connection={connection}
+              isEditing={editingId === connection.id}
+              onEdit={() => {
+                setEditingId(connection.id)
+                setIsAddingNew(false)
+              }}
+              onSave={async (data) => {
+                const res = await ghlApi.updateConnection(connection.id, data)
+                if (res.data) {
+                  await fetchConnections()
+                  setEditingId(null)
+                }
+                return res.error || null
+              }}
+              onDelete={async () => {
+                const res = await ghlApi.deleteConnection(connection.id)
+                if (res.data) {
+                  await fetchConnections()
+                }
+              }}
+              onCancel={() => {
+                setEditingId(null)
+              }}
+            />
+          ))}
+
+          {/* Add new connection form */}
+          {isAddingNew && (
+            <div className="bg-gray-50 rounded-lg p-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Connection Name
+                  </label>
+                  <input
+                    type="text"
+                    value={newConnection.name}
+                    onChange={(e) => setNewConnection((prev) => ({ ...prev, name: e.target.value }))}
+                    placeholder="e.g., Main Account"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Private Integration Token
+                  </label>
+                  <input
+                    type="password"
+                    value={newConnection.token}
+                    onChange={(e) => setNewConnection((prev) => ({ ...prev, token: e.target.value }))}
+                    placeholder="Enter token"
+                    autoComplete="new-password"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Location ID
+                  </label>
+                  <input
+                    type="text"
+                    value={newConnection.location_id}
+                    onChange={(e) => setNewConnection((prev) => ({ ...prev, location_id: e.target.value }))}
+                    placeholder="e.g., abc123xyz"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
+                  />
+                </div>
+
+                {newConnectionError && (
+                  <div className="text-sm text-red-600 bg-red-50 rounded-lg p-3">
+                    {newConnectionError}
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={handleCancelAdd}
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAddConnection}
+                    disabled={isSavingConnection}
+                    className="flex-1 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors disabled:opacity-50"
+                  >
+                    {isSavingConnection ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Empty state */}
+          {connections.length === 0 && !isAddingNew && !isLoadingConnections && (
+            <div className="text-center py-8 text-gray-500 text-sm">
+              No connections configured. Click "Add Connection" to get started.
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Add/Edit User Modal */}

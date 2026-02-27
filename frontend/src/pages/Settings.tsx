@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Settings as SettingsIcon, User, Bell, Shield, Database, Check, AlertCircle, Upload, Link2, Plus } from 'lucide-react'
+import { Settings as SettingsIcon, User, Bell, Shield, Database, Check, AlertCircle, Upload } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import {
   updatePassword,
@@ -7,10 +7,6 @@ import {
   EmailAuthProvider,
   reauthenticateWithCredential,
 } from 'firebase/auth'
-import { GhlConnectionCard } from '../components'
-import { ghlApi } from '../utils/api'
-import type { GhlConnectionResponse } from '../utils/api'
-
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Settings() {
@@ -20,7 +16,6 @@ export default function Settings() {
   const profileRef = useRef<HTMLDivElement>(null)
   const securityRef = useRef<HTMLDivElement>(null)
   const notificationsRef = useRef<HTMLDivElement>(null)
-  const ghlRef = useRef<HTMLDivElement>(null)
   const dataRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -112,38 +107,6 @@ export default function Settings() {
   const [passwordSuccess, setPasswordSuccess] = useState('')
 
   const isGoogleUser = user?.providerData?.[0]?.providerId === 'google.com'
-
-  // GHL Connections state
-  const [connections, setConnections] = useState<GhlConnectionResponse[]>([])
-  const [isLoadingConnections, setIsLoadingConnections] = useState(false)
-  const [connectionsError, setConnectionsError] = useState('')
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [isAddingNew, setIsAddingNew] = useState(false)
-  const [newConnection, setNewConnection] = useState({ name: '', token: '', location_id: '' })
-  const [newConnectionError, setNewConnectionError] = useState('')
-  const [isSavingConnection, setIsSavingConnection] = useState(false)
-
-  // Fetch GHL connections from backend
-  const fetchConnections = async () => {
-    setIsLoadingConnections(true)
-    setConnectionsError('')
-    try {
-      const res = await ghlApi.listConnections()
-      if (res.data) {
-        setConnections(res.data.connections)
-      } else if (res.error) {
-        setConnectionsError(res.error)
-      }
-    } catch {
-      setConnectionsError('Failed to load connections')
-    } finally {
-      setIsLoadingConnections(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchConnections()
-  }, [])
 
   const scrollToSection = (ref: React.RefObject<HTMLDivElement | null>) => {
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -282,45 +245,10 @@ export default function Settings() {
     }
   }
 
-  const handleAddConnection = async () => {
-    if (newConnection.name.trim().length === 0 || newConnection.location_id.trim().length === 0) {
-      setNewConnectionError('Connection name and Location ID are required')
-      return
-    }
-
-    setIsSavingConnection(true)
-    setNewConnectionError('')
-    try {
-      const res = await ghlApi.createConnection({
-        name: newConnection.name.trim(),
-        token: newConnection.token.trim(),
-        location_id: newConnection.location_id.trim(),
-      })
-      if (res.data) {
-        await fetchConnections()
-        setNewConnection({ name: '', token: '', location_id: '' })
-        setIsAddingNew(false)
-      } else if (res.error) {
-        setNewConnectionError(res.error)
-      }
-    } catch {
-      setNewConnectionError('Failed to create connection')
-    } finally {
-      setIsSavingConnection(false)
-    }
-  }
-
-  const handleCancelAdd = () => {
-    setNewConnection({ name: '', token: '', location_id: '' })
-    setNewConnectionError('')
-    setIsAddingNew(false)
-  }
-
   const navItems = [
     { id: 'profile', label: 'Profile', icon: User, ref: profileRef },
     { id: 'security', label: 'Security', icon: Shield, ref: securityRef },
     { id: 'notifications', label: 'Notifications', icon: Bell, ref: notificationsRef },
-    { id: 'ghl', label: 'GoHighLevel', icon: Link2, ref: ghlRef },
     { id: 'data', label: 'Data & Storage', icon: Database, ref: dataRef },
   ]
 
@@ -668,141 +596,6 @@ export default function Settings() {
                   {isSavingNotifications ? 'Saving...' : 'Save Notifications'}
                 </button>
               </div>
-            </div>
-          </div>
-
-          {/* GoHighLevel Connections Section */}
-          <div ref={ghlRef} className="bg-white rounded-xl border border-gray-200 p-6 scroll-mt-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-oswald font-semibold text-tre-navy">
-                GoHighLevel Connections
-              </h2>
-              <button
-                onClick={() => {
-                  setIsAddingNew(true)
-                  setEditingId(null)
-                }}
-                className="flex items-center gap-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm hover:bg-gray-50 transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Add Connection
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {/* Existing connections */}
-              {isLoadingConnections && (
-                <div className="text-center py-4 text-gray-500 text-sm">Loading connections...</div>
-              )}
-
-              {connectionsError && (
-                <div className="text-sm text-red-600 bg-red-50 rounded-lg p-3">{connectionsError}</div>
-              )}
-
-              {connections.map((connection) => (
-                <GhlConnectionCard
-                  key={connection.id}
-                  connection={connection}
-                  isEditing={editingId === connection.id}
-                  onEdit={() => {
-                    setEditingId(connection.id)
-                    setIsAddingNew(false)
-                  }}
-                  onSave={async (data) => {
-                    const res = await ghlApi.updateConnection(connection.id, data)
-                    if (res.data) {
-                      await fetchConnections()
-                      setEditingId(null)
-                    }
-                    return res.error || null
-                  }}
-                  onDelete={async () => {
-                    const res = await ghlApi.deleteConnection(connection.id)
-                    if (res.data) {
-                      await fetchConnections()
-                    }
-                  }}
-                  onCancel={() => {
-                    setEditingId(null)
-                  }}
-                />
-              ))}
-
-              {/* Add new connection form */}
-              {isAddingNew && (
-                <div className="bg-white rounded-xl border border-gray-200 p-6">
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Connection Name
-                      </label>
-                      <input
-                        type="text"
-                        value={newConnection.name}
-                        onChange={(e) => setNewConnection((prev) => ({ ...prev, name: e.target.value }))}
-                        placeholder="e.g., Main Account"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Private Integration Token
-                      </label>
-                      <input
-                        type="password"
-                        value={newConnection.token}
-                        onChange={(e) => setNewConnection((prev) => ({ ...prev, token: e.target.value }))}
-                        placeholder="Enter token"
-                        autoComplete="new-password"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Location ID
-                      </label>
-                      <input
-                        type="text"
-                        value={newConnection.location_id}
-                        onChange={(e) => setNewConnection((prev) => ({ ...prev, location_id: e.target.value }))}
-                        placeholder="e.g., abc123xyz"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
-                      />
-                    </div>
-
-                    {newConnectionError && (
-                      <div className="text-sm text-red-600 bg-red-50 rounded-lg p-3">
-                        {newConnectionError}
-                      </div>
-                    )}
-
-                    <div className="flex gap-3 pt-2">
-                      <button
-                        onClick={handleCancelAdd}
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleAddConnection}
-                        disabled={isSavingConnection}
-                        className="flex-1 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors disabled:opacity-50"
-                      >
-                        {isSavingConnection ? 'Saving...' : 'Save'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Empty state */}
-              {connections.length === 0 && !isAddingNew && (
-                <div className="text-center py-8 text-gray-500 text-sm">
-                  No connections configured. Click "Add Connection" to get started.
-                </div>
-              )}
             </div>
           </div>
 
