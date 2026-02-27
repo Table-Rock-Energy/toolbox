@@ -6,13 +6,18 @@ Provides endpoints for GHL connection management and contact operations:
 - Connection validation
 - User listing for contact owner dropdown
 - Single contact upsert
+- Bulk contact send with async processing
+- SSE progress streaming
+- Job cancellation
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sse_starlette import EventSourceResponse
 
 from app.core.auth import require_auth
 from app.models.ghl import (
@@ -26,7 +31,11 @@ from app.models.ghl import (
     BulkSendRequest,
     BulkSendResponse,
     BulkSendValidationResponse,
+    BulkSendStartResponse,
     ContactResult,
+    ProgressEvent,
+    JobStatusResponse,
+    FailedContactDetail,
 )
 
 logger = logging.getLogger(__name__)
@@ -303,14 +312,14 @@ async def validate_batch_endpoint(
 async def bulk_send_endpoint(
     data: BulkSendRequest,
     user: dict = Depends(require_auth),
-) -> BulkSendResponse:
-    """Send a batch of contacts to GHL.
+) -> BulkSendStartResponse:
+    """Start an async bulk contact send job.
 
-    Validates contacts, processes valid ones through GHL API, and persists job results.
+    Validates contacts, creates job in Firestore, and starts background processing.
+    Returns immediately with job_id. Use /send/{job_id}/progress to stream progress.
     """
-    from app.services.ghl.bulk_send_service import validate_batch, process_batch, persist_send_job
+    from app.services.ghl.bulk_send_service import validate_batch, process_batch_async, create_send_job
     from app.utils.helpers import generate_uid
-    from app.services.ghl.client import GHLAPIError, GHLAuthError, GHLRateLimitError
 
     try:
         # Generate job ID
@@ -325,64 +334,49 @@ async def bulk_send_endpoint(
         if data.manual_sms:
             tags.append("manual sms")
 
-        # Step 3: Process valid contacts (skip if all invalid)
-        processing_results = {"created_count": 0, "updated_count": 0, "failed_count": 0, "results": []}
-
-        if valid_contacts:
-            processing_results = await process_batch(
-                connection_id=data.connection_id,
-                contacts=valid_contacts,
-                tags=tags,
-                assigned_to=data.assigned_to,
-            )
-
-        # Step 4: Combine results (invalid + processing)
-        all_results = invalid_results + processing_results.get("results", [])
-
-        # Calculate final counts
-        created_count = processing_results.get("created_count", 0)
-        updated_count = processing_results.get("updated_count", 0)
-        failed_count = processing_results.get("failed_count", 0)
+        # Step 3: Calculate totals
         skipped_count = len(invalid_results)
-        total_count = created_count + updated_count + failed_count + skipped_count
+        total_valid = len(valid_contacts)
+        total_count = total_valid + skipped_count
 
-        # Step 5: Persist job
-        result_data = {
-            "created_count": created_count,
-            "updated_count": updated_count,
-            "failed_count": failed_count,
-            "skipped_count": skipped_count,
-            "total_count": total_count,
-            "results": all_results,
-        }
-
+        # Step 4: Create job in Firestore
         campaign_name = data.smart_list_name or data.campaign_tag
-        await persist_send_job(
+        await create_send_job(
             job_id=job_id,
             connection_id=data.connection_id,
             campaign_name=campaign_name,
-            result_data=result_data,
+            total_count=total_count,
+            skipped_count=skipped_count,
             user_id=user.get("email"),
         )
 
-        # Step 6: Return response
-        return BulkSendResponse(
+        # Step 5: Start background processing (fire and forget)
+        if valid_contacts:
+            asyncio.create_task(
+                process_batch_async(
+                    job_id=job_id,
+                    connection_id=data.connection_id,
+                    contacts=valid_contacts,
+                    tags=tags,
+                    assigned_to=data.assigned_to,
+                )
+            )
+        else:
+            # No valid contacts - mark job as completed immediately
+            from app.services.firestore_service import get_firestore_client
+            db = get_firestore_client()
+            doc_ref = db.collection("jobs").document(job_id)
+            await doc_ref.update({
+                "status": "completed",
+                "completed_at": asyncio.get_event_loop().time(),
+            })
+
+        # Step 6: Return response immediately
+        return BulkSendStartResponse(
             job_id=job_id,
+            status="processing",
             total_count=total_count,
-            created_count=created_count,
-            updated_count=updated_count,
-            failed_count=failed_count,
-            skipped_count=skipped_count,
-            results=[ContactResult(**r) for r in all_results],
         )
-
-    except GHLAuthError as e:
-        logger.warning(f"GHL auth error during bulk send: {e}")
-        raise HTTPException(status_code=401, detail=str(e))
-
-    except GHLRateLimitError as e:
-        logger.warning(f"GHL rate limit error during bulk send: {e}")
-        raise HTTPException(status_code=429, detail=str(e))
 
     except ValueError as e:
         # Connection not found or validation error
@@ -390,5 +384,161 @@ async def bulk_send_endpoint(
         raise HTTPException(status_code=400, detail=str(e))
 
     except Exception as e:
-        logger.exception(f"Error during bulk send: {e}")
+        logger.exception(f"Error starting bulk send: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/send/{job_id}/progress")
+async def stream_send_progress(job_id: str, request: Request):
+    """Stream SSE progress events for a bulk send job.
+
+    Polls Firestore every 300ms for job status and yields progress events.
+    When job completes, yields a final 'complete' event with full results.
+    No auth required (job_id is UUID for security-through-obscurity).
+    """
+    from app.services.ghl.bulk_send_service import get_job_status
+    import json
+
+    async def event_generator():
+        """Generate SSE events from Firestore polling."""
+        previous_processed = -1
+
+        while True:
+            # Check if client disconnected
+            if await request.is_disconnected():
+                logger.info(f"Client disconnected from SSE stream for job {job_id}")
+                break
+
+            # Fetch job status from Firestore
+            job_data = await get_job_status(job_id)
+
+            if job_data is None:
+                # Job not found - send error and close
+                yield {
+                    "event": "error",
+                    "id": f"{job_id}-notfound",
+                    "data": json.dumps({"error": "Job not found"}),
+                }
+                break
+
+            # Extract progress data
+            status = job_data.get("status", "processing")
+            processed = job_data.get("processed_count", 0)
+            total = job_data.get("total_count", 0)
+            created = job_data.get("created_count", 0)
+            updated = job_data.get("updated_count", 0)
+            failed = job_data.get("failed_count", 0)
+
+            # Only send progress event if processed count changed
+            if processed != previous_processed:
+                progress_event = ProgressEvent(
+                    job_id=job_id,
+                    processed=processed,
+                    total=total,
+                    created=created,
+                    updated=updated,
+                    failed=failed,
+                    status=status,
+                )
+
+                yield {
+                    "event": "progress",
+                    "id": f"{job_id}-{processed}",
+                    "data": progress_event.model_dump_json(),
+                }
+
+                previous_processed = processed
+
+            # Check if job is complete
+            if status in ("completed", "failed", "cancelled"):
+                # Send final complete event with full results
+                failed_contacts_data = job_data.get("failed_contacts", [])
+                updated_contacts_data = job_data.get("updated_contacts", [])
+
+                # Convert to Pydantic models
+                failed_contacts = [FailedContactDetail(**fc) for fc in failed_contacts_data]
+                updated_contacts = [ContactResult(**uc) for uc in updated_contacts_data]
+
+                job_status = JobStatusResponse(
+                    job_id=job_id,
+                    status=status,
+                    total_count=total,
+                    processed_count=processed,
+                    created_count=created,
+                    updated_count=updated,
+                    failed_count=failed,
+                    skipped_count=job_data.get("skipped_count", 0),
+                    failed_contacts=failed_contacts,
+                    updated_contacts=updated_contacts,
+                    created_at=job_data.get("created_at"),
+                    completed_at=job_data.get("completed_at"),
+                )
+
+                yield {
+                    "event": "complete",
+                    "id": f"{job_id}-complete",
+                    "data": job_status.model_dump_json(),
+                }
+
+                logger.info(f"Job {job_id} SSE stream complete with status: {status}")
+                break
+
+            # Poll every 300ms
+            await asyncio.sleep(0.3)
+
+    return EventSourceResponse(event_generator())
+
+
+@router.post("/send/{job_id}/cancel")
+async def cancel_send(job_id: str, user: dict = Depends(require_auth)):
+    """Cancel a running bulk send job.
+
+    Sets cancellation flag in Firestore. The background task will check this flag
+    before processing each contact and stop gracefully.
+    """
+    from app.services.ghl.bulk_send_service import cancel_job
+
+    cancelled = await cancel_job(job_id)
+
+    if not cancelled:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    return {"cancelled": True}
+
+
+@router.get("/send/{job_id}/status")
+async def get_send_status(job_id: str, user: dict = Depends(require_auth)):
+    """Get full status of a bulk send job.
+
+    Used by frontend to check if there's an active job on page load (reconnection).
+    Returns full job status including failed contacts and updated contacts.
+    """
+    from app.services.ghl.bulk_send_service import get_job_status
+
+    job_data = await get_job_status(job_id)
+
+    if job_data is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Convert to JobStatusResponse
+    failed_contacts_data = job_data.get("failed_contacts", [])
+    updated_contacts_data = job_data.get("updated_contacts", [])
+
+    # Convert to Pydantic models
+    failed_contacts = [FailedContactDetail(**fc) for fc in failed_contacts_data]
+    updated_contacts = [ContactResult(**uc) for uc in updated_contacts_data]
+
+    return JobStatusResponse(
+        job_id=job_data.get("job_id", job_id),
+        status=job_data.get("status", "unknown"),
+        total_count=job_data.get("total_count", 0),
+        processed_count=job_data.get("processed_count", 0),
+        created_count=job_data.get("created_count", 0),
+        updated_count=job_data.get("updated_count", 0),
+        failed_count=job_data.get("failed_count", 0),
+        skipped_count=job_data.get("skipped_count", 0),
+        failed_contacts=failed_contacts,
+        updated_contacts=updated_contacts,
+        created_at=job_data.get("created_at"),
+        completed_at=job_data.get("completed_at"),
+    )
