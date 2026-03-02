@@ -119,8 +119,15 @@ toolbox/
 │   │       └── helpers.py      # Date/decimal parsing, UID generation
 │   ├── data/                   # Local data storage (RRC CSVs, uploads)
 │   └── requirements.txt
+├── .claude/                    # Claude Code config (agents, skills, hooks)
 ├── .github/workflows/
 │   └── deploy.yml              # CI/CD: push to main → Cloud Run
+├── test-data/                  # Test fixtures by tool (gitignored)
+│   ├── extract/                # Sample OCC PDFs + CSV
+│   ├── title/                  # Sample Excel files
+│   ├── proration/              # Sample mineral holder files
+│   ├── revenue/                # Sample revenue PDFs + M1 CSV
+│   └── ghl/                    # Sample GHL CSV
 ├── Dockerfile                  # Multi-stage: Node build + Python runtime
 ├── docker-compose.yml          # Dev: PostgreSQL + backend + frontend
 └── Makefile                    # Development commands
@@ -290,4 +297,5 @@ make deploy
 - RRC website requires a custom SSL adapter due to outdated SSL configuration — see `rrc_data_service.py`
 - Firestore batch operations commit every 500 documents (Firestore limit)
 - The frontend Vite dev server proxies `/api` requests to `http://localhost:8000` — no CORS issues in dev
-- Legacy standalone tools exist at `../okextract/`, `../proration/`, `../revenue/`, `../title/` but `toolbox/` is the active consolidated version
+- `test-data/` is gitignored — copy test fixtures locally, not committed to repo
+- Legacy standalone tools have been moved to `../legacy/` for safekeeping

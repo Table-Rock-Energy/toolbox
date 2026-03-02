@@ -71,3 +71,16 @@ backend/data/*.csv
 # Logs
 logs/
 *.log
+
+# Test data (local only)
+test-data/
+
+# GSD planning files
+.planning/
+
+# IDE config
+.cursor/
+
+# Temp artifacts
+exportGrid_*.csv
+test_ghl_upload.csv
