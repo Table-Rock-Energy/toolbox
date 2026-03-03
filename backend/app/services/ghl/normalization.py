@@ -115,13 +115,14 @@ def normalize_contact(data: dict) -> dict:
     if "email" in data:
         normalized["email"] = normalize_email(data["email"])
 
-    # Normalize phone
-    if "phone" in data:
-        normalized["phone"] = normalize_phone(data["phone"])
+    # Normalize phone fields
+    for phone_key in ["phone", "phone_1", "phone_2", "phone_3", "phone_4", "phone_5"]:
+        if phone_key in data:
+            normalized[phone_key] = normalize_phone(data[phone_key])
 
     # Pass through other fields unchanged
     for key, value in data.items():
-        if key not in ["first_name", "last_name", "email", "phone"]:
+        if key not in ["first_name", "last_name", "email", "phone", "phone_1", "phone_2", "phone_3", "phone_4", "phone_5"]:
             normalized[key] = value
 
     return normalized

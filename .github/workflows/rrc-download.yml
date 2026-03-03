@@ -1,0 +1,42 @@
+name: Monthly RRC Data Download
+
+on:
+  schedule:
+    # 1st of every month at 8:00 AM UTC (2:00 AM CST)
+    - cron: '0 8 1 * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force download even if data is current'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  trigger-rrc-download:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_INPUT: ${{ github.event.inputs.force || 'true' }}
+    steps:
+      - name: Trigger RRC data download
+        run: |
+          echo "Triggering RRC download (force=$FORCE_INPUT)..."
+
+          HTTP_STATUS=$(curl -s -o response.json -w "%{http_code}" \
+            -X POST "https://tools.tablerocktx.com/api/proration/rrc/download?force=$FORCE_INPUT" \
+            -H "Content-Type: application/json" \
+            --max-time 540)
+
+          echo "HTTP Status: $HTTP_STATUS"
+          echo "Response:"
+          cat response.json | python3 -m json.tool 2>/dev/null || cat response.json
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "RRC download triggered successfully"
+          else
+            echo "RRC download failed with status $HTTP_STATUS"
+            exit 1
+          fi

@@ -20,6 +20,23 @@ from app.services.ghl.normalization import normalize_contact, validate_contact
 
 logger = logging.getLogger(__name__)
 
+# Map our field names to GHL custom field keys (contact.* template variables)
+CUSTOM_FIELD_MAP = {
+    "mineral_contact_system_id": "contact.m1neral_contact_system_id",
+    "phone_1": "contact.phone_1",
+    "phone_2": "contact.phone_2",
+    "phone_3": "contact.phone_3",
+    "phone_4": "contact.phone_4",
+    "phone_5": "contact.phone_5",
+    "county": "contact.county",
+    "territory": "contact.territory",
+    "campaign_name": "contact.campaign",
+    "bankruptcy": "contact.bankruptcy",
+    "deceased": "contact.deceased",
+    "lien": "contact.lien",
+    "campaign_system_id": "contact.campaign_system_id",
+}
+
 
 # Custom exceptions
 class GHLAPIError(Exception):
@@ -353,6 +370,16 @@ class GHLClient:
 
         if normalized.get("assigned_to"):
             ghl_data["assignedTo"] = normalized["assigned_to"]
+
+        # Build customFields array for non-standard fields
+        custom_fields = []
+        for our_key, ghl_key in CUSTOM_FIELD_MAP.items():
+            value = normalized.get(our_key)
+            if value:
+                custom_fields.append({"key": ghl_key, "field_value": value})
+
+        if custom_fields:
+            ghl_data["customFields"] = custom_fields
 
         # Search by email first (if available)
         if normalized.get("email"):

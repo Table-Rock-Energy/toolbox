@@ -233,17 +233,29 @@ export default function GhlPrep() {
       return
     }
 
-    // Generate CSV content
+    // Generate CSV content — include all contact fields plus error info
     const headers = [
       'Mineral Contact System Id',
       'First Name',
       'Last Name',
       'Email',
       'Phone',
+      'Phone 1',
+      'Phone 2',
+      'Phone 3',
+      'Phone 4',
+      'Phone 5',
       'Address 1',
       'City',
       'State',
+      'County',
+      'Territory',
       'Postal Code',
+      'Campaign Name',
+      'Bankruptcy',
+      'Deceased',
+      'Lien',
+      'Campaign System Id',
       'Error Category',
       'Error Message',
     ]
@@ -256,10 +268,22 @@ export default function GhlPrep() {
         cd.last_name || '',
         cd.email || '',
         cd.phone || '',
+        cd.phone_1 || '',
+        cd.phone_2 || '',
+        cd.phone_3 || '',
+        cd.phone_4 || '',
+        cd.phone_5 || '',
         cd.address1 || '',
         cd.city || '',
         cd.state || '',
+        cd.county || '',
+        cd.territory || '',
         cd.postal_code || '',
+        cd.campaign_name || '',
+        cd.bankruptcy || '',
+        cd.deceased || '',
+        cd.lien || '',
+        cd.campaign_system_id || '',
         fc.error_category,
         fc.error_message,
       ]
