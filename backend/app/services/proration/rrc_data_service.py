@@ -119,11 +119,11 @@ class RRCDataService:
             response.raise_for_status()
             logger.info(f"Search response: status={response.status_code}")
 
-            # Now download CSV
+            # Now download CSV (use 900s timeout - oil CSV can be very large)
             csv_data = {
                 "methodToCall": "generateOilProrationReportCsv",
             }
-            response = session.post(OIL_SEARCH_URL, data=csv_data, timeout=300)
+            response = session.post(OIL_SEARCH_URL, data=csv_data, timeout=900)
             response.raise_for_status()
 
             # Check if we got CSV or HTML
@@ -171,11 +171,11 @@ class RRCDataService:
             response.raise_for_status()
             logger.info(f"Search response: status={response.status_code}")
 
-            # Download CSV
+            # Download CSV (use 900s timeout for consistency with oil)
             csv_data = {
                 "methodToCall": "generateGasProrationReportCsv",
             }
-            response = session.post(GAS_SEARCH_URL, data=csv_data, timeout=300)
+            response = session.post(GAS_SEARCH_URL, data=csv_data, timeout=900)
             response.raise_for_status()
 
             # Check if we got CSV or HTML
