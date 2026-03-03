@@ -81,14 +81,22 @@ class BulkContactData(BaseModel):
     last_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
-    phone2: Optional[str] = None
-    phone3: Optional[str] = None
-    phone4: Optional[str] = None
-    phone5: Optional[str] = None
+    phone_1: Optional[str] = None
+    phone_2: Optional[str] = None
+    phone_3: Optional[str] = None
+    phone_4: Optional[str] = None
+    phone_5: Optional[str] = None
     address1: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
+    county: Optional[str] = None
+    territory: Optional[str] = None
     postal_code: Optional[str] = None
+    campaign_name: Optional[str] = None
+    bankruptcy: Optional[str] = None
+    deceased: Optional[str] = None
+    lien: Optional[str] = None
+    campaign_system_id: Optional[str] = None
 
 
 class BulkSendRequest(BaseModel):

@@ -332,14 +332,22 @@ export interface BulkContactData {
   last_name?: string
   email?: string
   phone?: string
-  phone2?: string
-  phone3?: string
-  phone4?: string
-  phone5?: string
+  phone_1?: string
+  phone_2?: string
+  phone_3?: string
+  phone_4?: string
+  phone_5?: string
   address1?: string
   city?: string
   state?: string
+  county?: string
+  territory?: string
   postal_code?: string
+  campaign_name?: string
+  bankruptcy?: string
+  deceased?: string
+  lien?: string
+  campaign_system_id?: string
 }
 
 export interface ContactResult {

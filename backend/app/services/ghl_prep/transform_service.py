@@ -37,6 +37,7 @@ COMPANY_INDICATORS = {"LLC", "LP", "INC", "CORP", "CO", "TRUST", "ESTATE"}
 # Exact output columns in order. Only these columns appear in preview/export.
 # Source columns not in this list are consumed during transform then discarded.
 OUTPUT_COLUMNS = [
+    "Contact Owner",
     "M1neral Contact System ID",
     "First Name",
     "Last Name",
@@ -51,8 +52,8 @@ OUTPUT_COLUMNS = [
     "City",
     "State",
     "County",
+    "Territory",
     "Zip",
-    "Contact Owner",
     "Campaign Name",
     "Bankruptcy",
     "Deceased",
