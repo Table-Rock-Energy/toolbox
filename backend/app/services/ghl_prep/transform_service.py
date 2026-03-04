@@ -367,7 +367,10 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
 
     # Add entity type counts to transformed_fields
     entity_counts = df["Entity Type"].value_counts().to_dict()
-    transformed_fields["entity_types"] = entity_counts
+    transformed_fields["individuals"] = entity_counts.get("Individual", 0)
+    transformed_fields["commercial"] = sum(
+        v for k, v in entity_counts.items() if k != "Individual"
+    )
 
     # Replace NaN and convert all values to strings
     df = df.fillna("")

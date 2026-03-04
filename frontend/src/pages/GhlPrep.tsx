@@ -204,10 +204,10 @@ export default function GhlPrep() {
     }
 
     // Use filtered rows if filter is active, strip Entity Type column
-    const exportRows = (showIndividualsOnly ? filteredRows : result.rows).map(row => {
-      const { 'Entity Type': _, ...rest } = row
-      return rest
-    })
+    const exportRows = (showIndividualsOnly ? filteredRows : result.rows).map(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      ({ 'Entity Type': _entityType, ...rest }) => rest
+    )
 
     try {
       const response = await fetch(`${API_BASE}/ghl-prep/export/csv`, {
@@ -610,8 +610,10 @@ export default function GhlPrep() {
         contactCount={showIndividualsOnly ? filteredRows.length : (result?.rows?.length || 0)}
         defaultTag={defaultTag}
         rows={(showIndividualsOnly
-          ? filteredRows.map(({ 'Entity Type': _, ...rest }) => rest)
-          : (result?.rows || []).map(({ 'Entity Type': _, ...rest }) => rest)
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          ? filteredRows.map(({ 'Entity Type': _entityType, ...rest }) => rest)
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          : (result?.rows || []).map(({ 'Entity Type': _entityType, ...rest }) => rest)
         )}
         activeJobId={activeJobId}
         onJobStarted={handleJobStarted}
