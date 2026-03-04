@@ -22,6 +22,7 @@ from typing import Any
 import pandas as pd
 
 from app.models.ghl_prep import TransformResult
+from app.utils.patterns import detect_entity_type
 
 logger = logging.getLogger(__name__)
 
@@ -356,6 +357,17 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
             final_df[col_name] = ""
             logger.info("Output column '%s' not in source — added empty", col_name)
     df = final_df
+
+    # Classify entity type from First Name + Last Name (display/filter only, not exported)
+    def _classify_row(row: pd.Series) -> str:
+        full_name = f"{row.get('First Name', '')} {row.get('Last Name', '')}".strip()
+        return detect_entity_type(full_name) if full_name else "Individual"
+
+    df["Entity Type"] = df.apply(_classify_row, axis=1)
+
+    # Add entity type counts to transformed_fields
+    entity_counts = df["Entity Type"].value_counts().to_dict()
+    transformed_fields["entity_types"] = entity_counts
 
     # Replace NaN and convert all values to strings
     df = df.fillna("")

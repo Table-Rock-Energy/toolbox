@@ -233,3 +233,28 @@ LEASE_PATTERN = re.compile(
     r"\b(?:Lease|QCMD|Ref\.?)[\s#:]*([A-Za-z0-9-]+)",
     re.IGNORECASE,
 )
+
+
+def detect_entity_type(text: str) -> str:
+    """Detect entity type from name text. Returns EntityType string value."""
+    from app.models.extract import EntityType
+
+    if UNKNOWN_HEIRS_PATTERN.search(text):
+        return EntityType.UNKNOWN_HEIRS.value
+    if ESTATE_PATTERN.search(text):
+        return EntityType.ESTATE.value
+    if TRUST_PATTERN.search(text):
+        return EntityType.TRUST.value
+    if LLC_PATTERN.search(text):
+        return EntityType.LLC.value
+    if INC_PATTERN.search(text) or CORP_PATTERN.search(text):
+        return EntityType.CORPORATION.value
+    if LP_PATTERN.search(text):
+        # Make sure it's not "Partners" without being a limited partnership
+        if not re.search(r"\bPartners\b", text) or PARTNERSHIP_PATTERN.search(text):
+            return EntityType.PARTNERSHIP.value
+    if PARTNERSHIP_PATTERN.search(text):
+        return EntityType.PARTNERSHIP.value
+    if GOVERNMENT_PATTERN.search(text):
+        return EntityType.GOVERNMENT.value
+    return EntityType.INDIVIDUAL.value

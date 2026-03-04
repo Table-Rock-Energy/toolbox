@@ -396,34 +396,8 @@ def _detect_entity_type(text: str) -> EntityType:
 
     Order matters - first match wins.
     """
-    # Check patterns in order of specificity
-    if UNKNOWN_HEIRS_PATTERN.search(text):
-        return EntityType.UNKNOWN_HEIRS
-
-    if ESTATE_PATTERN.search(text):
-        return EntityType.ESTATE
-
-    if TRUST_PATTERN.search(text):
-        return EntityType.TRUST
-
-    if LLC_PATTERN.search(text):
-        return EntityType.LLC
-
-    if INC_PATTERN.search(text) or CORP_PATTERN.search(text):
-        return EntityType.CORPORATION
-
-    if LP_PATTERN.search(text):
-        # Make sure it's not "Partners" without being a limited partnership
-        if not re.search(r"\bPartners\b", text) or PARTNERSHIP_PATTERN.search(text):
-            return EntityType.PARTNERSHIP
-
-    if PARTNERSHIP_PATTERN.search(text):
-        return EntityType.PARTNERSHIP
-
-    if GOVERNMENT_PATTERN.search(text):
-        return EntityType.GOVERNMENT
-
-    return EntityType.INDIVIDUAL
+    from app.utils.patterns import detect_entity_type
+    return EntityType(detect_entity_type(text))
 
 
 def _check_flagging(
