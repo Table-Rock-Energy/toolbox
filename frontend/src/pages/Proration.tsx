@@ -79,6 +79,22 @@ interface RRCDataStatus {
   } | null
 }
 
+interface RRCSyncJob {
+  id: string
+  status: 'downloading_oil' | 'downloading_gas' | 'syncing_oil' | 'syncing_gas' | 'complete' | 'failed'
+  started_at: string
+  completed_at: string | null
+  oil_rows: number
+  gas_rows: number
+  error: string | null
+  steps: Array<{
+    step: string
+    started_at: string
+    completed_at: string | null
+    message: string | null
+  }>
+}
+
 interface ColumnConfig {
   key: string
   label: string
@@ -117,6 +133,13 @@ const STORAGE_KEY_PREFIX = 'proration-visible-columns'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
+const STEP_LABELS: Record<string, string> = {
+  downloading_oil: 'Downloading oil data...',
+  downloading_gas: 'Downloading gas data...',
+  syncing_oil: 'Syncing oil to database...',
+  syncing_gas: 'Syncing gas to database...',
+}
+
 export default function Proration() {
   const { user, userName } = useAuth()
   const { panelCollapsed, togglePanel, activeStorageKey } = useToolLayout('proration', user?.uid, STORAGE_KEY_PREFIX)
@@ -141,6 +164,8 @@ export default function Proration() {
   const [rrcLoading, setRrcLoading] = useState(!rrcStatus)
   const [isDownloadingRRC, setIsDownloadingRRC] = useState(false)
   const [rrcMessage, setRrcMessage] = useState<string | null>(null)
+  const [rrcSyncJob, setRrcSyncJob] = useState<RRCSyncJob | null>(null)
+  const rrcPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Processing Options State
   const [showProcessingOptions, setShowProcessingOptions] = useState(false)
@@ -209,6 +234,40 @@ export default function Proration() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Check for active RRC download job on mount
+  useEffect(() => {
+    const checkActiveJob = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/proration/rrc/download/active`)
+        if (response.ok) {
+          const data = await response.json()
+          // Check if data is a job object or has a job property
+          const job = data.job !== undefined ? data.job : (data.id ? data : null)
+
+          if (job && job.status && job.status !== 'complete' && job.status !== 'failed') {
+            // Active job found - resume polling
+            setRrcSyncJob(job)
+            setIsDownloadingRRC(true)
+            startPolling(job.id)
+          } else if (job && job.status === 'complete') {
+            // Recently completed job - show briefly
+            setRrcSyncJob(job)
+            setRrcMessage(`Successfully synced ${(job.oil_rows + job.gas_rows).toLocaleString()} records`)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to check for active job:', err)
+      }
+    }
+    checkActiveJob()
+
+    // Clean up polling on unmount
+    return () => {
+      stopPolling()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Load recent jobs on mount
   useEffect(() => {
     const loadRecentJobs = async () => {
@@ -262,6 +321,44 @@ export default function Proration() {
     setShowAiReview(false)
   }
 
+  const startPolling = (jobId: string) => {
+    // Clear any existing poll interval
+    stopPolling()
+
+    // Poll every 3 seconds
+    rrcPollRef.current = setInterval(async () => {
+      try {
+        const response = await fetch(`${API_BASE}/proration/rrc/download/${jobId}/status`)
+        if (response.ok) {
+          const job: RRCSyncJob = await response.json()
+          setRrcSyncJob(job)
+
+          // Stop polling if terminal status
+          if (job.status === 'complete') {
+            stopPolling()
+            setIsDownloadingRRC(false)
+            // Refresh RRC status to get new counts
+            await checkRRCStatus()
+            setRrcMessage(`Successfully synced ${(job.oil_rows + job.gas_rows).toLocaleString()} records`)
+          } else if (job.status === 'failed') {
+            stopPolling()
+            setIsDownloadingRRC(false)
+            setError(job.error || 'Download failed')
+          }
+        }
+      } catch (err) {
+        console.error('Failed to poll job status:', err)
+      }
+    }, 3000)
+  }
+
+  const stopPolling = () => {
+    if (rrcPollRef.current) {
+      clearInterval(rrcPollRef.current)
+      rrcPollRef.current = null
+    }
+  }
+
   const checkRRCStatus = async () => {
     try {
       const response = await fetch(`${API_BASE}/proration/rrc/status`)
@@ -283,6 +380,7 @@ export default function Proration() {
     setIsDownloadingRRC(true)
     setRrcMessage(null)
     setError(null)
+    setRrcSyncJob(null)
 
     try {
       const response = await fetch(`${API_BASE}/proration/rrc/download`, {
@@ -291,16 +389,37 @@ export default function Proration() {
 
       const data = await response.json()
 
-      if (response.ok && data.success) {
-        setRrcMessage(data.message || `Downloaded ${data.oil_rows?.toLocaleString() || 0} oil and ${data.gas_rows?.toLocaleString() || 0} gas records`)
-        // Refresh status
-        await checkRRCStatus()
+      if (response.ok) {
+        // Check if it's a background job response (has job_id) or monthly guard response (has success)
+        if (data.job_id) {
+          // Background job started - begin polling
+          setRrcSyncJob({
+            id: data.job_id,
+            status: data.status || 'downloading_oil',
+            started_at: new Date().toISOString(),
+            completed_at: null,
+            oil_rows: 0,
+            gas_rows: 0,
+            error: null,
+            steps: [],
+          })
+          startPolling(data.job_id)
+        } else if (data.success) {
+          // Monthly guard returned early - already up to date
+          setRrcMessage(data.message || `Already up to date`)
+          setIsDownloadingRRC(false)
+          // Refresh status just in case
+          await checkRRCStatus()
+        } else {
+          setError(data.message || 'Failed to download RRC data')
+          setIsDownloadingRRC(false)
+        }
       } else {
         setError(data.message || 'Failed to download RRC data')
+        setIsDownloadingRRC(false)
       }
-    } catch {
+    } catch (err) {
       setError('Failed to download RRC data. Please try again.')
-    } finally {
       setIsDownloadingRRC(false)
     }
   }
@@ -581,26 +700,46 @@ export default function Proration() {
           <span className="text-sm text-gray-500">Checking RRC data status...</span>
         </div>
       ) : hasRRCData && !dataExpired ? (
-        /* Compact green info line when data is loaded and current */
-        <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-green-50 border border-green-200">
-          <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
-          <span className="text-sm text-green-800">
-            <span className="font-medium">{totalRecords.toLocaleString()}</span> RRC records
-            <span className="text-green-600 mx-1">({oilRecords.toLocaleString()} oil, {gasRecords.toLocaleString()} gas)</span>
-            <span className="text-green-600/70">&bull; Synced {rrcStatus?.last_sync?.completed_at
-              ? formatDate(rrcStatus.last_sync.completed_at)
-              : rrcStatus?.oil_modified
-                ? formatDate(rrcStatus.oil_modified)
-                : 'Never'
-            }</span>
-          </span>
-          {rrcMessage && (
-            <span className="text-sm text-green-700 ml-auto flex items-center gap-1">
-              <CheckCircle className="w-3.5 h-3.5" />
-              {rrcMessage}
+        /* Compact green info line when data is loaded and current - or show progress if actively syncing */
+        isDownloadingRRC && rrcSyncJob ? (
+          <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-blue-50 border border-blue-200">
+            <RefreshCw className="w-4 h-4 text-blue-600 flex-shrink-0 animate-spin" />
+            <div className="flex-1 flex items-center gap-4">
+              <span className="text-sm text-blue-800 font-medium">
+                {STEP_LABELS[rrcSyncJob.status] || rrcSyncJob.status}
+              </span>
+              {rrcSyncJob.steps.filter(s => s.completed_at && s.message).map((step, idx) => (
+                <span key={idx} className="text-xs text-blue-600 flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" />
+                  {step.message}
+                </span>
+              ))}
+              <span className="text-xs text-blue-500 ml-auto">
+                {Math.floor((Date.now() - new Date(rrcSyncJob.started_at).getTime()) / 1000)}s elapsed
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-green-50 border border-green-200">
+            <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+            <span className="text-sm text-green-800">
+              <span className="font-medium">{totalRecords.toLocaleString()}</span> RRC records
+              <span className="text-green-600 mx-1">({oilRecords.toLocaleString()} oil, {gasRecords.toLocaleString()} gas)</span>
+              <span className="text-green-600/70">&bull; Synced {rrcStatus?.last_sync?.completed_at
+                ? formatDate(rrcStatus.last_sync.completed_at)
+                : rrcStatus?.oil_modified
+                  ? formatDate(rrcStatus.oil_modified)
+                  : 'Never'
+              }</span>
             </span>
-          )}
-        </div>
+            {rrcMessage && (
+              <span className="text-sm text-green-700 ml-auto flex items-center gap-1">
+                <CheckCircle className="w-3.5 h-3.5" />
+                {rrcMessage}
+              </span>
+            )}
+          </div>
+        )
       ) : (
         /* Full banner when action is needed (no data or expired) */
         <div className={`rounded-xl border p-4 ${
@@ -653,23 +792,62 @@ export default function Proration() {
                 )}
               </div>
             </div>
-            <button
-              onClick={handleDownloadRRC}
-              disabled={isDownloadingRRC}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm whitespace-nowrap ${
-                dataExpired
-                  ? 'bg-orange-600 text-white hover:bg-orange-700'
-                  : 'bg-yellow-600 text-white hover:bg-yellow-700'
-              } ${isDownloadingRRC ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <RefreshCw className={`w-4 h-4 ${isDownloadingRRC ? 'animate-spin' : ''}`} />
-              {isDownloadingRRC ? 'Syncing...' : dataExpired ? 'Download & Sync' : 'Download & Build'}
-            </button>
+            {/* Show progress UI when downloading, otherwise show button */}
+            {isDownloadingRRC && rrcSyncJob ? (
+              <div className="flex flex-col gap-2 flex-1">
+                {/* Current step with spinner */}
+                <div className="flex items-center gap-2 text-sm">
+                  <RefreshCw className="w-4 h-4 animate-spin text-orange-600" />
+                  <span className="font-medium text-orange-800">
+                    {STEP_LABELS[rrcSyncJob.status] || rrcSyncJob.status}
+                  </span>
+                  <span className="text-gray-500 text-xs ml-auto">
+                    {Math.floor((Date.now() - new Date(rrcSyncJob.started_at).getTime()) / 1000)}s
+                  </span>
+                </div>
+
+                {/* Completed steps with checkmarks */}
+                {rrcSyncJob.steps.filter(s => s.completed_at && s.message).map((step, idx) => (
+                  <div key={idx} className="flex items-center gap-2 text-sm text-gray-600">
+                    <CheckCircle className="w-3.5 h-3.5 text-green-600" />
+                    <span className="text-xs">{step.message}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <button
+                onClick={handleDownloadRRC}
+                disabled={isDownloadingRRC || (rrcSyncJob && rrcSyncJob.status !== 'complete' && rrcSyncJob.status !== 'failed')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm whitespace-nowrap ${
+                  dataExpired
+                    ? 'bg-orange-600 text-white hover:bg-orange-700'
+                    : 'bg-yellow-600 text-white hover:bg-yellow-700'
+                } ${isDownloadingRRC || (rrcSyncJob && rrcSyncJob.status !== 'complete' && rrcSyncJob.status !== 'failed') ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <RefreshCw className="w-4 h-4" />
+                {dataExpired ? 'Download & Sync' : 'Download & Build'}
+              </button>
+            )}
           </div>
-          {rrcMessage && (
+          {rrcMessage && !isDownloadingRRC && (
             <div className="mt-2 text-sm text-green-700 flex items-center gap-1">
               <CheckCircle className="w-4 h-4" />
               {rrcMessage}
+            </div>
+          )}
+          {rrcSyncJob && rrcSyncJob.status === 'failed' && rrcSyncJob.error && (
+            <div className="mt-2 flex items-center justify-between">
+              <div className="text-sm text-red-700 flex items-center gap-1">
+                <AlertCircle className="w-4 h-4" />
+                {rrcSyncJob.error}
+              </div>
+              <button
+                onClick={handleDownloadRRC}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors text-sm"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Retry
+              </button>
             </div>
           )}
         </div>
