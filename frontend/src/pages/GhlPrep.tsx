@@ -47,6 +47,7 @@ export default function GhlPrep() {
   // Failed contacts management
   const [viewMode, setViewMode] = useState<ViewMode>('normal')
   const [failedContacts, setFailedContacts] = useState<FailedContactDetail[]>([])
+  const [showIndividualsOnly, setShowIndividualsOnly] = useState(false)
   // Fetch GHL connections from backend
   useEffect(() => {
     const fetchConnections = async () => {
@@ -123,14 +124,19 @@ export default function GhlPrep() {
     return result?.rows || []
   }, [result, viewMode, failedContacts])
 
+  const filteredRows = useMemo(() => {
+    if (!showIndividualsOnly) return currentRows
+    return currentRows.filter(row => row['Entity Type'] === 'Individual')
+  }, [currentRows, showIndividualsOnly])
+
   // Derive campaign name from transform result metadata
   const defaultTag = result?.campaign_name || ''
 
   // Sort rows client-side
   const sortedRows = useMemo(() => {
-    if (currentRows.length === 0 || !sortColumn) return currentRows
+    if (filteredRows.length === 0 || !sortColumn) return filteredRows
 
-    const sorted = [...currentRows].sort((a, b) => {
+    const sorted = [...filteredRows].sort((a, b) => {
       const aVal = a[sortColumn] || ''
       const bVal = b[sortColumn] || ''
 
@@ -142,7 +148,7 @@ export default function GhlPrep() {
     })
 
     return sorted
-  }, [currentRows, sortColumn, sortDirection])
+  }, [filteredRows, sortColumn, sortDirection])
 
   const handleColumnClick = (column: string) => {
     if (sortColumn === column) {
@@ -197,6 +203,12 @@ export default function GhlPrep() {
       return
     }
 
+    // Use filtered rows if filter is active, strip Entity Type column
+    const exportRows = (showIndividualsOnly ? filteredRows : result.rows).map(row => {
+      const { 'Entity Type': _, ...rest } = row
+      return rest
+    })
+
     try {
       const response = await fetch(`${API_BASE}/ghl-prep/export/csv`, {
         method: 'POST',
@@ -204,7 +216,7 @@ export default function GhlPrep() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          rows: result.rows,
+          rows: exportRows,
           filename: result.source_filename?.replace(/\.[^.]+$/, '') || 'ghl_export',
         }),
       })
@@ -312,6 +324,7 @@ export default function GhlPrep() {
     setSortDirection('asc')
     setViewMode('normal')
     setFailedContacts([])
+    setShowIndividualsOnly(false)
   }
 
   // Handle viewing failed contacts from send modal
@@ -424,6 +437,24 @@ export default function GhlPrep() {
                   {viewMode === 'failed-contacts' ? 'Review and retry failed contacts' : 'Transformation complete'}
                 </p>
               </div>
+              {viewMode === 'normal' && result && (
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={showIndividualsOnly}
+                      onChange={(e) => setShowIndividualsOnly(e.target.checked)}
+                      className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                    />
+                    Individuals only
+                  </label>
+                  <span className="text-xs text-gray-400">
+                    {showIndividualsOnly
+                      ? `${filteredRows.length} of ${currentRows.length} contacts`
+                      : `${currentRows.length} contacts`}
+                  </span>
+                </div>
+              )}
               <div className="flex gap-2">
                 {viewMode === 'failed-contacts' && (
                   <>
@@ -522,7 +553,7 @@ export default function GhlPrep() {
           {/* Preview Table */}
           <div className="p-6">
             <h4 className="font-medium text-gray-900 mb-3">
-              {sortedRows.length} rows
+              {sortedRows.length} rows{showIndividualsOnly ? ` (filtered from ${currentRows.length})` : ''}
             </h4>
             <div className="overflow-x-auto overflow-y-auto max-h-[75vh]">
               <table className="text-sm">
@@ -576,9 +607,12 @@ export default function GhlPrep() {
         isOpen={showSendModal}
         onClose={handleModalClose}
         connections={connections}
-        contactCount={result?.rows?.length || 0}
+        contactCount={showIndividualsOnly ? filteredRows.length : (result?.rows?.length || 0)}
         defaultTag={defaultTag}
-        rows={result?.rows || []}
+        rows={(showIndividualsOnly
+          ? filteredRows.map(({ 'Entity Type': _, ...rest }) => rest)
+          : (result?.rows || []).map(({ 'Entity Type': _, ...rest }) => rest)
+        )}
         activeJobId={activeJobId}
         onJobStarted={handleJobStarted}
         onViewFailedContacts={handleViewFailedContacts}
