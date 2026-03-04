@@ -35,6 +35,9 @@ interface ExtractionResult {
   source_filename?: string
   error_message?: string
   job_id?: string
+  format_detected?: string
+  quality_score?: number
+  format_warning?: string
 }
 
 interface UploadResponse {
@@ -95,6 +98,7 @@ export default function Extract() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [isLoadingEntries, setIsLoadingEntries] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [formatHint, setFormatHint] = useState<string>('')
 
   // Filter states
   const [showIndividualsOnly, setShowIndividualsOnly] = useState(false)
@@ -315,7 +319,8 @@ export default function Extract() {
       const formData = new FormData()
       formData.append('file', file)
 
-      const response = await fetch(`${API_BASE}/extract/upload`, {
+      const uploadUrl = `${API_BASE}/extract/upload${formatHint ? `?format_hint=${formatHint}` : ''}`
+      const response = await fetch(uploadUrl, {
         method: 'POST',
         headers: {
           'X-User-Email': user?.email || '',
@@ -551,6 +556,20 @@ export default function Extract() {
             label="Upload OCC Exhibit A"
             description="Drop your PDF file here"
           />
+          <div className="mt-3 flex items-center gap-2">
+            <label className="text-xs text-gray-500">Format:</label>
+            <select
+              value={formatHint}
+              onChange={(e) => setFormatHint(e.target.value)}
+              className="text-xs border border-gray-300 rounded px-2 py-1 focus:ring-tre-teal focus:border-tre-teal"
+            >
+              <option value="">Auto-detect</option>
+              <option value="FREE_TEXT_NUMBERED">Free Text (Default)</option>
+              <option value="TABLE_ATTENTION">Table with Attention Column</option>
+              <option value="TABLE_SPLIT_ADDR">Table with Split Address</option>
+              <option value="FREE_TEXT_LIST">Two-Column Numbered List</option>
+            </select>
+          </div>
           {isProcessing && (
             <div className="mt-4 flex items-center gap-2 text-tre-teal">
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
@@ -571,6 +590,20 @@ export default function Extract() {
               label="Upload OCC Exhibit A"
               description="Drop your PDF file here"
             />
+            <div className="mt-3 flex items-center gap-2">
+              <label className="text-xs text-gray-500">Format:</label>
+              <select
+                value={formatHint}
+                onChange={(e) => setFormatHint(e.target.value)}
+                className="text-xs border border-gray-300 rounded px-2 py-1 focus:ring-tre-teal focus:border-tre-teal"
+              >
+                <option value="">Auto-detect</option>
+                <option value="FREE_TEXT_NUMBERED">Free Text (Default)</option>
+                <option value="TABLE_ATTENTION">Table with Attention Column</option>
+                <option value="TABLE_SPLIT_ADDR">Table with Split Address</option>
+                <option value="FREE_TEXT_LIST">Two-Column Numbered List</option>
+              </select>
+            </div>
             {isProcessing && (
               <div className="mt-4 flex items-center gap-2 text-tre-teal">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
@@ -639,6 +672,14 @@ export default function Extract() {
             </div>
           )}
 
+          {activeJob?.result?.format_warning && (
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex items-center gap-2 text-yellow-700">
+              <AlertCircle className="w-5 h-5" />
+              <span className="text-sm">{activeJob.result.format_warning}</span>
+              <span className="text-xs text-yellow-500 ml-2">Try selecting a format manually and re-uploading.</span>
+            </div>
+          )}
+
           {isLoadingEntries ? (
             <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-tre-teal mx-auto mb-3"></div>
@@ -657,6 +698,16 @@ export default function Extract() {
                     <p className="text-sm text-gray-500">
                       Processed by {activeJob.user} on {activeJob.timestamp}
                     </p>
+                    {activeJob.result.format_detected && (
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Format: {activeJob.result.format_detected.replace(/_/g, ' ')}
+                        {activeJob.result.quality_score != null && (
+                          <span className={`ml-2 ${activeJob.result.quality_score < 0.5 ? 'text-red-500' : activeJob.result.quality_score < 0.75 ? 'text-yellow-500' : 'text-green-500'}`}>
+                            ({Math.round(activeJob.result.quality_score * 100)}% confidence)
+                          </span>
+                        )}
+                      </p>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     <button
