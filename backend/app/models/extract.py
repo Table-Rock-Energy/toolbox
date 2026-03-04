@@ -72,6 +72,15 @@ class ExtractionResult(BaseModel):
     )
     source_filename: Optional[str] = Field(None, description="Original PDF filename")
     job_id: Optional[str] = Field(None, description="Firestore job ID")
+    format_detected: Optional[str] = Field(
+        None, description="Auto-detected format (e.g., TABLE_ATTENTION, FREE_TEXT_LIST)"
+    )
+    quality_score: Optional[float] = Field(
+        None, description="Parsing quality score 0.0-1.0"
+    )
+    format_warning: Optional[str] = Field(
+        None, description="Warning if quality is low or format uncertain"
+    )
 
 
 class UploadResponse(BaseModel):

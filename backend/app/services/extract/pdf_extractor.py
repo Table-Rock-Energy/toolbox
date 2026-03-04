@@ -26,7 +26,9 @@ EXHIBIT_END_PATTERN = re.compile(
 )
 
 
-def extract_text_from_pdf(file_bytes: bytes) -> str:
+def extract_text_from_pdf(
+    file_bytes: bytes, num_columns: int | None = None
+) -> str:
     """
     Extract text from a PDF file.
 
@@ -35,12 +37,17 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
 
     Args:
         file_bytes: Raw bytes of the PDF file
+        num_columns: Number of columns to assume (auto-detected if None)
 
     Returns:
         Extracted text from the PDF
     """
+    # Auto-detect column count if not specified
+    if num_columns is None:
+        num_columns = detect_column_count(file_bytes)
+
     # Try PyMuPDF first
-    text = _extract_with_pymupdf(file_bytes)
+    text = _extract_with_pymupdf(file_bytes, num_columns=num_columns)
 
     # Fall back to pdfplumber if PyMuPDF returns minimal text
     if not text or len(text.strip()) < 100:
@@ -50,12 +57,15 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
     return clean_text(text)
 
 
-def _extract_with_pymupdf(file_bytes: bytes) -> str:
+def _extract_with_pymupdf(
+    file_bytes: bytes, num_columns: int = 3
+) -> str:
     """
     Extract text using PyMuPDF with column-aware extraction.
 
     Args:
         file_bytes: Raw bytes of the PDF file
+        num_columns: Number of columns to assume for layout
 
     Returns:
         Extracted text
@@ -76,7 +86,9 @@ def _extract_with_pymupdf(file_bytes: bytes) -> str:
 
             # Sort blocks for multi-column reading order
             # Group by approximate row (y-position), then sort by x-position
-            sorted_blocks = _sort_blocks_by_columns(text_blocks, page.rect.width)
+            sorted_blocks = _sort_blocks_by_columns(
+                text_blocks, page.rect.width, num_columns=num_columns
+            )
 
             page_text = []
             for block in sorted_blocks:
@@ -153,6 +165,64 @@ def _sort_blocks_by_columns(
 
     result = [item[2] for item in all_blocks_with_rows]
     return result
+
+
+def detect_column_count(file_bytes: bytes) -> int:
+    """Detect the number of text columns on the first page of a PDF.
+
+    Analyzes the x-positions of text blocks and clusters them to determine
+    whether the layout uses 2 or 3 columns. Defaults to 3 if unclear.
+
+    Args:
+        file_bytes: Raw PDF bytes.
+
+    Returns:
+        2 or 3 (detected column count).
+    """
+    try:
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        if len(doc) == 0:
+            doc.close()
+            return 3
+
+        page = doc[0]
+        blocks = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)[
+            "blocks"
+        ]
+        doc.close()
+
+        # Collect x-center positions of text blocks
+        x_positions = []
+        for block in blocks:
+            if block.get("type") == 0:
+                bbox = block.get("bbox", (0, 0, 0, 0))
+                x_center = (bbox[0] + bbox[2]) / 2
+                x_positions.append(x_center)
+
+        if len(x_positions) < 4:
+            return 3
+
+        page_width = page.rect.width
+
+        # Simple clustering: count blocks in thirds vs halves
+        thirds = [0, 0, 0]
+        halves = [0, 0]
+        for x in x_positions:
+            thirds[min(int(x / (page_width / 3)), 2)] += 1
+            halves[min(int(x / (page_width / 2)), 1)] += 1
+
+        # If one of the thirds is nearly empty, likely 2 columns
+        third_min = min(thirds)
+        if third_min < 2 and min(halves) >= 3:
+            logger.info("Detected 2-column layout")
+            return 2
+
+        logger.info("Detected 3-column layout (default)")
+        return 3
+
+    except Exception as e:
+        logger.warning("Column count detection failed: %s", e)
+        return 3
 
 
 def _extract_with_pdfplumber(file_bytes: bytes) -> str:
@@ -282,6 +352,7 @@ def _clean_exhibit_text(text: str) -> str:
         re.compile(r"^IF ANY NAMED", re.IGNORECASE),
         re.compile(r"^PERSON IS", re.IGNORECASE),
         re.compile(r"^DECEASED,", re.IGNORECASE),
+        re.compile(r"^RESPONDENTS\s+WITH\s+ADDRESS\s+UNKNOWN\s*$", re.IGNORECASE),
     ]
 
     for line in lines:

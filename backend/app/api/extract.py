@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -17,9 +17,15 @@ from app.models.extract import (
     UploadResponse,
 )
 from app.services.extract.export_service import to_csv, to_excel
+from app.services.extract.format_detector import (
+    ExhibitFormat,
+    compute_quality_score,
+    detect_format,
+)
 from app.services.extract.name_parser import parse_name
 from app.services.extract.parser import parse_exhibit_a
 from app.services.extract.pdf_extractor import extract_party_list, extract_text_from_pdf
+from app.services.extract.table_parser import parse_table_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +42,9 @@ async def health_check() -> dict:
 async def upload_pdf(
     file: Annotated[UploadFile, File(description="PDF file containing Exhibit A")],
     request: Request,
+    format_hint: Optional[str] = Query(
+        None, description="Manual format hint (e.g., TABLE_ATTENTION, FREE_TEXT_LIST)"
+    ),
 ) -> UploadResponse:
     """Upload a PDF file and extract party entries from Exhibit A."""
     file_bytes = await validate_upload(file, allowed_extensions=[".pdf"])
@@ -56,9 +65,30 @@ async def upload_pdf(
                 ),
             )
 
-        # Extract party list section (or full text if no section found)
-        party_text = extract_party_list(full_text)
-        entries = parse_exhibit_a(party_text)
+        # Detect format (or use manual hint)
+        fmt = ExhibitFormat.FREE_TEXT_NUMBERED
+        if format_hint:
+            try:
+                fmt = ExhibitFormat(format_hint)
+                logger.info("Using manual format hint: %s", fmt.value)
+            except ValueError:
+                logger.warning("Invalid format_hint '%s', auto-detecting", format_hint)
+                fmt = detect_format(full_text, file_bytes)
+        else:
+            fmt = detect_format(full_text, file_bytes)
+
+        # Route to correct parser based on format
+        if fmt in (ExhibitFormat.TABLE_ATTENTION, ExhibitFormat.TABLE_SPLIT_ADDR):
+            entries = parse_table_pdf(file_bytes, fmt)
+        elif fmt == ExhibitFormat.FREE_TEXT_LIST:
+            # Re-extract with 2-column layout for Coterra-style
+            two_col_text = extract_text_from_pdf(file_bytes, num_columns=2)
+            party_text = extract_party_list(two_col_text)
+            entries = parse_exhibit_a(party_text)
+        else:
+            # Default FREE_TEXT_NUMBERED flow
+            party_text = extract_party_list(full_text)
+            entries = parse_exhibit_a(party_text)
 
         if not entries:
             return UploadResponse(
@@ -68,23 +98,34 @@ async def upload_pdf(
                     error_message="Could not find numbered party entries "
                     "(e.g., '1. Name, Address') in the document.",
                     source_filename=file.filename,
+                    format_detected=fmt.value,
                 ),
             )
 
-        # Populate parsed name fields for individuals
-        for entry in entries:
-            parsed = parse_name(entry.primary_name, entry.entity_type.value)
-            if parsed.is_person:
-                entry.first_name = parsed.first_name or None
-                entry.middle_name = parsed.middle_name or None
-                entry.last_name = parsed.last_name or None
-                entry.suffix = parsed.suffix or None
+        # Populate parsed name fields for individuals (for non-table formats;
+        # table parsers already do this inline)
+        if fmt not in (ExhibitFormat.TABLE_ATTENTION, ExhibitFormat.TABLE_SPLIT_ADDR):
+            for entry in entries:
+                parsed = parse_name(entry.primary_name, entry.entity_type.value)
+                if parsed.is_person:
+                    entry.first_name = parsed.first_name or None
+                    entry.middle_name = parsed.middle_name or None
+                    entry.last_name = parsed.last_name or None
+                    entry.suffix = parsed.suffix or None
 
         flagged_count = sum(1 for e in entries if e.flagged)
 
+        # Compute quality score
+        quality = compute_quality_score(entries)
+        format_warning = None
+        if quality < 0.5:
+            format_warning = (
+                "Low parsing confidence. Try selecting a different format manually."
+            )
+
         logger.info(
-            "Extracted %d entries (%d flagged) from %s",
-            len(entries), flagged_count, file.filename,
+            "Extracted %d entries (%d flagged, quality=%.2f, format=%s) from %s",
+            len(entries), flagged_count, quality, fmt.value, file.filename,
         )
 
         result = ExtractionResult(
@@ -93,6 +134,9 @@ async def upload_pdf(
             total_count=len(entries),
             flagged_count=flagged_count,
             source_filename=file.filename,
+            format_detected=fmt.value,
+            quality_score=quality,
+            format_warning=format_warning,
         )
 
         # Persist to Firestore (non-blocking)

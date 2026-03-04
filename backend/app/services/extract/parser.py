@@ -73,12 +73,23 @@ def _split_into_entries(text: str) -> list[str]:
     """
     Split the Exhibit A text into individual entry strings.
 
+    Handles "RESPONDENTS WITH ADDRESS UNKNOWN" section header by prefixing
+    subsequent entry numbers with "U" when they don't already have it.
+
     Args:
         text: Full Exhibit A text
 
     Returns:
         List of raw entry strings
     """
+    # Detect "RESPONDENTS WITH ADDRESS UNKNOWN" section boundary
+    unknown_section_pattern = re.compile(
+        r"RESPONDENTS\s+WITH\s+ADDRESS\s+UNKNOWN",
+        re.IGNORECASE,
+    )
+    unknown_match = unknown_section_pattern.search(text)
+    unknown_section_start = unknown_match.start() if unknown_match else None
+
     # Pattern to match entry numbers: "1.", "2.", "U 1.", "U1.", etc.
     entry_pattern = re.compile(
         r"(?:^|\n)\s*(U\s*\d+\.|\d+\.)\s+",
@@ -99,8 +110,20 @@ def _split_into_entries(text: str) -> list[str]:
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
 
         entry_text = text[start:end].strip()
-        if entry_text:
-            entries.append(entry_text)
+        if not entry_text:
+            continue
+
+        # If this entry is after the "ADDRESS UNKNOWN" header and doesn't
+        # already have a U prefix, add one.
+        if (
+            unknown_section_start is not None
+            and start >= unknown_section_start
+        ):
+            number_match = re.match(r"^\s*(\d+\.)", entry_text)
+            if number_match:
+                entry_text = "U" + entry_text.lstrip()
+
+        entries.append(entry_text)
 
     return entries
 
