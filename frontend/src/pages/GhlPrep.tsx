@@ -280,9 +280,8 @@ export default function GhlPrep() {
       return
     }
 
-    // Use filtered rows if filter is active, exclude unchecked rows, strip Entity Type column
-    const baseRows = showIndividualsOnly ? filteredRows : result.rows
-    const exportRows = baseRows
+    // Filter sortedRows (not baseRows) since excludedRows indices correspond to sortedRows positions
+    const exportRows = sortedRows
       .filter((_, i) => !excludedRows.has(i))
       .map(
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -827,8 +826,7 @@ export default function GhlPrep() {
         contactCount={includedCount}
         defaultTag={defaultTag}
         rows={(() => {
-          const baseRows = showIndividualsOnly ? filteredRows : (result?.rows || [])
-          return baseRows
+          return sortedRows
             .filter((_, i) => !excludedRows.has(i))
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
             .map(({ 'Entity Type': _entityType, ...rest }) => rest)
