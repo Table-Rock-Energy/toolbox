@@ -817,7 +817,7 @@ export default function Proration() {
             ) : (
               <button
                 onClick={handleDownloadRRC}
-                disabled={isDownloadingRRC || (rrcSyncJob && rrcSyncJob.status !== 'complete' && rrcSyncJob.status !== 'failed')}
+                disabled={isDownloadingRRC || !!(rrcSyncJob && rrcSyncJob.status !== 'complete' && rrcSyncJob.status !== 'failed')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm whitespace-nowrap ${
                   dataExpired
                     ? 'bg-orange-600 text-white hover:bg-orange-700'

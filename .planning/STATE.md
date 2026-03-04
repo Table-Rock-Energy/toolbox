@@ -46,9 +46,10 @@ None.
 |---|-------------|------|--------|-----------|
 | 1 | Add entity type filtering to GHL Prep tool | 2026-03-04 | 08f9fad | [1-add-entity-type-filtering-to-ghl-prep-to](./quick/1-add-entity-type-filtering-to-ghl-prep-to/) |
 | 2 | Multi-format Exhibit A parsing with format detection | 2026-03-04 | 5548810 | [2-multi-format-exhibit-a-parsing-format-de](./quick/2-multi-format-exhibit-a-parsing-format-de/) |
+| 4 | Background RRC download with Firestore job tracking | 2026-03-04 | 1d7dbee | [4-implement-background-rrc-download](./quick/4-implement-background-rrc-download/) |
 
 ## Session Continuity
 
-Last activity: 2026-03-04 - Completed quick task 2: Multi-Format Exhibit A Parsing
+Last activity: 2026-03-04 - Completed quick task 4: Background RRC Download
 Last session: 2026-03-04
 Next action: `/gsd:new-milestone` for next version planning
