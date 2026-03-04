@@ -127,6 +127,14 @@ class RRCDownloadResponse(BaseModel):
     gas_rows: int = Field(0, description="Number of gas records downloaded")
 
 
+class RRCBackgroundDownloadResponse(BaseModel):
+    """Response from starting a background RRC download."""
+
+    job_id: str = Field(..., description="Background job ID for polling")
+    status: str = Field(..., description="Initial job status")
+    message: str = Field("Download started", description="Status message")
+
+
 class UploadResponse(BaseModel):
     """Response model for CSV upload endpoint."""
 

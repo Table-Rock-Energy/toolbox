@@ -13,12 +13,18 @@ from app.core.ingestion import file_response, persist_job_result, validate_uploa
 from app.models.proration import (
     ExportRequest,
     ProcessingOptions,
+    RRCBackgroundDownloadResponse,
     RRCDownloadResponse,
     UploadResponse,
 )
 from app.services.proration.csv_processor import process_csv
 from app.services.proration.export_service import to_csv, to_excel, to_pdf
 from app.services.proration.rrc_data_service import rrc_data_service
+from app.services.rrc_background import (
+    get_active_rrc_sync_job,
+    get_rrc_sync_job,
+    start_rrc_background_download,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +59,12 @@ async def get_rrc_status() -> dict:
     return status
 
 
-@router.post("/rrc/download", response_model=RRCDownloadResponse)
-async def download_rrc_data(force: bool = False) -> RRCDownloadResponse:
-    """Download latest RRC proration data (oil and gas).
+@router.post("/rrc/download")
+async def download_rrc_data(force: bool = False) -> RRCBackgroundDownloadResponse | RRCDownloadResponse:
+    """Download latest RRC proration data (oil and gas) in the background.
 
     Skips download if data was already synced this month unless force=True.
+    Returns immediately with a job_id for polling progress.
     """
     # Guard: only download once per month
     if not force:
@@ -81,30 +88,48 @@ async def download_rrc_data(force: bool = False) -> RRCDownloadResponse:
         except Exception as e:
             logger.debug("Could not check last sync for guard: %s", e)
 
-    logger.info("Starting RRC data download...")
+    logger.info("Starting background RRC data download...")
 
-    success, message, stats = rrc_data_service.download_all_data()
+    # Start background download and return immediately with job_id
+    job_id = start_rrc_background_download()
 
-    sync_message = ""
-    if success:
-        try:
-            sync_result = await rrc_data_service.sync_to_database("both")
-            if sync_result.get("success"):
-                sync_message = f" | DB sync: {sync_result['message']}"
-                logger.info("DB sync complete: %s", sync_result["message"])
-            else:
-                sync_message = " | DB sync failed (CSV data still available)"
-                logger.warning("DB sync failed: %s", sync_result.get("message"))
-        except Exception as e:
-            sync_message = " | DB sync failed (CSV data still available)"
-            logger.warning("DB sync failed (non-critical): %s", e)
-
-    return RRCDownloadResponse(
-        success=success,
-        message=message + sync_message,
-        oil_rows=stats.get("oil_rows", 0),
-        gas_rows=stats.get("gas_rows", 0),
+    return RRCBackgroundDownloadResponse(
+        job_id=job_id,
+        status="downloading_oil",
+        message="Download started in background",
     )
+
+
+@router.get("/rrc/download/{job_id}/status")
+async def get_rrc_download_status(job_id: str) -> dict:
+    """Get status of a background RRC download job.
+
+    Used for polling progress from the frontend.
+    """
+    job = await get_rrc_sync_job(job_id)
+
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Job {job_id} not found",
+        )
+
+    return job
+
+
+@router.get("/rrc/download/active")
+async def get_active_rrc_download() -> dict:
+    """Get the most recent active or recently completed RRC download job.
+
+    Returns the job if found, or {"job": null} if none.
+    Used on page load to detect running jobs.
+    """
+    job = await get_active_rrc_sync_job()
+
+    if job is None:
+        return {"job": None}
+
+    return job
 
 
 @router.post("/rrc/download/oil", response_model=RRCDownloadResponse)
