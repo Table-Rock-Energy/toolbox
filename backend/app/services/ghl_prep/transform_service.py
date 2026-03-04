@@ -365,28 +365,74 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
 
     df["Entity Type"] = df.apply(_classify_row, axis=1)
 
+    # Flag rows that need Mineral updates:
+    # 1. "Deceased" anywhere in Last Name (e.g., "Smith Deceased", "DECEASED")
+    # 2. Trust/entity names in First Name or Last Name fields (non-Individual entity types)
+    def _flag_reason(row: pd.Series) -> str:
+        """Return flag reason or empty string if row is clean."""
+        last_name = str(row.get("Last Name", "")).strip()
+        first_name = str(row.get("First Name", "")).strip()
+
+        # Check for "deceased" in last name
+        if re.search(r"\bdeceased\b", last_name, re.IGNORECASE):
+            return "Deceased in Last Name"
+        if re.search(r"\bdeceased\b", first_name, re.IGNORECASE):
+            return "Deceased in First Name"
+
+        # Check for trust/entity names in name fields (entity type != Individual)
+        entity_type = row.get("Entity Type", "Individual")
+        if entity_type == "Trust":
+            return "Trust name in contact fields"
+        if entity_type == "Estate":
+            return "Estate name in contact fields"
+        if entity_type in ("LLC", "Corporation", "Partnership"):
+            return f"{entity_type} name in contact fields"
+
+        return ""
+
+    df["Flag Reason"] = df.apply(_flag_reason, axis=1)
+
+    # Separate flagged rows from clean rows
+    flagged_mask = df["Flag Reason"] != ""
+    flagged_df = df[flagged_mask].copy()
+    clean_df = df[~flagged_mask].copy()
+
+    flagged_count = len(flagged_df)
+    if flagged_count > 0:
+        logger.info(
+            "Flagged %d rows for Mineral update: %s",
+            flagged_count,
+            flagged_df["Flag Reason"].value_counts().to_dict(),
+        )
+
     # Add entity type counts to transformed_fields
     entity_counts = df["Entity Type"].value_counts().to_dict()
     transformed_fields["individuals"] = entity_counts.get("Individual", 0)
     transformed_fields["commercial"] = sum(
         v for k, v in entity_counts.items() if k != "Individual"
     )
+    transformed_fields["flagged"] = flagged_count
 
-    # Replace NaN and convert all values to strings
-    df = df.fillna("")
-    for col in df.columns:
-        df[col] = df[col].apply(
-            lambda v: "" if v == "" or (isinstance(v, str) and v.strip() == "")
-            else str(int(v)) if isinstance(v, (int, float)) and not isinstance(v, bool)
-            else str(v)
-        )
+    # Helper to convert DataFrame to string-valued list of dicts
+    def _to_rows(frame: pd.DataFrame) -> list[dict]:
+        frame = frame.fillna("")
+        for col in frame.columns:
+            frame[col] = frame[col].apply(
+                lambda v: "" if v == "" or (isinstance(v, str) and v.strip() == "")
+                else str(int(v)) if isinstance(v, (int, float)) and not isinstance(v, bool)
+                else str(v)
+            )
+        return frame.to_dict(orient="records")
 
-    rows = df.to_dict(orient="records")
+    rows = _to_rows(clean_df)
+    flagged_rows = _to_rows(flagged_df)
 
     return TransformResult(
         success=True,
         rows=rows,
         total_count=len(rows),
+        flagged_rows=flagged_rows,
+        flagged_count=flagged_count,
         transformed_fields=transformed_fields,
         warnings=warnings,
         source_filename=filename,

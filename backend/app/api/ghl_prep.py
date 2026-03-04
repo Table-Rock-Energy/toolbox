@@ -140,3 +140,24 @@ async def export_csv(request: ExportRequest):
         raise HTTPException(
             status_code=500, detail=f"Error generating CSV: {e!s}"
         ) from e
+
+
+@router.post("/export/flagged-csv")
+async def export_flagged_csv(request: ExportRequest):
+    """Export flagged rows as a Mineral update report CSV."""
+    if not request.rows:
+        raise HTTPException(status_code=400, detail="No flagged rows to export")
+
+    try:
+        csv_bytes = to_csv(request.rows)
+        base = request.filename or "mineral_export"
+        filename = f"{base}_mineral_updates.csv"
+
+        logger.info("Exporting %d flagged rows to %s", len(request.rows), filename)
+
+        return file_response(csv_bytes, filename)
+    except Exception as e:
+        logger.exception("Error generating flagged CSV export: %s", e)
+        raise HTTPException(
+            status_code=500, detail=f"Error generating CSV: {e!s}"
+        ) from e

@@ -80,6 +80,19 @@ async def upload_pdf(
         # Route to correct parser based on format
         if fmt in (ExhibitFormat.TABLE_ATTENTION, ExhibitFormat.TABLE_SPLIT_ADDR):
             entries = parse_table_pdf(file_bytes, fmt)
+            # Fallback: if table parser found nothing, try free-text parser
+            if not entries:
+                logger.warning(
+                    "Table parser (%s) returned 0 entries, falling back to free-text",
+                    fmt.value,
+                )
+                party_text = extract_party_list(full_text)
+                entries = parse_exhibit_a(party_text)
+                if entries:
+                    fmt = ExhibitFormat.FREE_TEXT_NUMBERED
+                    logger.info(
+                        "Free-text fallback found %d entries", len(entries)
+                    )
         elif fmt == ExhibitFormat.FREE_TEXT_LIST:
             # Re-extract with 2-column layout for Coterra-style
             two_col_text = extract_text_from_pdf(file_bytes, num_columns=2)
@@ -91,12 +104,18 @@ async def upload_pdf(
             entries = parse_exhibit_a(party_text)
 
         if not entries:
+            format_label = {
+                ExhibitFormat.TABLE_ATTENTION: "table with Attention column (Devon-style)",
+                ExhibitFormat.TABLE_SPLIT_ADDR: "table with split address columns (Mewbourne-style)",
+                ExhibitFormat.FREE_TEXT_LIST: "two-column numbered list (Coterra-style)",
+                ExhibitFormat.FREE_TEXT_NUMBERED: "numbered list (e.g., '1. Name, Address')",
+            }.get(fmt, fmt.value)
             return UploadResponse(
                 message="No party entries found",
                 result=ExtractionResult(
                     success=False,
-                    error_message="Could not find numbered party entries "
-                    "(e.g., '1. Name, Address') in the document.",
+                    error_message=f"Detected format as {format_label} but could not "
+                    "extract any entries. Try selecting a different format manually.",
                     source_filename=file.filename,
                     format_detected=fmt.value,
                 ),

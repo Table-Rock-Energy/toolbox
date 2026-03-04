@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Repeat, Download, Upload, AlertCircle, Send, XCircle } from 'lucide-react'
-import { FileUpload, GhlSendModal } from '../components'
+import { Repeat, Download, Upload, AlertCircle, Send, XCircle, FileWarning, Pencil } from 'lucide-react'
+import { FileUpload, GhlSendModal, Modal } from '../components'
 import { useAuth } from '../contexts/AuthContext'
 import { ghlApi } from '../utils/api'
 import type { GhlConnectionResponse, FailedContactDetail, DailyRateLimitInfo } from '../utils/api'
@@ -11,11 +11,14 @@ interface TransformResult {
   success: boolean
   rows: Record<string, string>[]
   total_count: number
+  flagged_rows: Record<string, string>[]
+  flagged_count: number
   transformed_fields: {
     title_cased: number
     campaigns_extracted: number
     phone_mapped: number
     contact_owner_added: number
+    flagged: number
   }
   warnings: string[]
   source_filename: string
@@ -28,7 +31,7 @@ interface UploadResponse {
   result?: TransformResult
 }
 
-type ViewMode = 'normal' | 'failed-contacts'
+type ViewMode = 'normal' | 'flagged' | 'failed-contacts'
 
 export default function GhlPrep() {
   const { user, userName } = useAuth()
@@ -48,6 +51,14 @@ export default function GhlPrep() {
   const [viewMode, setViewMode] = useState<ViewMode>('normal')
   const [failedContacts, setFailedContacts] = useState<FailedContactDetail[]>([])
   const [showIndividualsOnly, setShowIndividualsOnly] = useState(false)
+
+  // Row exclusion (checkboxes)
+  const [excludedRows, setExcludedRows] = useState<Set<number>>(new Set())
+
+  // Inline editing
+  const [editingRow, setEditingRow] = useState<Record<string, string> | null>(null)
+  const [editingIndex, setEditingIndex] = useState<number>(-1)
+
   // Fetch GHL connections from backend
   useEffect(() => {
     const fetchConnections = async () => {
@@ -99,13 +110,16 @@ export default function GhlPrep() {
     checkActiveJob()
   }, [])
 
-  // Get dynamic columns from current data (normal result or failed contacts)
+  // Get dynamic columns from current data (normal result, flagged, or failed contacts)
   const columns = useMemo(() => {
     if (viewMode === 'failed-contacts' && failedContacts.length > 0) {
       const firstContact = failedContacts[0].contact_data
       const keys = Object.keys(firstContact)
-      // Add error columns at the end
       return [...keys, 'Error Category', 'Error Message']
+    }
+
+    if (viewMode === 'flagged' && result?.flagged_rows && result.flagged_rows.length > 0) {
+      return Object.keys(result.flagged_rows[0])
     }
 
     if (!result?.rows || result.rows.length === 0) return []
@@ -120,6 +134,9 @@ export default function GhlPrep() {
         'Error Category': fc.error_category as string,
         'Error Message': fc.error_message,
       }))
+    }
+    if (viewMode === 'flagged') {
+      return result?.flagged_rows || []
     }
     return result?.rows || []
   }, [result, viewMode, failedContacts])
@@ -159,6 +176,65 @@ export default function GhlPrep() {
     }
   }
 
+  // Row exclusion toggle
+  const toggleRow = (index: number) => {
+    const next = new Set(excludedRows)
+    if (next.has(index)) next.delete(index)
+    else next.add(index)
+    setExcludedRows(next)
+  }
+
+  // Select-all checkbox state
+  const isAllSelected = useMemo(() => {
+    if (sortedRows.length === 0) return false
+    return excludedRows.size === 0
+  }, [sortedRows.length, excludedRows.size])
+
+  const isSomeSelected = useMemo(() => {
+    if (sortedRows.length === 0) return false
+    return excludedRows.size > 0 && excludedRows.size < sortedRows.length
+  }, [sortedRows.length, excludedRows.size])
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      // Deselect all visible rows
+      setExcludedRows(new Set(sortedRows.map((_, i) => i)))
+    } else {
+      // Select all
+      setExcludedRows(new Set())
+    }
+  }
+
+  // Included rows count (for display)
+  const includedCount = sortedRows.length - excludedRows.size
+
+  // Edit row handlers
+  const handleEditRow = (row: Record<string, string>, index: number) => {
+    setEditingRow({ ...row })
+    setEditingIndex(index)
+  }
+
+  const handleSaveEdit = () => {
+    if (!editingRow || editingIndex < 0 || !result) return
+
+    const updatedRows = [...result.rows]
+    // Find the actual index in result.rows (sortedRows may be reordered)
+    const originalRow = sortedRows[editingIndex]
+    const realIndex = result.rows.findIndex(r =>
+      r['M1neral Contact System ID'] === originalRow['M1neral Contact System ID'] &&
+      r['First Name'] === originalRow['First Name'] &&
+      r['Last Name'] === originalRow['Last Name']
+    )
+
+    if (realIndex >= 0) {
+      updatedRows[realIndex] = editingRow
+      setResult({ ...result, rows: updatedRows })
+    }
+
+    setEditingRow(null)
+    setEditingIndex(-1)
+  }
+
   const handleFilesSelected = async (files: File[]) => {
     if (files.length === 0) return
 
@@ -168,6 +244,7 @@ export default function GhlPrep() {
     setResult(null)
     setViewMode('normal')
     setFailedContacts([])
+    setExcludedRows(new Set())
     try {
       const formData = new FormData()
       formData.append('file', file)
@@ -203,11 +280,14 @@ export default function GhlPrep() {
       return
     }
 
-    // Use filtered rows if filter is active, strip Entity Type column
-    const exportRows = (showIndividualsOnly ? filteredRows : result.rows).map(
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      ({ 'Entity Type': _entityType, ...rest }) => rest
-    )
+    // Use filtered rows if filter is active, exclude unchecked rows, strip Entity Type column
+    const baseRows = showIndividualsOnly ? filteredRows : result.rows
+    const exportRows = baseRows
+      .filter((_, i) => !excludedRows.has(i))
+      .map(
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        ({ 'Entity Type': _entityType, ...rest }) => rest
+      )
 
     try {
       const response = await fetch(`${API_BASE}/ghl-prep/export/csv`, {
@@ -235,6 +315,40 @@ export default function GhlPrep() {
       document.body.removeChild(a)
     } catch {
       setError('Failed to export file')
+    }
+  }
+
+  // Download flagged rows as Mineral update report
+  const handleExportFlagged = async () => {
+    if (!result?.flagged_rows || result.flagged_rows.length === 0) {
+      setError('No flagged rows to export')
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/ghl-prep/export/flagged-csv`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rows: result.flagged_rows,
+          filename: result.source_filename?.replace(/\.[^.]+$/, '') || 'mineral_export',
+        }),
+      })
+
+      if (!response.ok) throw new Error('Export failed')
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const baseName = result.source_filename?.replace(/\.[^.]+$/, '') || 'mineral_export'
+      a.download = `${baseName}_mineral_updates.csv`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch {
+      setError('Failed to export flagged rows')
     }
   }
 
@@ -325,6 +439,7 @@ export default function GhlPrep() {
     setViewMode('normal')
     setFailedContacts([])
     setShowIndividualsOnly(false)
+    setExcludedRows(new Set())
   }
 
   // Handle viewing failed contacts from send modal
@@ -348,11 +463,14 @@ export default function GhlPrep() {
       success: true,
       rows: retryRows,
       total_count: retryRows.length,
+      flagged_rows: [],
+      flagged_count: 0,
       transformed_fields: {
         title_cased: 0,
         campaigns_extracted: 0,
         phone_mapped: 0,
         contact_owner_added: 0,
+        flagged: 0,
       },
       warnings: [],
       source_filename: 'failed_contacts_retry',
@@ -431,10 +549,14 @@ export default function GhlPrep() {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-oswald font-semibold text-tre-navy">
-                  {viewMode === 'failed-contacts' ? 'Failed Contacts' : result.source_filename}
+                  {viewMode === 'failed-contacts' ? 'Failed Contacts'
+                    : viewMode === 'flagged' ? 'Mineral Update Report'
+                    : result.source_filename}
                 </h3>
                 <p className="text-sm text-gray-500">
-                  {viewMode === 'failed-contacts' ? 'Review and retry failed contacts' : 'Transformation complete'}
+                  {viewMode === 'failed-contacts' ? 'Review and retry failed contacts'
+                    : viewMode === 'flagged' ? 'These contacts need to be updated in Mineral before GHL import'
+                    : 'Transformation complete'}
                 </p>
               </div>
               {viewMode === 'normal' && result && (
@@ -456,6 +578,24 @@ export default function GhlPrep() {
                 </div>
               )}
               <div className="flex gap-2">
+                {viewMode === 'flagged' && (
+                  <>
+                    <button
+                      onClick={() => setViewMode('normal')}
+                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      Back to Clean Export
+                    </button>
+                    <button
+                      onClick={handleExportFlagged}
+                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download Mineral Updates
+                    </button>
+                  </>
+                )}
                 {viewMode === 'failed-contacts' && (
                   <>
                     <button
@@ -550,15 +690,67 @@ export default function GhlPrep() {
             </div>
           )}
 
+          {/* Flagged Rows Banner */}
+          {viewMode === 'normal' && result.flagged_count > 0 && (
+            <div className="mx-6 mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-start gap-2">
+                  <FileWarning className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-800">
+                      {result.flagged_count} contact{result.flagged_count !== 1 ? 's' : ''} need updating in Mineral
+                    </p>
+                    <p className="text-xs text-amber-600 mt-0.5">
+                      Deceased entries and trust/entity names in contact fields have been separated from the GHL export
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setViewMode('flagged')}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200 transition-colors"
+                  >
+                    <FileWarning className="w-4 h-4" />
+                    Review
+                  </button>
+                  <button
+                    onClick={handleExportFlagged}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm border border-amber-300 text-amber-800 rounded-lg hover:bg-amber-100 transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Preview Table */}
           <div className="p-6">
             <h4 className="font-medium text-gray-900 mb-3">
-              {sortedRows.length} rows{showIndividualsOnly ? ` (filtered from ${currentRows.length})` : ''}
+              {viewMode === 'normal' && excludedRows.size > 0
+                ? `${includedCount} of ${sortedRows.length} rows selected for export`
+                : `${sortedRows.length} rows`}
+              {showIndividualsOnly ? ` (filtered from ${currentRows.length})` : ''}
             </h4>
             <div className="overflow-x-auto overflow-y-auto max-h-[75vh]">
               <table className="text-sm">
                 <thead className="sticky top-0 bg-white z-10">
                   <tr className="border-b border-gray-200">
+                    {viewMode === 'normal' && (
+                      <th className="text-left py-2 px-3 font-medium text-gray-600 w-10">
+                        <input
+                          type="checkbox"
+                          checked={isAllSelected}
+                          ref={(el) => { if (el) el.indeterminate = isSomeSelected }}
+                          onChange={toggleSelectAll}
+                          className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                        />
+                      </th>
+                    )}
+                    {viewMode === 'normal' && (
+                      <th className="text-left py-2 px-2 font-medium text-gray-600 w-10" />
+                    )}
                     {columns.map((column) => (
                       <th
                         key={column}
@@ -579,22 +771,47 @@ export default function GhlPrep() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {sortedRows.map((row, i) => (
-                    <tr key={i} className="hover:bg-gray-50">
-                      {columns.map((column) => {
-                        const value = String(row[column] ?? '')
-                        const isError = column === 'Error Category' || column === 'Error Message'
-                        return (
-                          <td
-                            key={column}
-                            className={`py-2 px-4 whitespace-nowrap ${isError ? 'text-red-600' : 'text-gray-600'}`}
-                          >
-                            {value || <span className="text-gray-400">{'\u2014'}</span>}
+                  {sortedRows.map((row, i) => {
+                    const isExcluded = excludedRows.has(i)
+                    return (
+                      <tr key={i} className={`${isExcluded ? 'opacity-40 bg-gray-50' : 'hover:bg-gray-50'}`}>
+                        {viewMode === 'normal' && (
+                          <td className="py-2 px-3">
+                            <input
+                              type="checkbox"
+                              checked={!isExcluded}
+                              onChange={() => toggleRow(i)}
+                              className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                            />
                           </td>
-                        )
-                      })}
-                    </tr>
-                  ))}
+                        )}
+                        {viewMode === 'normal' && (
+                          <td className="py-2 px-2">
+                            <button
+                              onClick={() => handleEditRow(row, i)}
+                              className="text-gray-400 hover:text-tre-teal transition-colors"
+                              title="Edit row"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        )}
+                        {columns.map((column) => {
+                          const value = String(row[column] ?? '')
+                          const isError = column === 'Error Category' || column === 'Error Message'
+                          const isFlagReason = column === 'Flag Reason'
+                          return (
+                            <td
+                              key={column}
+                              className={`py-2 px-4 whitespace-nowrap ${isError ? 'text-red-600' : isFlagReason ? 'text-amber-700 font-medium' : 'text-gray-600'}`}
+                            >
+                              {value || <span className="text-gray-400">{'\u2014'}</span>}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -607,18 +824,61 @@ export default function GhlPrep() {
         isOpen={showSendModal}
         onClose={handleModalClose}
         connections={connections}
-        contactCount={showIndividualsOnly ? filteredRows.length : (result?.rows?.length || 0)}
+        contactCount={includedCount}
         defaultTag={defaultTag}
-        rows={(showIndividualsOnly
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          ? filteredRows.map(({ 'Entity Type': _entityType, ...rest }) => rest)
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          : (result?.rows || []).map(({ 'Entity Type': _entityType, ...rest }) => rest)
-        )}
+        rows={(() => {
+          const baseRows = showIndividualsOnly ? filteredRows : (result?.rows || [])
+          return baseRows
+            .filter((_, i) => !excludedRows.has(i))
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            .map(({ 'Entity Type': _entityType, ...rest }) => rest)
+        })()}
         activeJobId={activeJobId}
         onJobStarted={handleJobStarted}
         onViewFailedContacts={handleViewFailedContacts}
       />
+
+      {/* Edit Row Modal */}
+      <Modal
+        isOpen={!!editingRow}
+        onClose={() => { setEditingRow(null); setEditingIndex(-1) }}
+        title="Edit Contact"
+        size="lg"
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => { setEditingRow(null); setEditingIndex(-1) }}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveEdit}
+              className="px-4 py-2 bg-tre-teal text-white rounded-lg hover:bg-tre-teal/90 transition-colors text-sm"
+            >
+              Save Changes
+            </button>
+          </div>
+        }
+      >
+        {editingRow && (
+          <div className="grid grid-cols-2 gap-4">
+            {columns
+              .filter(col => col !== 'Entity Type' && col !== 'Flag Reason')
+              .map((col) => (
+                <div key={col} className={col === 'Address' ? 'col-span-2' : ''}>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">{col}</label>
+                  <input
+                    type="text"
+                    value={editingRow[col] || ''}
+                    onChange={(e) => setEditingRow({ ...editingRow, [col]: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-tre-teal focus:border-tre-teal"
+                  />
+                </div>
+              ))}
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

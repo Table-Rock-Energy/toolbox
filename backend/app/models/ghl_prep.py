@@ -11,8 +11,13 @@ class TransformResult(BaseModel):
     """Result of transforming a Mineral export CSV for GoHighLevel import."""
 
     success: bool = Field(..., description="Whether the transformation succeeded")
-    rows: list[dict] = Field(..., description="Transformed rows as dicts with all original columns preserved")
-    total_count: int = Field(..., description="Total number of rows processed")
+    rows: list[dict] = Field(..., description="Clean GHL-ready rows (deceased/trust rows removed)")
+    total_count: int = Field(..., description="Total number of clean rows")
+    flagged_rows: list[dict] = Field(
+        default_factory=list,
+        description="Rows flagged for Mineral update (deceased in last name, trust in name fields)"
+    )
+    flagged_count: int = Field(0, description="Number of flagged rows needing Mineral update")
     transformed_fields: dict[str, int] = Field(
         default_factory=dict,
         description="Counts of transformations applied (e.g., {'title_cased': 45, 'campaigns_extracted': 30})"

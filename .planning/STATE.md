@@ -49,6 +49,6 @@ None.
 
 ## Session Continuity
 
+Last activity: 2026-03-04 - Completed quick task 2: Multi-Format Exhibit A Parsing
 Last session: 2026-03-04
-Stopped at: Completed quick task 2: Multi-format Exhibit A parsing
 Next action: `/gsd:new-milestone` for next version planning
