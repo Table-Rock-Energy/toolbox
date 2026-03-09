@@ -88,6 +88,15 @@ class ProcessingOptions(BaseModel):
     )
 
 
+class CountyDownloadInfo(BaseModel):
+    """Status of an on-demand county RRC data download."""
+
+    county_name: str = Field(..., description="County name")
+    status: str = Field(..., description="fresh, downloaded, or failed")
+    records_downloaded: int = Field(0, description="Records downloaded for this county")
+    duration_seconds: Optional[float] = Field(None, description="Download duration")
+
+
 class ProcessingResult(BaseModel):
     """Result of processing a CSV file."""
 
@@ -105,6 +114,9 @@ class ProcessingResult(BaseModel):
     )
     source_filename: Optional[str] = Field(None, description="Original CSV filename")
     job_id: Optional[str] = Field(None, description="Firestore job ID")
+    county_downloads: Optional[list[CountyDownloadInfo]] = Field(
+        None, description="On-demand county download statuses"
+    )
 
 
 class RRCDataStatus(BaseModel):

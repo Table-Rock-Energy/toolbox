@@ -42,6 +42,7 @@ REVENUE_STATEMENTS_COLLECTION = "revenue_statements"
 RRC_OIL_COLLECTION = "rrc_oil_proration"
 RRC_GAS_COLLECTION = "rrc_gas_proration"
 RRC_SYNC_COLLECTION = "rrc_data_syncs"
+RRC_COUNTY_STATUS_COLLECTION = "rrc_county_status"
 AUDIT_LOGS_COLLECTION = "audit_logs"
 APP_CONFIG_COLLECTION = "app_config"
 USER_PREFERENCES_COLLECTION = "user_preferences"
@@ -759,6 +760,94 @@ async def complete_rrc_sync(
         "error_message": error_message,
         "duration_seconds": duration_seconds,
     })
+
+
+# =============================================================================
+# RRC County Status Operations
+# =============================================================================
+
+
+async def get_counties_status(keys: list[str]) -> dict[str, dict]:
+    """Batch read county freshness status.
+
+    Args:
+        keys: List of county keys like "08-003" (district-county_code)
+
+    Returns:
+        Dict mapping key -> status doc (or empty dict for missing)
+    """
+    db = get_firestore_client()
+    result: dict[str, dict] = {}
+
+    # Firestore getAll supports up to 100 refs at a time
+    for i in range(0, len(keys), 100):
+        batch_keys = keys[i:i + 100]
+        refs = [
+            db.collection(RRC_COUNTY_STATUS_COLLECTION).document(k)
+            for k in batch_keys
+        ]
+        docs = await db.get_all(refs)
+        for doc in docs:
+            if doc.exists:
+                result[doc.id] = doc.to_dict()
+
+    return result
+
+
+async def update_county_status(key: str, data: dict) -> None:
+    """Update county download status after a download attempt.
+
+    Args:
+        key: County key like "08-003"
+        data: Status fields to set/update
+    """
+    db = get_firestore_client()
+    data["updated_at"] = datetime.utcnow()
+    await db.collection(RRC_COUNTY_STATUS_COLLECTION).document(key).set(
+        data, merge=True
+    )
+
+
+async def get_stale_counties(keys: list[str]) -> list[str]:
+    """Return county keys that need a fresh download.
+
+    A county is stale if:
+    - No status doc exists (never downloaded)
+    - last_downloaded_at is before the 1st of the current month
+    - status is "failed"
+
+    Args:
+        keys: List of county keys like "08-003"
+
+    Returns:
+        List of stale keys needing refresh
+    """
+    statuses = await get_counties_status(keys)
+
+    first_of_month = datetime.utcnow().replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0
+    )
+
+    stale = []
+    for key in keys:
+        status = statuses.get(key)
+        if not status:
+            stale.append(key)
+            continue
+        if status.get("status") == "failed":
+            stale.append(key)
+            continue
+        last_dl = status.get("last_downloaded_at")
+        if not last_dl:
+            stale.append(key)
+            continue
+        # Handle both datetime objects and ISO strings
+        if isinstance(last_dl, str):
+            last_dl = datetime.fromisoformat(last_dl.replace("Z", "+00:00")).replace(tzinfo=None)
+        if last_dl < first_of_month:
+            stale.append(key)
+
+    return stale
 
 
 # =============================================================================

@@ -35,6 +35,13 @@ interface MineralHolderRow {
   well_type?: string
 }
 
+interface CountyDownloadInfo {
+  county_name: string
+  status: 'fresh' | 'downloaded' | 'failed' | 'skipped'
+  records_downloaded: number
+  duration_seconds?: number
+}
+
 interface ProcessingResult {
   success: boolean
   total_rows?: number
@@ -46,6 +53,7 @@ interface ProcessingResult {
   error_message?: string
   source_filename?: string
   job_id?: string
+  county_downloads?: CountyDownloadInfo[]
 }
 
 interface UploadResponse {
@@ -1211,6 +1219,46 @@ export default function Proration() {
                   <p className="text-sm text-gray-500">Failed</p>
                 </div>
               </div>
+
+              {/* County Download Summary */}
+              {activeJob.result.county_downloads && activeJob.result.county_downloads.length > 0 && (
+                <div className="px-6 py-3 border-b border-gray-100 bg-gray-50/50">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide mr-1">RRC Data:</span>
+                    {activeJob.result.county_downloads.map((cd, idx) => (
+                      <span
+                        key={idx}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                          cd.status === 'fresh'
+                            ? 'bg-green-100 text-green-700'
+                            : cd.status === 'downloaded'
+                              ? 'bg-blue-100 text-blue-700'
+                              : cd.status === 'failed'
+                                ? 'bg-yellow-100 text-yellow-700'
+                                : 'bg-gray-100 text-gray-600'
+                        }`}
+                        title={
+                          cd.status === 'downloaded'
+                            ? `${cd.records_downloaded.toLocaleString()} records in ${cd.duration_seconds}s`
+                            : cd.status === 'fresh'
+                              ? 'Already had current data'
+                              : cd.status === 'failed'
+                                ? 'Download failed, proceeded without'
+                                : 'Skipped due to time budget'
+                        }
+                      >
+                        {cd.status === 'fresh' && <CheckCircle className="w-3 h-3" />}
+                        {cd.status === 'downloaded' && <Download className="w-3 h-3" />}
+                        {cd.status === 'failed' && <AlertTriangle className="w-3 h-3" />}
+                        {cd.county_name}
+                        {cd.status === 'downloaded' && cd.records_downloaded > 0 && (
+                          <span className="text-[10px] opacity-75">({cd.records_downloaded.toLocaleString()})</span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Preview Table */}
               <div className="p-6">
