@@ -18,6 +18,7 @@ from app.models.proration import (
 )
 from app.services.proration.calculation_service import calculate_metrics
 from app.services.proration.legal_description_parser import parse_legal_description
+from app.services.proration.rrc_county_codes import lookup_county
 from app.services.proration.rrc_data_service import rrc_data_service
 
 if TYPE_CHECKING:
@@ -364,3 +365,46 @@ def determine_well_type(
         return WellType.GAS
 
     return WellType.UNKNOWN
+
+
+def extract_needed_counties(file_bytes: bytes) -> list[dict]:
+    """Extract unique counties from an uploaded CSV for on-demand RRC download.
+
+    Args:
+        file_bytes: CSV file content
+
+    Returns:
+        List of dicts with county_name, county_code, district for counties
+        found in both the CSV and the RRC county code mapping.
+    """
+    try:
+        df = pd.read_csv(io.BytesIO(file_bytes))
+    except Exception as e:
+        logger.warning("Could not pre-parse CSV for county extraction: %s", e)
+        return []
+
+    if "County" not in df.columns:
+        return []
+
+    seen: set[str] = set()
+    counties: list[dict] = []
+
+    for raw in df["County"].dropna().unique():
+        name = str(raw).strip().upper().replace(" COUNTY", "")
+        if name in seen or not name:
+            continue
+        seen.add(name)
+
+        result = lookup_county(name)
+        if result:
+            county_code, district, canonical = result
+            counties.append({
+                "county_name": canonical,
+                "county_code": county_code,
+                "district": district,
+            })
+        else:
+            logger.debug("County '%s' not found in RRC mapping", name)
+
+    logger.info("Extracted %d counties from CSV: %s", len(counties), [c["county_name"] for c in counties])
+    return counties

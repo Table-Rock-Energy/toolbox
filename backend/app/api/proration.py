@@ -5,20 +5,22 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Annotated, Optional
+from typing import Annotated, Optional, Union
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
 from app.core.ingestion import file_response, persist_job_result, validate_upload
 from app.models.proration import (
+    CountyDownloadInfo,
     ExportRequest,
     ProcessingOptions,
     RRCBackgroundDownloadResponse,
     RRCDownloadResponse,
     UploadResponse,
 )
-from app.services.proration.csv_processor import process_csv
+from app.services.proration.csv_processor import extract_needed_counties, process_csv
 from app.services.proration.export_service import to_csv, to_excel, to_pdf
+from app.services.proration.rrc_county_download_service import ensure_counties_fresh
 from app.services.proration.rrc_data_service import rrc_data_service
 from app.services.rrc_background import (
     get_active_rrc_sync_job,
@@ -60,7 +62,7 @@ async def get_rrc_status() -> dict:
 
 
 @router.post("/rrc/download")
-async def download_rrc_data(force: bool = False) -> RRCBackgroundDownloadResponse | RRCDownloadResponse:
+async def download_rrc_data(force: bool = False) -> Union[RRCBackgroundDownloadResponse, RRCDownloadResponse]:
     """Download latest RRC proration data (oil and gas) in the background.
 
     Skips download if data was already synced this month unless force=True.
@@ -194,10 +196,27 @@ async def upload_csv(
         else:
             options = ProcessingOptions(query_rrc=False)
 
+        # On-demand county download: extract counties and ensure fresh data
+        county_download_infos: list[CountyDownloadInfo] = []
+        try:
+            needed_counties = extract_needed_counties(file_bytes)
+            if needed_counties:
+                logger.info("Checking freshness for %d counties", len(needed_counties))
+                dl_results = await ensure_counties_fresh(needed_counties)
+                county_download_infos = [
+                    CountyDownloadInfo(**r) for r in dl_results
+                ]
+                downloaded = sum(1 for r in dl_results if r["status"] == "downloaded")
+                if downloaded > 0:
+                    logger.info("Downloaded fresh RRC data for %d counties", downloaded)
+        except Exception as e:
+            logger.warning("County download failed (proceeding without): %s", e)
+
         logger.info("Processing CSV: %s", file.filename)
         result = await process_csv(file_bytes, file.filename, options)
 
         if not result.success:
+            result.county_downloads = county_download_infos or None
             return UploadResponse(message="Processing failed", result=result)
 
         logger.info(
@@ -223,7 +242,9 @@ async def upload_csv(
         if job_id:
             result.job_id = job_id
 
-        # ETL pipeline disabled - will be replaced with Supabase
+        # Attach county download info to result
+        if county_download_infos:
+            result.county_downloads = county_download_infos
 
         return UploadResponse(
             message=(
