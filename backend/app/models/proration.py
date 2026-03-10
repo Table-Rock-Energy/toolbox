@@ -156,6 +156,27 @@ class UploadResponse(BaseModel):
     )
 
 
+class FetchMissingRequest(BaseModel):
+    """Request to fetch RRC data for unmatched rows."""
+
+    rows: list[MineralHolderRow] = Field(
+        ..., description="Unmatched rows needing RRC data"
+    )
+
+
+class FetchMissingResult(BaseModel):
+    """Result of fetching missing RRC data."""
+
+    updated_rows: list[MineralHolderRow] = Field(
+        default_factory=list, description="Rows with updated RRC data"
+    )
+    counties_downloaded: list[CountyDownloadInfo] = Field(
+        default_factory=list, description="County download statuses"
+    )
+    matched_count: int = Field(0, description="Rows that now have RRC data")
+    still_missing_count: int = Field(0, description="Rows still without RRC data")
+
+
 class ExportRequest(BaseModel):
     """Request model for export endpoints."""
 

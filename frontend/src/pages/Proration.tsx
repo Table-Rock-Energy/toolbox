@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw, Filter, Settings, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw, Filter, Settings, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
 import { FileUpload, Modal, AiReviewPanel } from '../components'
 import { aiApi } from '../utils/api'
 import type { AiSuggestion } from '../utils/api'
@@ -186,6 +186,10 @@ export default function Proration() {
   // AI Review state
   const [showAiReview, setShowAiReview] = useState(false)
   const [aiEnabled, setAiEnabled] = useState(false)
+
+  // Fetch missing RRC data state
+  const [isFetchingMissing, setIsFetchingMissing] = useState(false)
+  const [fetchMissingMessage, setFetchMissingMessage] = useState<string | null>(null)
 
   // Edit Row Modal State
   const [editingRow, setEditingRow] = useState<MineralHolderRow | null>(null)
@@ -609,6 +613,68 @@ export default function Proration() {
     setEditingIndex(null)
   }
 
+  const handleFetchMissing = async () => {
+    if (!activeJob?.result?.rows) return
+
+    const unmatchedRows = activeJob.result.rows.filter(r => !r.rrc_acres)
+    if (unmatchedRows.length === 0) return
+
+    setIsFetchingMissing(true)
+    setFetchMissingMessage(null)
+    setError(null)
+
+    try {
+      const response = await fetch(`${API_BASE}/proration/rrc/fetch-missing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: unmatchedRows }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || 'Failed to fetch missing data')
+      }
+
+      const result = await response.json()
+
+      // Merge updated rows back into the full row list
+      const updatedMap = new Map<string, MineralHolderRow>()
+      for (const row of result.updated_rows) {
+        // Key by owner + county + rrc_lease for matching
+        const key = `${row.owner}|${row.county}|${row.rrc_lease || row.raw_rrc || ''}`
+        updatedMap.set(key, row)
+      }
+
+      const mergedRows = activeJob.result.rows.map(row => {
+        if (row.rrc_acres) return row // Already matched, skip
+        const key = `${row.owner}|${row.county}|${row.rrc_lease || row.raw_rrc || ''}`
+        return updatedMap.get(key) || row
+      })
+
+      setActiveJob({
+        ...activeJob,
+        result: {
+          ...activeJob.result,
+          rows: mergedRows,
+          matched_rows: mergedRows.filter(r => r.rrc_acres).length,
+        },
+      })
+
+      const msg = result.matched_count > 0
+        ? `Found RRC data for ${result.matched_count} rows`
+        : 'No additional RRC data found'
+      setFetchMissingMessage(
+        result.still_missing_count > 0
+          ? `${msg} (${result.still_missing_count} still missing)`
+          : msg
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch missing data')
+    } finally {
+      setIsFetchingMissing(false)
+    }
+  }
+
   const isColumnVisible = (key: string): boolean => {
     const col = COLUMNS.find(c => c.key === key)
     if (col?.alwaysVisible) return true
@@ -701,163 +767,32 @@ export default function Proration() {
         </button>
       </div>
 
-      {/* RRC Data Status Banner */}
+      {/* RRC Data Status - informational only */}
       {rrcLoading ? (
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-gray-50 border border-gray-200">
           <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />
           <span className="text-sm text-gray-500">Checking RRC data status...</span>
         </div>
-      ) : hasRRCData && !dataExpired ? (
-        /* Compact green info line when data is loaded and current - or show progress if actively syncing */
-        isDownloadingRRC && rrcSyncJob ? (
-          <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-blue-50 border border-blue-200">
-            <RefreshCw className="w-4 h-4 text-blue-600 flex-shrink-0 animate-spin" />
-            <div className="flex-1 flex items-center gap-4">
-              <span className="text-sm text-blue-800 font-medium">
-                {STEP_LABELS[rrcSyncJob.status] || rrcSyncJob.status}
-              </span>
-              {rrcSyncJob.steps.filter(s => s.completed_at && s.message).map((step, idx) => (
-                <span key={idx} className="text-xs text-blue-600 flex items-center gap-1">
-                  <CheckCircle className="w-3 h-3" />
-                  {step.message}
-                </span>
-              ))}
-              <span className="text-xs text-blue-500 ml-auto">
-                {Math.floor((Date.now() - new Date(rrcSyncJob.started_at).getTime()) / 1000)}s elapsed
-              </span>
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-green-50 border border-green-200">
-            <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
-            <span className="text-sm text-green-800">
-              <span className="font-medium">{totalRecords.toLocaleString()}</span> RRC records
-              <span className="text-green-600 mx-1">({oilRecords.toLocaleString()} oil, {gasRecords.toLocaleString()} gas)</span>
-              <span className="text-green-600/70">&bull; Synced {rrcStatus?.last_sync?.completed_at
-                ? formatDate(rrcStatus.last_sync.completed_at)
-                : rrcStatus?.oil_modified
-                  ? formatDate(rrcStatus.oil_modified)
-                  : 'Never'
-              }</span>
-            </span>
-            {rrcMessage && (
-              <span className="text-sm text-green-700 ml-auto flex items-center gap-1">
-                <CheckCircle className="w-3.5 h-3.5" />
-                {rrcMessage}
-              </span>
-            )}
-          </div>
-        )
+      ) : hasRRCData ? (
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-green-50 border border-green-200">
+          <Database className="w-4 h-4 text-green-600 flex-shrink-0" />
+          <span className="text-sm text-green-800">
+            <span className="font-medium">{totalRecords.toLocaleString()}</span> RRC records
+            <span className="text-green-600 mx-1">({oilRecords.toLocaleString()} oil, {gasRecords.toLocaleString()} gas)</span>
+            <span className="text-green-600/70">&bull; Last updated {rrcStatus?.last_sync?.completed_at
+              ? formatDate(rrcStatus.last_sync.completed_at)
+              : rrcStatus?.oil_modified
+                ? formatDate(rrcStatus.oil_modified)
+                : 'Unknown'
+            }</span>
+          </span>
+        </div>
       ) : (
-        /* Full banner when action is needed (no data or expired) */
-        <div className={`rounded-xl border p-4 ${
-          dataExpired ? 'bg-orange-50 border-orange-200' : 'bg-yellow-50 border-yellow-200'
-        }`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Database className={`w-5 h-5 ${
-                dataExpired ? 'text-orange-600' : 'text-yellow-600'
-              }`} />
-              <div>
-                <h3 className={`font-medium ${
-                  dataExpired ? 'text-orange-800' : 'text-yellow-800'
-                }`}>
-                  RRC Master Database
-                  {dataExpired && (
-                    <span className="ml-2 text-xs font-normal bg-orange-200 text-orange-800 px-2 py-0.5 rounded">
-                      Monthly Update Available
-                    </span>
-                  )}
-                </h3>
-                {rrcStatus ? (
-                  <div className="text-sm mt-1 space-y-0.5">
-                    {hasRRCData ? (
-                      <>
-                        <div className="text-orange-700">
-                          <span className="font-medium">{totalRecords.toLocaleString()}</span> records
-                          ({oilRecords.toLocaleString()} oil, {gasRecords.toLocaleString()} gas)
-                        </div>
-                        <div className="text-gray-500 text-xs">
-                          Last synced: {rrcStatus.last_sync?.completed_at
-                            ? formatDate(rrcStatus.last_sync.completed_at)
-                            : rrcStatus.oil_modified
-                              ? formatDate(rrcStatus.oil_modified)
-                              : 'Never'
-                          }
-                          {rrcStatus.last_sync?.new_records ? (
-                            <span className="ml-2">&bull; {rrcStatus.last_sync.new_records.toLocaleString()} new, {(rrcStatus.last_sync.updated_records || 0).toLocaleString()} updated</span>
-                          ) : null}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="text-yellow-700">
-                        No RRC data available. Download to build the master database.
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-sm text-gray-500">Checking status...</div>
-                )}
-              </div>
-            </div>
-            {/* Show progress UI when downloading, otherwise show button */}
-            {isDownloadingRRC && rrcSyncJob ? (
-              <div className="flex flex-col gap-2 flex-1">
-                {/* Current step with spinner */}
-                <div className="flex items-center gap-2 text-sm">
-                  <RefreshCw className="w-4 h-4 animate-spin text-orange-600" />
-                  <span className="font-medium text-orange-800">
-                    {STEP_LABELS[rrcSyncJob.status] || rrcSyncJob.status}
-                  </span>
-                  <span className="text-gray-500 text-xs ml-auto">
-                    {Math.floor((Date.now() - new Date(rrcSyncJob.started_at).getTime()) / 1000)}s
-                  </span>
-                </div>
-
-                {/* Completed steps with checkmarks */}
-                {rrcSyncJob.steps.filter(s => s.completed_at && s.message).map((step, idx) => (
-                  <div key={idx} className="flex items-center gap-2 text-sm text-gray-600">
-                    <CheckCircle className="w-3.5 h-3.5 text-green-600" />
-                    <span className="text-xs">{step.message}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <button
-                onClick={handleDownloadRRC}
-                disabled={isDownloadingRRC || !!(rrcSyncJob && rrcSyncJob.status !== 'complete' && rrcSyncJob.status !== 'failed')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm whitespace-nowrap ${
-                  dataExpired
-                    ? 'bg-orange-600 text-white hover:bg-orange-700'
-                    : 'bg-yellow-600 text-white hover:bg-yellow-700'
-                } ${isDownloadingRRC || (rrcSyncJob && rrcSyncJob.status !== 'complete' && rrcSyncJob.status !== 'failed') ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                <RefreshCw className="w-4 h-4" />
-                {dataExpired ? 'Download & Sync' : 'Download & Build'}
-              </button>
-            )}
-          </div>
-          {rrcMessage && !isDownloadingRRC && (
-            <div className="mt-2 text-sm text-green-700 flex items-center gap-1">
-              <CheckCircle className="w-4 h-4" />
-              {rrcMessage}
-            </div>
-          )}
-          {rrcSyncJob && rrcSyncJob.status === 'failed' && rrcSyncJob.error && (
-            <div className="mt-2 flex items-center justify-between">
-              <div className="text-sm text-red-700 flex items-center gap-1">
-                <AlertCircle className="w-4 h-4" />
-                {rrcSyncJob.error}
-              </div>
-              <button
-                onClick={handleDownloadRRC}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors text-sm"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Retry
-              </button>
-            </div>
-          )}
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-yellow-50 border border-yellow-200">
+          <Database className="w-4 h-4 text-yellow-600 flex-shrink-0" />
+          <span className="text-sm text-yellow-800">
+            No RRC data cached locally. Missing data will be fetched on demand when you process a file.
+          </span>
         </div>
       )}
 
@@ -1193,32 +1128,41 @@ export default function Proration() {
               </div>
 
               {/* Stats */}
-              <div className="grid grid-cols-4 gap-4 p-6 border-b border-gray-100">
-                <div className="text-center">
-                  <p className="text-2xl font-oswald font-semibold text-tre-navy">
-                    {activeJob.result.total_rows}
-                  </p>
-                  <p className="text-sm text-gray-500">Total Rows</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-oswald font-semibold text-tre-navy">
-                    {activeJob.result.processed_rows}
-                  </p>
-                  <p className="text-sm text-gray-500">Processed</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-oswald font-semibold text-green-600">
-                    {activeJob.result.matched_rows}
-                  </p>
-                  <p className="text-sm text-gray-500">RRC Matched</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-oswald font-semibold text-red-600">
-                    {activeJob.result.failed_rows}
-                  </p>
-                  <p className="text-sm text-gray-500">Failed</p>
-                </div>
-              </div>
+              {(() => {
+                const rows = activeJob.result.rows || []
+                const totalCount = activeJob.result.total_rows || rows.length
+                const processedCount = activeJob.result.processed_rows || rows.length
+                const matchedCount = rows.filter(r => r.rrc_acres).length
+                const missingCount = rows.filter(r => !r.rrc_acres).length
+                return (
+                  <div className="grid grid-cols-4 gap-4 p-6 border-b border-gray-100">
+                    <div className="text-center">
+                      <p className="text-2xl font-oswald font-semibold text-tre-navy">
+                        {totalCount}
+                      </p>
+                      <p className="text-sm text-gray-500">Total Rows</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-2xl font-oswald font-semibold text-tre-navy">
+                        {processedCount}
+                      </p>
+                      <p className="text-sm text-gray-500">Processed</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-2xl font-oswald font-semibold text-green-600">
+                        {matchedCount}
+                      </p>
+                      <p className="text-sm text-gray-500">RRC Matched</p>
+                    </div>
+                    <div className="text-center">
+                      <p className={`text-2xl font-oswald font-semibold ${missingCount > 0 ? 'text-orange-500' : 'text-gray-400'}`}>
+                        {missingCount}
+                      </p>
+                      <p className="text-sm text-gray-500">Missing RRC</p>
+                    </div>
+                  </div>
+                )
+              })()}
 
               {/* County Download Summary */}
               {activeJob.result.county_downloads && activeJob.result.county_downloads.length > 0 && (
@@ -1259,6 +1203,48 @@ export default function Proration() {
                   </div>
                 </div>
               )}
+
+              {/* Unmatched Rows Banner */}
+              {(() => {
+                const unmatchedCount = activeJob.result.rows?.filter(r => !r.rrc_acres).length || 0
+                if (unmatchedCount === 0) return null
+                return (
+                  <div className="px-6 py-3 border-b border-gray-100 bg-orange-50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-orange-500" />
+                        <span className="text-sm text-orange-800">
+                          <span className="font-medium">{unmatchedCount}</span> row{unmatchedCount !== 1 ? 's' : ''} missing RRC data
+                          {fetchMissingMessage && (
+                            <span className="ml-2 text-orange-600">&bull; {fetchMissingMessage}</span>
+                          )}
+                        </span>
+                      </div>
+                      <button
+                        onClick={handleFetchMissing}
+                        disabled={isFetchingMissing}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                          isFetchingMissing
+                            ? 'bg-orange-200 text-orange-600 cursor-not-allowed'
+                            : 'bg-orange-600 text-white hover:bg-orange-700'
+                        }`}
+                      >
+                        {isFetchingMissing ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            Fetching...
+                          </>
+                        ) : (
+                          <>
+                            <Search className="w-3.5 h-3.5" />
+                            Fetch Missing Data
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })()}
 
               {/* Preview Table */}
               <div className="p-6">
@@ -1323,8 +1309,17 @@ export default function Proration() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {activeJob.result.rows?.map((row, i) => (
-                        <tr key={i} className={!row.rrc_acres ? 'bg-red-50' : ''}>
+                      {(() => {
+                        const rows = activeJob.result.rows || []
+                        // Create indexed array, sort unmatched to top
+                        const indexed = rows.map((row, i) => ({ row, origIndex: i }))
+                        indexed.sort((a, b) => {
+                          const aMatch = a.row.rrc_acres ? 1 : 0
+                          const bMatch = b.row.rrc_acres ? 1 : 0
+                          return aMatch - bMatch // unmatched (0) before matched (1)
+                        })
+                        return indexed.map(({ row, origIndex }) => (
+                        <tr key={origIndex} className={!row.rrc_acres ? 'bg-red-50' : ''}>
                           {isColumnVisible('owner') && <td className="py-2 px-3 text-gray-900 whitespace-nowrap">{row.owner}</td>}
                           {isColumnVisible('county') && <td className="py-2 px-3 text-gray-600">{row.county}</td>}
                           {isColumnVisible('year') && <td className="py-2 px-3 text-gray-600 text-xs">{row.year ?? '\u2014'}</td>}
@@ -1367,7 +1362,7 @@ export default function Proration() {
                           {isColumnVisible('notes') && <td className="py-2 px-3 text-gray-600 text-xs max-w-[150px] truncate" title={row.notes}>{row.notes || '\u2014'}</td>}
                           <td className="py-2 px-3 text-center">
                             <button
-                              onClick={() => handleEditRow(row, i)}
+                              onClick={() => handleEditRow(row, origIndex)}
                               className="p-1 rounded hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
                               title="Edit row"
                             >
@@ -1375,7 +1370,8 @@ export default function Proration() {
                             </button>
                           </td>
                         </tr>
-                      ))}
+                        ))
+                      })()}
                     </tbody>
                   </table>
                 </div>

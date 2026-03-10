@@ -35,6 +35,11 @@ help:
 	@echo "Utilities:"
 	@echo "  make clean          Remove build artifacts and caches"
 
+# Virtual environment
+VENV := .venv
+PYTHON := $(VENV)/bin/python3
+PIP := $(VENV)/bin/pip
+
 # Installation
 install: install-frontend install-backend setup-hooks
 
@@ -42,13 +47,13 @@ install-frontend:
 	cd frontend && npm install
 
 install-backend:
-	cd backend && pip install -r requirements.txt
+	$(PIP) install -r backend/requirements.txt
 
 # Development
 dev:
 	@echo "Starting development servers..."
 	@trap 'kill 0' INT; \
-	(cd backend && uvicorn app.main:app --reload --port 8000) & \
+	(cd backend && $(CURDIR)/$(VENV)/bin/uvicorn app.main:app --reload --port 8000) & \
 	(cd frontend && npm run dev) & \
 	wait
 
@@ -56,16 +61,16 @@ dev-frontend:
 	cd frontend && npm run dev
 
 dev-backend:
-	cd backend && uvicorn app.main:app --reload --port 8000
+	cd backend && $(CURDIR)/$(VENV)/bin/uvicorn app.main:app --reload --port 8000
 
 # Testing
 test: test-backend
 
 test-backend:
-	cd backend && pytest -v
+	cd backend && $(CURDIR)/$(VENV)/bin/pytest -v
 
 lint:
-	cd backend && ruff check app/
+	cd backend && $(CURDIR)/$(VENV)/bin/ruff check app/
 	cd frontend && npm run lint
 
 # Docker

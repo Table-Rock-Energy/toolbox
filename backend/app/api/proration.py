@@ -13,6 +13,8 @@ from app.core.ingestion import file_response, persist_job_result, validate_uploa
 from app.models.proration import (
     CountyDownloadInfo,
     ExportRequest,
+    FetchMissingRequest,
+    FetchMissingResult,
     ProcessingOptions,
     RRCBackgroundDownloadResponse,
     RRCDownloadResponse,
@@ -126,7 +128,11 @@ async def get_active_rrc_download() -> dict:
     Returns the job if found, or {"job": null} if none.
     Used on page load to detect running jobs.
     """
-    job = await get_active_rrc_sync_job()
+    try:
+        job = await get_active_rrc_sync_job()
+    except Exception as e:
+        logger.debug("Could not check active RRC job (missing index?): %s", e)
+        return {"job": None}
 
     if job is None:
         return {"job": None}
@@ -262,6 +268,91 @@ async def upload_csv(
             status_code=500,
             detail=f"Error processing CSV: {e!s}",
         ) from e
+
+
+@router.post("/rrc/fetch-missing", response_model=FetchMissingResult)
+async def fetch_missing_rrc_data(request: FetchMissingRequest) -> FetchMissingResult:
+    """Fetch RRC data for rows that are missing it.
+
+    Groups unmatched rows by county, downloads county data on-demand,
+    then re-looks up each row in Firestore.
+    """
+    import re
+
+    from app.models.proration import WellType
+
+    if not request.rows:
+        raise HTTPException(status_code=400, detail="No rows provided")
+
+    # Go straight to Firestore lookups — county data from February is already there
+    try:
+        from app.services.firestore_service import (
+            lookup_rrc_acres,
+            lookup_rrc_by_lease_number,
+        )
+    except ImportError:
+        return FetchMissingResult(
+            updated_rows=list(request.rows),
+            matched_count=0,
+            still_missing_count=len(request.rows),
+        )
+
+    updated_rows = []
+    matched = 0
+
+    for row in request.rows:
+        # Parse district/lease from the row
+        district = row.district
+        lease_number = row.lease_number
+
+        # Try to parse from rrc_lease if not already set
+        if not district or not lease_number:
+            if row.rrc_lease and "-" in row.rrc_lease:
+                parts = row.rrc_lease.split("-", 1)
+                district = district or parts[0].strip()
+                lease_number = lease_number or parts[1].strip()
+            elif row.raw_rrc:
+                numbers = re.findall(r"\d+", str(row.raw_rrc))
+                if len(numbers) >= 2:
+                    district = district or numbers[0].zfill(2)
+                    lease_number = lease_number or numbers[1]
+
+        rrc_info = None
+
+        if district and lease_number:
+            rrc_info = await lookup_rrc_acres(district, lease_number)
+
+        if rrc_info is None and lease_number:
+            rrc_info = await lookup_rrc_by_lease_number(lease_number)
+
+        if rrc_info:
+            row.rrc_acres = rrc_info.get("acres")
+            well_type_str = rrc_info.get("type", "")
+            if well_type_str == "oil":
+                row.well_type = WellType.OIL
+            elif well_type_str == "gas":
+                row.well_type = WellType.GAS
+            elif well_type_str == "both":
+                row.well_type = WellType.BOTH
+
+            # Recalculate est_nra if we now have acres
+            if row.rrc_acres and row.interest:
+                row.est_nra = round(row.rrc_acres * row.interest, 6)
+                if row.estimated_monthly_revenue and row.est_nra > 0:
+                    row.dollars_per_nra = round(
+                        row.estimated_monthly_revenue / row.est_nra, 2
+                    )
+
+            row.notes = None  # Clear "Not found" note
+            matched += 1
+
+        updated_rows.append(row)
+
+    return FetchMissingResult(
+        updated_rows=updated_rows,
+        matched_count=matched,
+        still_missing_count=len(request.rows) - matched,
+    )
 
 
 @router.post("/export/csv")

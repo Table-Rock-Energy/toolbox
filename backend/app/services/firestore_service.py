@@ -786,8 +786,8 @@ async def get_counties_status(keys: list[str]) -> dict[str, dict]:
             db.collection(RRC_COUNTY_STATUS_COLLECTION).document(k)
             for k in batch_keys
         ]
-        docs = await db.get_all(refs)
-        for doc in docs:
+        docs = db.get_all(refs)
+        async for doc in docs:
             if doc.exists:
                 result[doc.id] = doc.to_dict()
 
