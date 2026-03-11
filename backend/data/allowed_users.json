@@ -1,6 +1,9 @@
 [
   {
+    "last_name": "Bullis",
+    "first_name": "James",
     "added_by": "system",
+    "scope": "all",
     "tools": [
       "extract",
       "title",
@@ -8,13 +11,13 @@
       "revenue"
     ],
     "email": "james@tablerocktx.com",
-    "last_name": "Bullis",
-    "role": "admin",
-    "scope": "all",
-    "first_name": "James"
+    "role": "admin"
   },
   {
+    "last_name": "Bowles",
+    "first_name": "Travis",
     "added_by": "system",
+    "scope": "all",
     "tools": [
       "extract",
       "title",
@@ -22,13 +25,13 @@
       "revenue"
     ],
     "email": "travis@tablerocktx.com",
-    "last_name": "Bowles",
-    "role": "admin",
-    "scope": "all",
-    "first_name": "Travis"
+    "role": "admin"
   },
   {
+    "last_name": "Wilson",
+    "first_name": "Cory",
     "added_by": "system",
+    "scope": "all",
     "tools": [
       "extract",
       "title",
@@ -36,13 +39,13 @@
       "revenue"
     ],
     "email": "cory@tablerocktx.com",
-    "last_name": "Wilson",
-    "role": "admin",
-    "scope": "all",
-    "first_name": "Cory"
+    "role": "admin"
   },
   {
+    "last_name": "Oliver",
+    "first_name": "Jack",
     "added_by": "admin",
+    "scope": "all",
     "tools": [
       "extract",
       "title",
@@ -50,9 +53,6 @@
       "revenue"
     ],
     "email": "jack@tablerocktx.com",
-    "last_name": "Oliver",
-    "role": "user",
-    "scope": "all",
-    "first_name": "Jack"
+    "role": "user"
   }
 ]
