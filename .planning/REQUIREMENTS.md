@@ -37,7 +37,7 @@ Requirements for ECF/Convey 640 extraction. Each maps to roadmap phases.
 
 ### Frontend
 
-- [ ] **FE-01**: Extract page supports dual-file upload (PDF required, CSV/Excel optional) when ECF format is selected
+- [x] **FE-01**: Extract page supports dual-file upload (PDF required, CSV/Excel optional) when ECF format is selected
 - [ ] **FE-02**: Results table displays respondent entries with name, entity type, address, city, state, ZIP
 - [ ] **FE-03**: Case metadata (county, case number, applicant, well name) displays above the results table
 - [ ] **FE-04**: User can export results as mineral export CSV or Excel
@@ -90,7 +90,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EXP-01 | Phase 3 | Pending |
 | EXP-02 | Phase 3 | Pending |
 | EXP-03 | Phase 3 | Pending |
-| FE-01 | Phase 4 | Pending |
+| FE-01 | Phase 4 | Complete |
 | FE-02 | Phase 4 | Pending |
 | FE-03 | Phase 4 | Pending |
 | FE-04 | Phase 4 | Pending |

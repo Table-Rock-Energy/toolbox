@@ -90,4 +90,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 | 1. ECF PDF Parsing | 0/2 | Not started | - |
 | 2. Convey 640 Processing | 0/1 | Not started | - |
 | 3. Merge and Export | 0/2 | Not started | - |
-| 4. Frontend Integration | 0/2 | Not started | - |
+| 4. Frontend Integration | 1/2 | In Progress|  |
