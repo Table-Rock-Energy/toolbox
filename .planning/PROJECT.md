@@ -32,75 +32,66 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 
 ### Active
 
-<!-- Current scope: security hardening + quality improvements from code review feedback. -->
+<!-- Current scope: ECF/Convey 640 extraction — new format mode in Extract tool. -->
 
-- [ ] Enforce authentication on all tool endpoints (Extract, Title, Proration, Revenue, GHL Prep, ETL, History)
-- [ ] Add admin-only access control to admin endpoints (user management, settings, profile image)
-- [ ] Replace spoofable x-user-email/x-user-name headers with verified token-based user identity
-- [ ] Lock down CORS: explicit origin allowlist from config, wildcard only in development
-- [ ] Require ENCRYPTION_KEY at startup — fail fast if missing, no plaintext fallback
-- [ ] Encrypt admin/app settings before Firestore persistence
-- [ ] Enforce profile image upload ownership (user_id must match authenticated user unless admin)
-- [ ] Restructure Firestore revenue statements: move rows to subcollection to avoid document size limits
-- [ ] Fix ETL entity detail N+1 fetches with batch retrieval
-- [ ] Define required Firestore composite indexes and remove client-side sorting fallback
-- [ ] Add backend test suite: auth-protected route smoke tests, parsing pipeline regression tests
+- [ ] Parse ECF PDF Exhibit A respondent list (names, addresses, entity types)
+- [ ] Extract case metadata from ECF PDF header (county, legal description, applicant, case number)
+- [ ] Parse Convey 640 CSV/Excel as optional accelerator data source
+- [ ] Merge Convey 640 data with PDF-authoritative respondent data (PDF is source of truth)
+- [ ] Map merged data to mineral export format with maximum field coverage
+- [ ] Detect entity types from respondent names (Individual, Trust, LLC, Estate, etc.)
+- [ ] Support dual-file upload in Extract UI (PDF required, CSV/Excel optional)
+- [ ] Export merged results as mineral export CSV/Excel
 
 ### Out of Scope
 
-- Frontend test suite — focus on backend tests first for this milestone
-- Rate limiting — important but separate concern, defer to next milestone
-- Structured logging / request tracing — defer to next milestone
-- Dead PostgreSQL code removal — tech debt cleanup, not security-critical
-- Frontend page component decomposition — UX improvement, not this milestone
-- Deprecated FastAPI lifecycle events — minor, defer
-- datetime.utcnow() migration — minor, defer
-- Broad exception narrowing — incremental improvement, defer
+- AI-powered OCR correction — PDF text extraction via PyMuPDF is sufficient for these filings
+- Automatic Convey 640 download/scraping — user provides the file manually
+- Batch processing of multiple ECF filings at once — one filing per upload
+- GoHighLevel direct send from ECF results — use existing GHL Prep workflow after export
+- Frontend test suite — defer
+- Rate limiting — defer
+- Structured logging / request tracing — defer
 
-## Current Milestone: v1.3 Security Hardening
+## Current Milestone: v1.4 ECF Extraction
 
-**Goal:** Harden authentication, authorization, encryption, and data modeling across the application, then add backend test coverage for critical paths.
+**Goal:** Add ECF/Convey 640 as a new extraction format within the Extract tool, enabling users to upload OCC multiunit well application PDFs (with optional Convey 640 CSV/Excel) and export respondent data as a mineral export.
 
 **Target features:**
-- Auth enforcement on all tool endpoints
-- Admin-only access control on admin endpoints
-- Token-based user identity (replace spoofable headers)
-- CORS lockdown with explicit origin allowlist
-- Mandatory ENCRYPTION_KEY with encrypted Firestore settings
-- Profile image upload ownership enforcement
-- Firestore revenue subcollection restructuring
-- ETL batch retrieval (fix N+1)
-- Firestore composite index definitions
-- Backend test suite (auth smoke tests, parsing regression tests)
+- ECF PDF Exhibit A parsing (respondent names, addresses, entity types)
+- Case metadata extraction from PDF header (county, legal description, applicant, case number)
+- Convey 640 CSV/Excel parsing as optional data accelerator
+- PDF-authoritative merge with Convey 640 data (correct OCR errors, fill gaps)
+- Mineral export output with maximum field coverage
+- Dual-file upload UI in Extract tool (PDF required, CSV/Excel optional)
+- Entity type detection (Individual, Trust, LLC, Estate, Corporation, etc.)
 
 ## Context
 
 - **Production URL:** https://tools.tablerocktx.com
 - **Users:** Small internal team at Table Rock Energy (land and revenue departments)
 - **Deployment:** Google Cloud Run, us-central1, `--allow-unauthenticated` (network-level access open, auth enforced at app level)
-- **Code review source:** Automated code review identified 11 findings across security, performance, data modeling, and testing
 - **Primary admin:** james@tablerocktx.com
-- **Auth model:** Firebase Auth tokens verified server-side, JSON allowlist for authorization
-- **Existing auth infrastructure:** `require_auth`, `require_admin`, `get_current_user` dependencies already exist in `backend/app/core/auth.py` — they just aren't applied to most routes
+- **ECF PDFs:** OCC multiunit horizontal well applications with Exhibit A respondent lists (numbered entries with names, addresses)
+- **Convey 640:** Third-party tool that scrapes OCC filing data into CSV/Excel with county, STR, applicant, case info, and respondent data (often has OCR errors)
+- **Existing Extract infrastructure:** Format detection, PDF extraction (PyMuPDF), party parsing, name parsing, entity type detection, mineral export — all reusable
 
 ## Constraints
 
 - **Stack:** React 19 + FastAPI + Firestore + Firebase Auth — no changes to core stack
-- **Deployment:** Cloud Run with `--allow-unauthenticated` — security must be enforced at application layer
-- **Backwards compatibility:** Frontend already sends auth tokens — backend changes should not break existing frontend auth flow
-- **Memory:** 1Gi Cloud Run instances — Firestore restructuring should reduce document payload sizes
-- **RRC SSL:** RRC website requires custom SSL adapter with `verify=False` — this is a known, accepted risk
+- **Extract tool integration:** New format must integrate into existing Extract tool flow, not a separate tool
+- **PDF is source of truth:** When PDF and CSV disagree on respondent data, PDF wins
+- **No new dependencies:** Use existing PyMuPDF for PDF text extraction, pandas for CSV/Excel processing
+- **Mineral export format:** Output must match existing MINERAL_EXPORT_COLUMNS (shared across Extract/Title tools)
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| All endpoints require auth except /api/health | Internal tool, no public API consumers | — Pending |
-| Admin endpoints are admin-only | Prevent privilege escalation, protect user management | — Pending |
-| Job history visible to all authenticated users | Small team, transparency preferred over isolation | — Pending |
-| Require ENCRYPTION_KEY at startup | Fail fast prevents accidental plaintext secret storage | — Pending |
-| Revenue rows as Firestore subcollection | Avoids 1MB document size limit, reduces read costs | — Pending |
-| Backend tests first, frontend tests later | Security and parsing accuracy are highest risk areas | — Pending |
+| ECF extraction as new mode in Extract tool | Reuses existing infrastructure (format detection, name parsing, export) | — Pending |
+| PDF required, CSV optional | PDF has authoritative data; CSV just accelerates processing | — Pending |
+| PDF is source of truth for respondent data | Convey 640 has OCR errors; PDF text is cleaner | — Pending |
+| Map Convey 640 metadata (county, STR, case#) to mineral export | Maximizes field coverage in output | — Pending |
 
 ---
-*Last updated: 2026-03-11 after milestone v1.3 start*
+*Last updated: 2026-03-11 after milestone v1.4 start*

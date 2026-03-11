@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.3
-milestone_name: milestone
-status: executing
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-03-11T13:37:21.591Z"
-last_activity: 2026-03-11 -- Completed 03-01 auth smoke test expansion
+milestone: v1.4
+milestone_name: ECF Extraction
+status: defining
+stopped_at: null
+last_updated: "2026-03-11"
+last_activity: 2026-03-11 -- Milestone v1.4 started
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
-  percent: 83
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,63 +21,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results. Everything else is secondary to parsing accuracy and data integrity.
-**Current focus:** Phase 3 - Backend Test Suite
+**Current focus:** Defining requirements for ECF Extraction
 
 ## Current Position
 
-Phase: 3 of 3 (Backend Test Suite)
-Plan: 1 of 2 in current phase -- COMPLETE
-Status: In Progress
-Last activity: 2026-03-11 -- Completed 03-01 auth smoke test expansion
-
-Progress: [████████░░] 83%
-
-## Performance Metrics
-
-**Velocity:**
-- Total plans completed: 2
-- Average duration: 4m
-- Total execution time: 0.13 hours
-
-**By Phase:**
-
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 01 | 2 | 8m | 4m |
-
-**Recent Trend:**
-- Last 5 plans: 01-01 (3m), 01-02 (5m)
-- Trend: Consistent
-
-*Updated after each plan completion*
-| Phase 02 P01 | 2m | 2 tasks | 3 files |
-| Phase 02 P02 | 1m | 1 tasks | 1 files |
-| Phase 03 P02 | 2m | 3 tasks | 3 files |
-| Phase 03 P01 | 3m | 2 tasks | 1 files |
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-11 — Milestone v1.4 started
 
 ## Accumulated Context
 
 ### Decisions
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
-
-- [Roadmap]: Auth + CORS ship together because CORS spec violation is the most urgent fix and both are middleware-level changes
-- [Roadmap]: Encryption hardening follows auth so encrypted config reads don't interfere with auth stabilization
-- [Roadmap]: Tests come last to verify the hardened system in its final state
-- [01-01]: Router-level auth via dependencies=[Depends(require_auth)] on include_router() for all tool routers
-- [01-01]: GHL and admin routers excluded from router-level auth (per-endpoint auth already present, SSE needs query-param)
-- [01-01]: CORS uses explicit method/header lists instead of wildcards
-- [01-01]: Dev-mode bypass returns synthetic user when Firebase not configured
-- [01-02]: Fail-closed in dev mode too -- import.meta.env.DEV override is informational only (console warning)
-- [01-02]: 401 interceptor uses isRefreshing guard to prevent re-entrancy during token refresh
-- [01-02]: SSE auth passed as query parameter since EventSource API does not support custom headers
-- [Phase 02]: Production encrypt_value raises ValueError on failure instead of silent plaintext fallback
-- [Phase 02]: Storage-boundary encryption pattern: encrypt before write, decrypt after read
-- [Phase 02]: Re-encrypt via _encrypt_settings before Firestore seed write to maintain storage-boundary contract
-- [Phase 03]: Inline text fixtures for parser tests instead of PDF files
-- [03-01]: Assert != 401 (not == 200) for authenticated smoke tests since Firestore/GCS unavailable in test
-- [03-01]: Mock Firestore for GHL connections authenticated test to avoid gRPC event loop issue
+- [Milestone]: ECF extraction integrates into existing Extract tool as new format mode
+- [Milestone]: PDF is source of truth for respondent data; CSV optional accelerator
+- [Milestone]: Convey 640 metadata (county, STR, case#) maps to mineral export fields
 
 ### Pending Todos
 
@@ -85,19 +44,15 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Resolved]: Admin lockout pitfall -- Solved by excluding admin router from router-level auth; check endpoint remains unauthenticated.
-- [Resolved]: SSE auth pattern -- Solved with query-param token on GHL SSE progress endpoint.
+None yet.
 
 ### Quick Tasks Completed
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
-| 1 | Add entity type filtering to GHL Prep tool | 2026-03-04 | 08f9fad | [1-add-entity-type-filtering-to-ghl-prep-to](./quick/1-add-entity-type-filtering-to-ghl-prep-to/) |
-| 2 | Multi-format Exhibit A parsing with format detection | 2026-03-04 | 5548810 | [2-multi-format-exhibit-a-parsing-format-de](./quick/2-multi-format-exhibit-a-parsing-format-de/) |
-| 4 | Background RRC download with Firestore job tracking | 2026-03-04 | 1d7dbee | [4-implement-background-rrc-download](./quick/4-implement-background-rrc-download/) |
 
 ## Session Continuity
 
-Last session: 2026-03-11T13:30:30Z
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-03-11
+Stopped at: null
 Resume file: None
