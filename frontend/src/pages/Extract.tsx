@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Wand2, Search } from 'lucide-react'
 import { FileUpload, Modal, AiReviewPanel, EnrichmentPanel } from '../components'
+import MineralExportModal from '../components/MineralExportModal'
 import EnrichmentProgress, { DEFAULT_STEPS, type EnrichmentStep, type EnrichmentSummary } from '../components/EnrichmentProgress'
 import { aiApi, enrichmentApi } from '../utils/api'
 import type { AiSuggestion } from '../utils/api'
@@ -133,6 +134,9 @@ export default function Extract() {
   const [enrichSummary, setEnrichSummary] = useState<EnrichmentSummary | null>(null)
   const [enrichComplete, setEnrichComplete] = useState(false)
   const [enrichmentEnabled, setEnrichmentEnabled] = useState(false)
+
+  // Mineral export modal state
+  const [showMineralModal, setShowMineralModal] = useState(false)
 
   // Edit modal state
   const [editingEntry, setEditingEntry] = useState<PartyEntry | null>(null)
@@ -787,7 +791,7 @@ export default function Extract() {
                       </button>
                     )}
                     <button
-                      onClick={() => handleExport('', '')}
+                      onClick={() => setShowMineralModal(true)}
                       className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
                     >
                       <Download className="w-4 h-4" />
@@ -1230,7 +1234,13 @@ export default function Extract() {
         isComplete={enrichComplete}
       />
 
-      {/* Mineral Export Modal - disabled until proper logic is implemented */}
+      {/* Mineral Export Modal */}
+      <MineralExportModal
+        isOpen={showMineralModal}
+        onClose={() => setShowMineralModal(false)}
+        onExport={handleExport}
+        initialCounty={activeJob?.result?.case_metadata?.county || ''}
+      />
 
       {/* Edit Modal */}
       <Modal
