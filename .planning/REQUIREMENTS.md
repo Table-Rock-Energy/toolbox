@@ -1,60 +1,72 @@
-# Requirements: Table Rock Tools v1.3 Security Hardening
+# Requirements: Table Rock Tools v1.4 ECF Extraction
 
 **Defined:** 2026-03-11
-**Core Value:** The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and return accurate, exportable results. Everything else is secondary to parsing accuracy and data integrity.
+**Core Value:** The tools must reliably process uploaded documents and return accurate, exportable results.
 
-## v1.3 Requirements
+## v1.4 Requirements
 
-Requirements for security hardening milestone. Each maps to roadmap phases.
+Requirements for ECF/Convey 640 extraction. Each maps to roadmap phases.
 
-### Authentication
+### ECF PDF Parsing
 
-- [x] **AUTH-01**: All tool endpoints (Extract, Title, Proration, Revenue, GHL Prep, History, ETL) require authenticated Firebase token — unauthenticated requests return 401
-- [x] **AUTH-02**: Frontend AuthContext returns `false` (fail-closed) when backend is unreachable, with `import.meta.env.DEV` override for local development
+- [ ] **ECF-01**: User can upload an ECF PDF and extract numbered respondent entries (name + address)
+- [ ] **ECF-02**: Parser correctly handles multi-line respondent names and addresses from PDF text
+- [ ] **ECF-03**: Parser extracts case metadata from PDF header (county, legal description, applicant name, case number, well name)
+- [ ] **ECF-04**: Entity type is detected for each respondent (Individual, Trust, LLC, Estate, Corporation, etc.)
+- [ ] **ECF-05**: Format detector identifies ECF filings and routes to the correct parser
 
-### Network Security
+### Convey 640 Processing
 
-- [x] **SEC-01**: CORS configured with explicit origin allowlist from environment config (`https://tools.tablerocktx.com` in production, `http://localhost:5173` in development); wildcard allowed only when `ENVIRONMENT=development`
+- [ ] **CSV-01**: User can optionally upload a Convey 640 CSV or Excel file alongside the ECF PDF
+- [ ] **CSV-02**: Parser strips entry line numbers from the name column and normalizes respondent names
+- [ ] **CSV-03**: Parser preserves ZIP codes as strings (prevents float/NaN loss of leading zeros)
+- [ ] **CSV-04**: Parser extracts metadata columns (county, STR, applicant, case number, classification)
 
-### Encryption
+### Merge Logic
 
-- [x] **ENC-01**: Application fails fast at startup if `ENCRYPTION_KEY` environment variable is missing when `ENVIRONMENT=production` — logs clear error message explaining what to set
-- [x] **ENC-02**: Sensitive admin/app settings (API keys for Gemini, Google Maps, PDL, SearchBug, GHL) encrypted before Firestore persistence using existing `shared/encryption.py` Fernet functions; decrypted on read
+- [ ] **MRG-01**: When both PDF and CSV are provided, merge uses PDF as source of truth for names and addresses
+- [ ] **MRG-02**: CSV metadata (county, STR, case number) enriches the merged result
+- [ ] **MRG-03**: Entries are matched between PDF and CSV by entry number
+- [ ] **MRG-04**: Mismatched entry counts or unmatched entries are flagged for user review
 
-### Testing
+### Export
 
-- [x] **TEST-01**: pytest + httpx test infrastructure with Firebase auth mocking via `app.dependency_overrides[require_auth]` pattern, reusable test client fixture
-- [x] **TEST-02**: Auth smoke tests verify every protected route returns 401 without token and 200/appropriate status with valid token
-- [x] **TEST-03**: Parsing regression tests with representative test fixtures for at least one revenue parser (EnergyLink or Enverus) and one extract parser (OCC Exhibit A), asserting expected output structure
+- [ ] **EXP-01**: Merged results export to mineral export CSV format (MINERAL_EXPORT_COLUMNS)
+- [ ] **EXP-02**: Merged results export to mineral export Excel format
+- [ ] **EXP-03**: County, case number, applicant, and legal description populate appropriate mineral export fields
+
+### Frontend
+
+- [ ] **FE-01**: Extract page supports dual-file upload (PDF required, CSV/Excel optional) when ECF format is selected
+- [ ] **FE-02**: Results table displays respondent entries with name, entity type, address, city, state, ZIP
+- [ ] **FE-03**: Case metadata (county, case number, applicant, well name) displays above the results table
+- [ ] **FE-04**: User can export results as mineral export CSV or Excel
 
 ## Future Requirements
 
-Deferred to next milestone. Tracked but not in current roadmap.
+Deferred to future release. Tracked but not in current roadmap.
 
-### Authorization
+### Enhanced Matching
 
-- **AUTHZ-01**: Admin-only access control audit on admin endpoints (user management, settings, API key config)
-- **AUTHZ-02**: Replace spoofable `x-user-email`/`x-user-name` headers with verified token-based user identity across all routes
-- **AUTHZ-03**: Profile image upload ownership enforcement (user_id must match authenticated user unless admin)
+- **MATCH-01**: Fuzzy name matching between PDF and CSV respondents when entry numbers don't align
+- **MATCH-02**: Manual match override UI for unmatched entries
+- **MATCH-03**: Match confidence scoring with visual indicators
 
-### Data Optimization
+### Additional Formats
 
-- **DATA-01**: Revenue statement rows moved to Firestore subcollection to avoid 1MB document size limit
-- **DATA-02**: ETL entity detail batch retrieval replacing N+1 Firestore fetches
-- **DATA-03**: Firestore composite index definitions with client-side sorting fallback removal
+- **FMT-01**: Support for other OCC filing types beyond multiunit horizontal well applications
+- **FMT-02**: Support for Convey 640 schema variations across different export versions
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Frontend test suite | Backend tests have higher ROI for security and parsing accuracy |
-| Rate limiting | Important but separate concern; small internal team |
-| Structured logging / request tracing | Operational improvement, not security-critical |
-| Audit logging for admin actions | Valuable but deferred; collection already defined |
-| OAuth scopes / granular permissions | Over-engineering for ~5 users; admin vs. non-admin sufficient |
-| JWT-based session tokens | Firebase Auth works and is already integrated |
-| API key rotation system | Premature for this team size |
-| Per-user data isolation | Small team, transparency preferred per PROJECT.md |
+| AI-powered OCR correction | PDF text via PyMuPDF is sufficient for born-digital OCC filings |
+| Automatic Convey 640 download | User provides the file manually — no scraping |
+| Batch processing (multiple ECF filings) | One filing per upload, consistent with other tools |
+| GoHighLevel direct send from ECF | Use existing GHL Prep workflow after mineral export |
+| Address geocoding/validation | Defer to optional enrichment services |
+| RRC data lookup for ECF respondents | RRC API is for proration, not contact extraction |
 
 ## Traceability
 
@@ -62,20 +74,32 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | Phase 1 | Complete |
-| AUTH-02 | Phase 1 | Complete |
-| SEC-01 | Phase 1 | Complete |
-| ENC-01 | Phase 2 | Complete |
-| ENC-02 | Phase 2 | Complete |
-| TEST-01 | Phase 3 | Complete |
-| TEST-02 | Phase 3 | Complete |
-| TEST-03 | Phase 3 | Complete |
+| ECF-01 | — | Pending |
+| ECF-02 | — | Pending |
+| ECF-03 | — | Pending |
+| ECF-04 | — | Pending |
+| ECF-05 | — | Pending |
+| CSV-01 | — | Pending |
+| CSV-02 | — | Pending |
+| CSV-03 | — | Pending |
+| CSV-04 | — | Pending |
+| MRG-01 | — | Pending |
+| MRG-02 | — | Pending |
+| MRG-03 | — | Pending |
+| MRG-04 | — | Pending |
+| EXP-01 | — | Pending |
+| EXP-02 | — | Pending |
+| EXP-03 | — | Pending |
+| FE-01 | — | Pending |
+| FE-02 | — | Pending |
+| FE-03 | — | Pending |
+| FE-04 | — | Pending |
 
 **Coverage:**
-- v1.3 requirements: 8 total
-- Mapped to phases: 8
-- Unmapped: 0
+- v1.4 requirements: 20 total
+- Mapped to phases: 0
+- Unmapped: 20
 
 ---
 *Requirements defined: 2026-03-11*
-*Last updated: 2026-03-11 after 03-01 completion*
+*Last updated: 2026-03-11 after initial definition*
