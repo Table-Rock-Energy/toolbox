@@ -125,7 +125,8 @@ async def init_app_settings_from_firestore() -> None:
             # Seed Firestore from local file
             local = load_app_settings()
             if local:
-                await set_config_doc("app_settings", local)
+                encrypted_local = _encrypt_settings(local)
+                await set_config_doc("app_settings", encrypted_local)
                 logger.info("Seeded Firestore with local app settings")
     except Exception as e:
         logger.warning(f"Could not load app settings from Firestore: {e}")
