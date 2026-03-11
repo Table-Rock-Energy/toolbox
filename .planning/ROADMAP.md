@@ -13,7 +13,7 @@ Harden the application's security posture in three phases: enforce authenticatio
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Auth Enforcement and CORS Lockdown** - All endpoints require authentication, CORS restricted to explicit origins, frontend fails closed
-- [ ] **Phase 2: Encryption Hardening** - Application requires encryption key at startup and encrypts sensitive settings before Firestore persistence
+- [x] **Phase 2: Encryption Hardening** - Application requires encryption key at startup and encrypts sensitive settings before Firestore persistence (completed 2026-03-11)
 - [ ] **Phase 3: Backend Test Suite** - Test infrastructure with auth smoke tests and parsing regression tests
 
 ## Phase Details
@@ -41,7 +41,7 @@ Plans:
   1. Application fails to start when `ENVIRONMENT=production` and `ENCRYPTION_KEY` is not set, with a clear error message in the logs
   2. Admin/app settings (Gemini, Google Maps, PDL, SearchBug, GHL API keys) are stored encrypted in Firestore -- raw Firestore reads show ciphertext, not plaintext
   3. Settings are decrypted transparently on read -- the application behaves identically to before from the user's perspective
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 02-01-PLAN.md -- Startup ENCRYPTION_KEY guard, hardened encrypt/decrypt, storage boundary encryption in admin settings
@@ -70,5 +70,5 @@ Phases execute in numeric order: 1 -> 2 -> 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Auth Enforcement and CORS Lockdown | 2/2 | Complete | 2026-03-11 |
-| 2. Encryption Hardening | 0/2 | Not started | - |
+| 2. Encryption Hardening | 2/2 | Complete   | 2026-03-11 |
 | 3. Backend Test Suite | 0/2 | Not started | - |
