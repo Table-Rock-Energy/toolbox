@@ -30,7 +30,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans:** 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Backend auth enforcement, CORS lockdown, dev-mode bypass, SSE auth, and test suite
+- [x] 01-01-PLAN.md -- Backend auth enforcement, CORS lockdown, dev-mode bypass, SSE auth, and test suite
 - [ ] 01-02-PLAN.md — Frontend fail-closed auth, ApiClient 401 interceptor, SSE token, login banner
 
 ### Phase 2: Encryption Hardening
@@ -68,6 +68,6 @@ Phases execute in numeric order: 1 -> 2 -> 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Auth Enforcement and CORS Lockdown | 0/2 | Not started | - |
+| 1. Auth Enforcement and CORS Lockdown | 1/2 | In progress | - |
 | 2. Encryption Hardening | 0/1 | Not started | - |
 | 3. Backend Test Suite | 0/2 | Not started | - |

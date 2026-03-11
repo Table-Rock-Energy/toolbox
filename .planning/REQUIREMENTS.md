@@ -9,12 +9,12 @@ Requirements for security hardening milestone. Each maps to roadmap phases.
 
 ### Authentication
 
-- [ ] **AUTH-01**: All tool endpoints (Extract, Title, Proration, Revenue, GHL Prep, History, ETL) require authenticated Firebase token — unauthenticated requests return 401
+- [x] **AUTH-01**: All tool endpoints (Extract, Title, Proration, Revenue, GHL Prep, History, ETL) require authenticated Firebase token — unauthenticated requests return 401
 - [ ] **AUTH-02**: Frontend AuthContext returns `false` (fail-closed) when backend is unreachable, with `import.meta.env.DEV` override for local development
 
 ### Network Security
 
-- [ ] **SEC-01**: CORS configured with explicit origin allowlist from environment config (`https://tools.tablerocktx.com` in production, `http://localhost:5173` in development); wildcard allowed only when `ENVIRONMENT=development`
+- [x] **SEC-01**: CORS configured with explicit origin allowlist from environment config (`https://tools.tablerocktx.com` in production, `http://localhost:5173` in development); wildcard allowed only when `ENVIRONMENT=development`
 
 ### Encryption
 
@@ -62,9 +62,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | Phase 1 | Pending |
+| AUTH-01 | Phase 1 | Complete |
 | AUTH-02 | Phase 1 | Pending |
-| SEC-01 | Phase 1 | Pending |
+| SEC-01 | Phase 1 | Complete |
 | ENC-01 | Phase 2 | Pending |
 | ENC-02 | Phase 2 | Pending |
 | TEST-01 | Phase 3 | Pending |
@@ -78,4 +78,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-03-11*
-*Last updated: 2026-03-11 after roadmap creation*
+*Last updated: 2026-03-11 after 01-01 completion*
