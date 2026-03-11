@@ -27,6 +27,14 @@ interface PartyEntry {
   flag_reason?: string
 }
 
+interface CaseMetadata {
+  county?: string
+  case_number?: string
+  applicant?: string
+  well_name?: string
+  legal_description?: string
+}
+
 interface ExtractionResult {
   success: boolean
   entries?: PartyEntry[]
@@ -38,6 +46,8 @@ interface ExtractionResult {
   format_detected?: string
   quality_score?: number
   format_warning?: string
+  case_metadata?: CaseMetadata
+  merge_warnings?: string[]
 }
 
 interface UploadResponse {
