@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: milestone
-status: Ready for Phase 3
-stopped_at: Completed 03-02-PLAN.md
-last_updated: "2026-03-11T13:30:15.167Z"
-last_activity: 2026-03-11 -- Completed 02-02 Firestore seed path encryption fix
+status: In Progress
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-03-11T13:30:30Z"
+last_activity: 2026-03-11 -- Completed 03-01 auth smoke test expansion for full route coverage
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 6
-  completed_plans: 5
-  percent: 67
+  completed_plans: 6
+  percent: 83
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results. Everything else is secondary to parsing accuracy and data integrity.
-**Current focus:** Phase 2 - Encryption Hardening
+**Current focus:** Phase 3 - Backend Test Suite
 
 ## Current Position
 
-Phase: 2 of 3 (Encryption Hardening) -- COMPLETE
-Plan: 2 of 2 in current phase
-Status: Ready for Phase 3
-Last activity: 2026-03-11 -- Completed 02-02 Firestore seed path encryption fix
+Phase: 3 of 3 (Backend Test Suite)
+Plan: 1 of 2 in current phase -- COMPLETE
+Status: In Progress
+Last activity: 2026-03-11 -- Completed 03-01 auth smoke test expansion
 
-Progress: [███████░░░] 67%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Progress: [███████░░░] 67%
 | Phase 02 P01 | 2m | 2 tasks | 3 files |
 | Phase 02 P02 | 1m | 1 tasks | 1 files |
 | Phase 03 P02 | 2m | 3 tasks | 3 files |
+| Phase 03 P01 | 3m | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,8 @@ Recent decisions affecting current work:
 - [Phase 02]: Storage-boundary encryption pattern: encrypt before write, decrypt after read
 - [Phase 02]: Re-encrypt via _encrypt_settings before Firestore seed write to maintain storage-boundary contract
 - [Phase 03]: Inline text fixtures for parser tests instead of PDF files
+- [03-01]: Assert != 401 (not == 200) for authenticated smoke tests since Firestore/GCS unavailable in test
+- [03-01]: Mock Firestore for GHL connections authenticated test to avoid gRPC event loop issue
 
 ### Pending Todos
 
@@ -95,6 +98,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T13:29:59.057Z
-Stopped at: Completed 03-02-PLAN.md
+Last session: 2026-03-11T13:30:30Z
+Stopped at: Completed 03-01-PLAN.md
 Resume file: None

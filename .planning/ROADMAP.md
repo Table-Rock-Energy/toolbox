@@ -59,7 +59,7 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 03-01-PLAN.md -- Auth smoke test expansion for full route coverage (TEST-01, TEST-02)
+- [x] 03-01-PLAN.md -- Auth smoke test expansion for full route coverage (TEST-01, TEST-02)
 - [ ] 03-02-PLAN.md -- Parser regression tests (Extract + Revenue) and CI workflow (TEST-03)
 
 ## Progress
@@ -71,4 +71,4 @@ Phases execute in numeric order: 1 -> 2 -> 3
 |-------|----------------|--------|-----------|
 | 1. Auth Enforcement and CORS Lockdown | 2/2 | Complete | 2026-03-11 |
 | 2. Encryption Hardening | 2/2 | Complete   | 2026-03-11 |
-| 3. Backend Test Suite | 0/2 | Not started | - |
+| 3. Backend Test Suite | 1/2 | In Progress | - |
