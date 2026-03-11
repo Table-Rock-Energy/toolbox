@@ -695,7 +695,6 @@ export default function Proration() {
 
 
   const hasDBData = (rrcStatus?.db_oil_rows || 0) + (rrcStatus?.db_gas_rows || 0) > 0
-  const hasCSVData = rrcStatus?.oil_available || rrcStatus?.gas_available
 
   // Use DB counts when available, fall back to CSV counts
   const totalRecords = hasDBData
