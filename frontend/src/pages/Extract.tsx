@@ -102,7 +102,14 @@ const STORAGE_KEY_PREFIX = 'extract-visible-columns'
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Extract() {
-  const { user, userName } = useAuth()
+  const { user, userName, getIdToken } = useAuth()
+
+  const authHeaders = async (): Promise<Record<string, string>> => {
+    const token = await getIdToken()
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    return headers
+  }
   const { panelCollapsed, togglePanel, activeStorageKey } = useToolLayout('extract', user?.uid, STORAGE_KEY_PREFIX)
   const [jobs, setJobs] = useState<ExtractJob[]>([])
   const [activeJob, setActiveJob] = useState<ExtractJob | null>(null)
@@ -186,7 +193,8 @@ export default function Extract() {
   useEffect(() => {
     const loadJobs = async () => {
       try {
-        const response = await fetch(`${API_BASE}/history/jobs?tool=extract&limit=20`)
+        const hdrs = await authHeaders()
+        const response = await fetch(`${API_BASE}/history/jobs?tool=extract&limit=20`, { headers: hdrs })
         if (!response.ok) return
         const data = await response.json()
         if (data.jobs?.length) {
@@ -256,9 +264,10 @@ export default function Extract() {
     setEnrichSteps(DEFAULT_STEPS.map(s => ({ ...s, status: 'pending' as const })))
 
     try {
+      const enrichHeaders = await authHeaders()
       const response = await fetch(`${API_BASE}/extract/enrich`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...enrichHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({ entries: activeJob.result.entries }),
       })
 
@@ -345,9 +354,11 @@ export default function Extract() {
       }
 
       const uploadUrl = `${API_BASE}/extract/upload${formatHint ? `?format_hint=${formatHint}` : ''}`
+      const uploadHeaders = await authHeaders()
       const response = await fetch(uploadUrl, {
         method: 'POST',
         headers: {
+          ...uploadHeaders,
           'X-User-Email': user?.email || '',
           'X-User-Name': userName || user?.displayName || '',
         },
@@ -384,9 +395,11 @@ export default function Extract() {
     }
 
     try {
+      const exportHeaders = await authHeaders()
       const response = await fetch(`${API_BASE}/extract/export/csv`, {
         method: 'POST',
         headers: {
+          ...exportHeaders,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -422,7 +435,8 @@ export default function Extract() {
     if (!job.result && job.job_id) {
       setIsLoadingEntries(true)
       try {
-        const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}/entries`)
+        const entryHeaders = await authHeaders()
+        const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}/entries`, { headers: entryHeaders })
         if (response.ok) {
           const data = await response.json()
           const entries = data.entries as PartyEntry[]
@@ -453,7 +467,8 @@ export default function Extract() {
       return
     }
     try {
-      await fetch(`${API_BASE}/history/jobs/${job.job_id}`, { method: 'DELETE' })
+      const delHeaders = await authHeaders()
+      await fetch(`${API_BASE}/history/jobs/${job.job_id}`, { method: 'DELETE', headers: delHeaders })
     } catch { /* best-effort */ }
     setJobs((prev) => prev.filter((j) => j.id !== job.id))
     if (activeJob?.id === job.id) setActiveJob(null)
