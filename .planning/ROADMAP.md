@@ -41,10 +41,10 @@ Plans:
   1. Application fails to start when `ENVIRONMENT=production` and `ENCRYPTION_KEY` is not set, with a clear error message in the logs
   2. Admin/app settings (Gemini, Google Maps, PDL, SearchBug, GHL API keys) are stored encrypted in Firestore -- raw Firestore reads show ciphertext, not plaintext
   3. Settings are decrypted transparently on read -- the application behaves identically to before from the user's perspective
-**Plans**: TBD
+**Plans:** 1 plan
 
 Plans:
-- [ ] 02-01: TBD
+- [ ] 02-01-PLAN.md -- Startup ENCRYPTION_KEY guard, hardened encrypt/decrypt, storage boundary encryption in admin settings
 
 ### Phase 3: Backend Test Suite
 **Goal**: Critical security paths and parsing pipelines have automated test coverage that catches regressions
