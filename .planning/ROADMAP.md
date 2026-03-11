@@ -55,11 +55,11 @@ Plans:
   2. Every protected route has a smoke test confirming 401 without token and success with valid token
   3. At least one revenue parser and one extract parser have regression tests with representative fixtures asserting expected output structure
   4. All tests pass in CI (GitHub Actions) without GCP credentials or external service access
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
+- [ ] 03-01-PLAN.md -- Auth smoke test expansion for full route coverage (TEST-01, TEST-02)
+- [ ] 03-02-PLAN.md -- Parser regression tests (Extract + Revenue) and CI workflow (TEST-03)
 
 ## Progress
 
