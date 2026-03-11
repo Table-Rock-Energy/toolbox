@@ -49,11 +49,14 @@ def encrypt_value(plaintext: str) -> str:
         encrypted = fernet.encrypt(plaintext.encode())  # type: ignore[union-attr]
         return f"{_ENCRYPTED_PREFIX}{encrypted.decode()}"
     except Exception as e:
+        from app.core.config import settings
+        if settings.environment == "production":
+            raise ValueError(f"Encryption failed in production -- refusing to store plaintext: {e}") from e
         logger.warning(f"Encryption failed, storing plaintext: {e}")
         return plaintext
 
 
-def decrypt_value(ciphertext: str) -> str:
+def decrypt_value(ciphertext: str) -> Optional[str]:
     """Decrypt a ciphertext value.
 
     Gracefully handles plaintext values (pre-encryption migration):
@@ -75,5 +78,9 @@ def decrypt_value(ciphertext: str) -> str:
         encrypted_bytes = ciphertext.removeprefix(_ENCRYPTED_PREFIX).encode()
         return fernet.decrypt(encrypted_bytes).decode()  # type: ignore[union-attr]
     except Exception as e:
+        from app.core.config import settings
+        if settings.environment == "production":
+            logger.error(f"Decryption failed in production (possible key rotation): {e}")
+            return None
         logger.warning(f"Decryption failed — returning raw value: {e}")
         return ciphertext.removeprefix(_ENCRYPTED_PREFIX)

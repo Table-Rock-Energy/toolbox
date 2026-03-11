@@ -106,6 +106,17 @@ async def startup_event() -> None:
     """Application startup event."""
     logger.info(f"{settings.app_name} v{settings.version} starting up")
 
+    # Fail fast: production requires ENCRYPTION_KEY
+    if settings.environment == "production" and not settings.encryption_key:
+        logger.critical(
+            "FATAL: ENCRYPTION_KEY environment variable is required in production. "
+            "Generate one with: python3 -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+        )
+        raise SystemExit(1)
+
+    if settings.environment != "production" and not settings.encryption_key:
+        logger.warning("ENCRYPTION_KEY not set -- sensitive values will be stored in plaintext (development mode)")
+
     # Load persistent config from Firestore (allowlist + app settings)
     try:
         from app.core.auth import init_allowlist_from_firestore
