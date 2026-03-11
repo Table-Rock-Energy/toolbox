@@ -57,6 +57,22 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - datetime.utcnow() migration — minor, defer
 - Broad exception narrowing — incremental improvement, defer
 
+## Current Milestone: v1.3 Security Hardening
+
+**Goal:** Harden authentication, authorization, encryption, and data modeling across the application, then add backend test coverage for critical paths.
+
+**Target features:**
+- Auth enforcement on all tool endpoints
+- Admin-only access control on admin endpoints
+- Token-based user identity (replace spoofable headers)
+- CORS lockdown with explicit origin allowlist
+- Mandatory ENCRYPTION_KEY with encrypted Firestore settings
+- Profile image upload ownership enforcement
+- Firestore revenue subcollection restructuring
+- ETL batch retrieval (fix N+1)
+- Firestore composite index definitions
+- Backend test suite (auth smoke tests, parsing regression tests)
+
 ## Context
 
 - **Production URL:** https://tools.tablerocktx.com
@@ -87,4 +103,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Backend tests first, frontend tests later | Security and parsing accuracy are highest risk areas | — Pending |
 
 ---
-*Last updated: 2026-03-11 after initialization*
+*Last updated: 2026-03-11 after milestone v1.3 start*
