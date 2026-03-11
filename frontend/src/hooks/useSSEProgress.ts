@@ -35,7 +35,7 @@ interface UseSSEProgressReturn {
   disconnect: () => void
 }
 
-export function useSSEProgress(jobId: string | null): UseSSEProgressReturn {
+export function useSSEProgress(jobId: string | null, authToken?: string | null): UseSSEProgressReturn {
   const [progress, setProgress] = useState<ProgressData | null>(null)
   const [completionData, setCompletionData] = useState<CompletionData | null>(null)
   const [isComplete, setIsComplete] = useState(false)
@@ -66,7 +66,10 @@ export function useSSEProgress(jobId: string | null): UseSSEProgressReturn {
     reconnectAttemptRef.current = 0
 
     const connectEventSource = () => {
-      const url = `/api/ghl/send/${jobId}/progress`
+      let url = `/api/ghl/send/${jobId}/progress`
+      if (authToken) {
+        url += `?token=${encodeURIComponent(authToken)}`
+      }
       const eventSource = new EventSource(url)
       eventSourceRef.current = eventSource
 
@@ -155,7 +158,7 @@ export function useSSEProgress(jobId: string | null): UseSSEProgressReturn {
         reconnectTimeoutRef.current = null
       }
     }
-  }, [jobId])
+  }, [jobId, authToken])
 
   return { progress, completionData, isComplete, error, disconnect }
 }

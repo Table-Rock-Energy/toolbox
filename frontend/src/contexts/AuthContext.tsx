@@ -19,6 +19,7 @@ interface AuthContextType {
   userScope: string | null;
   userTools: string[];
   authError: string | null;
+  backendReachable: boolean;
   signInWithGoogle: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -39,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [userTools, setUserTools] = useState<string[]>([]);
   const [userName, setUserName] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [backendReachable, setBackendReachable] = useState(true);
 
   // Check if user is in allowlist and get role info
   const checkAuthorization = async (email: string) => {
@@ -51,8 +53,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return false;
     } catch (error) {
       console.error('Error checking authorization:', error);
-      // If backend is unavailable, allow access (dev mode)
-      return true;
+      if (import.meta.env.DEV) {
+        console.warn('Backend unreachable in dev mode — fail-closed, auth denied');
+      }
+      // Fail-closed: deny access when backend is unreachable
+      return false;
     }
   };
 
@@ -62,6 +67,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuthError(null);
 
       if (user?.email) {
+        // Probe backend health before authorization check
+        try {
+          await fetch(`${API_BASE}/health`);
+          setBackendReachable(true);
+        } catch {
+          setBackendReachable(false);
+          setIsAuthorized(false);
+          setLoading(false);
+          return;
+        }
+
         // Set auth token on ApiClient for all api.* calls
         try {
           const token = await user.getIdToken();
@@ -69,6 +85,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch {
           // Token may not be available yet, will retry on next call
         }
+
+        // Register 401 token refresh handler
+        api.setUnauthorizedHandler(async () => {
+          const currentUser = auth.currentUser;
+          if (!currentUser) return false;
+          try {
+            const newToken = await currentUser.getIdToken(true);
+            api.setAuthToken(newToken);
+            return true;
+          } catch {
+            await firebaseSignOut(auth);
+            setAuthError('Your session has expired. Please sign in again.');
+            return false;
+          }
+        });
 
         const authData = await checkAuthorization(user.email);
         const authorized = typeof authData === 'object' ? authData.allowed : authData;
@@ -168,6 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     userScope,
     userTools,
     authError,
+    backendReachable,
     signInWithGoogle,
     signInWithEmail,
     signOut,

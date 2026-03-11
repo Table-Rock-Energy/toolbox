@@ -3,6 +3,7 @@ import { Send, Loader2, XCircle, AlertCircle, ChevronDown, ChevronUp, CheckCircl
 import Modal from './Modal'
 import { ghlApi } from '../utils/api'
 import { useSSEProgress } from '../hooks/useSSEProgress'
+import { useAuth } from '../contexts/AuthContext'
 import type {
   GhlConnectionResponse,
   GhlUserResponse,
@@ -89,8 +90,19 @@ export default function GhlSendModal({
   // Active job ID for SSE connection
   const [activeJobId, setActiveJobId] = useState<string | null>(propActiveJobId)
 
+  // Auth token for SSE connection
+  const { getIdToken } = useAuth()
+  const [authToken, setAuthToken] = useState<string | null>(null)
+
+  // Fetch auth token when activeJobId is set
+  useEffect(() => {
+    if (activeJobId) {
+      getIdToken().then(token => setAuthToken(token))
+    }
+  }, [activeJobId, getIdToken])
+
   // SSE progress hook
-  const { progress, completionData, isComplete, error: sseError, disconnect } = useSSEProgress(activeJobId)
+  const { progress, completionData, isComplete, error: sseError, disconnect } = useSSEProgress(activeJobId, authToken)
 
   // Reset form when modal opens
   useEffect(() => {

@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
 
 export default function Login() {
-  const { user, loading, isAuthorized, authError, signInWithGoogle, signInWithEmail, signOut } = useAuth();
+  const { user, loading, isAuthorized, authError, backendReachable, signInWithGoogle, signInWithEmail, signOut } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [emailError, setEmailError] = useState('');
@@ -50,6 +50,14 @@ export default function Login() {
           Energy Industry Data Processing Suite
         </p>
       </div>
+
+      {/* Backend unreachable banner */}
+      {!backendReachable && (
+        <div className="mb-4 p-4 bg-yellow-900/30 border border-yellow-500/50 rounded-lg w-full max-w-md">
+          <p className="text-yellow-300 text-sm font-medium">Cannot connect to backend</p>
+          <p className="text-yellow-400 text-xs mt-1">Start the backend server to continue.</p>
+        </div>
+      )}
 
       {/* Login Card */}
       <div className="bg-tre-navy border border-tre-teal/30 rounded-lg shadow-2xl p-8 w-full max-w-md">

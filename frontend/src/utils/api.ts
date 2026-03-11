@@ -16,6 +16,8 @@ interface ApiResponse<T> {
 class ApiClient {
   private baseUrl: string
   private defaultHeaders: Record<string, string>
+  private onUnauthorized: (() => Promise<boolean>) | null = null
+  private isRefreshing = false
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl
@@ -30,6 +32,10 @@ class ApiClient {
 
   clearAuthToken() {
     delete this.defaultHeaders['Authorization']
+  }
+
+  setUnauthorizedHandler(handler: () => Promise<boolean>) {
+    this.onUnauthorized = handler
   }
 
   private async request<T>(
@@ -64,6 +70,28 @@ class ApiClient {
 
       if (contentType?.includes('application/json')) {
         data = await response.json()
+      }
+
+      // 401 interception: attempt silent token refresh
+      if (response.status === 401 && this.onUnauthorized && !this.isRefreshing) {
+        this.isRefreshing = true
+        try {
+          const refreshed = await this.onUnauthorized()
+          if (refreshed) {
+            return this.request<T>(endpoint, options)
+          }
+        } finally {
+          this.isRefreshing = false
+        }
+      }
+
+      // 403 handling: inline authorization error
+      if (response.status === 403) {
+        return {
+          data: null,
+          error: 'Not authorized for this action',
+          status: 403,
+        }
       }
 
       if (!response.ok) {
@@ -161,6 +189,28 @@ class ApiClient {
       })
 
       const data = await response.json()
+
+      // 401 interception: attempt silent token refresh
+      if (response.status === 401 && this.onUnauthorized && !this.isRefreshing) {
+        this.isRefreshing = true
+        try {
+          const refreshed = await this.onUnauthorized()
+          if (refreshed) {
+            return this.uploadFile<T>(endpoint, file, additionalData)
+          }
+        } finally {
+          this.isRefreshing = false
+        }
+      }
+
+      // 403 handling: inline authorization error
+      if (response.status === 403) {
+        return {
+          data: null,
+          error: 'Not authorized for this action',
+          status: 403,
+        }
+      }
 
       if (!response.ok) {
         const rawDetail = data?.detail
