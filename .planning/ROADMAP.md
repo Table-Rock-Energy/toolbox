@@ -27,11 +27,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. CORS preflight requests from origins not in the allowlist are rejected; production allows only `https://tools.tablerocktx.com`
   3. Frontend shows login screen (not a broken state) when the backend is unreachable, with a development-mode override for local work
   4. The admin user (`james@tablerocktx.com`) can still log in and access all tools after auth enforcement is applied (no lockout)
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
+- [ ] 01-01-PLAN.md — Backend auth enforcement, CORS lockdown, dev-mode bypass, SSE auth, and test suite
+- [ ] 01-02-PLAN.md — Frontend fail-closed auth, ApiClient 401 interceptor, SSE token, login banner
 
 ### Phase 2: Encryption Hardening
 **Goal**: Sensitive API keys stored in Firestore are encrypted at rest, and the application refuses to start without the encryption key in production
