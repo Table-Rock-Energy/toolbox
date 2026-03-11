@@ -1,224 +1,129 @@
-# Technology Stack
+# Technology Stack — ECF/Convey 640 Extraction
 
-**Project:** Table Rock Tools - Security Hardening
+**Project:** Table Rock Tools — Extract Tool (ECF/Convey 640 Format)
 **Researched:** 2026-03-11
 
-## Recommended Stack
+## Summary
 
-This is a security hardening milestone for an existing production app. The stack is fixed (React 19 + FastAPI + Firestore + Firebase Auth). Recommendations below are for **new libraries to add** and **patterns to adopt** within the existing stack, not stack replacements.
+**NO NEW DEPENDENCIES REQUIRED.** All capabilities for ECF PDF parsing and Convey 640 CSV/Excel merge exist in the current stack. This is a feature addition using existing infrastructure.
 
-### Authentication & Authorization (No New Libraries)
+## Validated Current Stack
 
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| FastAPI `Depends()` | (built-in) | Router-level auth dependencies | Already exists in `core/auth.py` as `require_auth` and `require_admin`. Apply at router level via `APIRouter(dependencies=[Depends(require_auth)])` instead of per-endpoint. Verified: FastAPI docs confirm router-level dependencies execute before endpoint dependencies. |
-| Firebase Admin SDK | >=6.2.0 (already installed) | Server-side token verification | Already in use. No changes needed to the verification logic itself -- just need to apply it consistently. |
+### Core Dependencies (Already Installed)
 
-**Confidence:** HIGH -- verified against FastAPI official documentation.
+| Technology | Current Version | Purpose | Why Sufficient |
+|------------|----------------|---------|----------------|
+| PyMuPDF (fitz) | >=1.23.0 | PDF text extraction | Latest is 1.27.2 (Mar 2026). Existing multi-column extraction already handles 2-3 column layouts. `extract_text_from_pdf()` with column-aware sorting is production-validated for OCC Exhibit A PDFs. |
+| pdfplumber | >=0.10.0 | Fallback PDF extraction | Production fallback for PyMuPDF. No changes needed. |
+| pandas | >=2.1.0 | CSV/Excel processing | Latest is 3.0.1 (Jan 2026). Current constraint (>=2.1.0) allows 3.x. Existing CSV delimiter detection, column mapping, and row processing in `title/csv_processor.py` handles variable column formats. |
+| openpyxl | >=3.1.0 | Excel read/write | Latest is 3.1.5. Used via pandas ExcelWriter for mineral export. No changes needed. |
+| python-multipart | >=0.0.6 | File upload handling | FastAPI dependency for multipart/form-data uploads. Already handles dual-file uploads. |
 
-**Pattern: Router-Level Dependencies**
+### Existing Infrastructure (Reusable)
 
-Apply `require_auth` at the `APIRouter()` level for tool routers, not per-endpoint. This is the FastAPI-recommended approach for applying auth to groups of related endpoints.
+| Component | Location | Capability | How ECF/Convey 640 Uses It |
+|-----------|----------|------------|---------------------------|
+| PDF extractor | `services/extract/pdf_extractor.py` | Multi-column text extraction, exhibit detection, column count auto-detection | **Reuse as-is.** ECF PDFs are 2-3 column Exhibit A lists — same as existing OCC format. |
+| CSV processor | `services/title/csv_processor.py` | Delimiter detection (`_detect_delimiter`), column mapping (`_identify_columns`), row processing | **Adapt pattern.** Convey 640 has known columns (County, STR, Applicant, Case#, Respondent data). Copy logic for flexible column mapping. |
+| Excel processor | `services/title/excel_processor.py` | Excel file reading via pandas | **Reuse as-is.** `pd.read_excel()` handles .xlsx/.xls. |
+| Name parser | `services/extract/name_parser.py` | Parse names into first/middle/last/suffix, detect entity type | **Reuse as-is.** Same parsing needs for ECF respondent names. |
+| Address parser | `services/extract/address_parser.py` | Parse addresses, extract city/state/zip, handle PO Box | **Reuse as-is.** Same parsing needs for ECF addresses. |
+| Entity detector | `services/title/entity_detector.py` | Detect Individual/Trust/LLC/Estate/Corporation from text | **Reuse as-is.** Same entity types in ECF respondents. |
+| Export service | `services/extract/export_service.py` | Generate mineral export CSV/Excel with `MINERAL_EXPORT_COLUMNS` | **Reuse as-is.** ECF output uses same 53-column mineral format. |
+| Legal description parser | `services/proration/legal_description_parser.py` | Extract Block/Section/Abstract from legal text | **Extend.** Add County extraction (already in Convey 640 as column). STR parsing may need township/range patterns. |
+| File upload component | `frontend/components/FileUpload.tsx` | Drag-drop multi-file upload with validation | **Reuse.** Already supports `multiple={true}`. UI pattern: show two file slots (PDF required, CSV optional). |
 
-```python
-# Before (current -- no auth on tool routers)
-router = APIRouter()
+## What NOT to Add
 
-@router.post("/upload")
-async def upload(file: UploadFile):
-    ...
+| Technology | Why NOT Needed |
+|------------|----------------|
+| PyPDF2 / pypdf | PyMuPDF already handles all PDF text extraction needs. PyPDF2 is slower and less capable for multi-column layouts. |
+| tabula-py / camelot-py | Table extraction libraries. ECF PDFs are text-based lists, not complex tables. PyMuPDF text extraction is sufficient. |
+| OpenCV / pytesseract | OCR libraries. ECF PDFs are digitally generated (not scanned), so OCR is unnecessary. Revenue tool already has optional OCR for scanned documents; not needed here. |
+| xlrd / xlwt | Legacy Excel libraries. openpyxl via pandas handles all modern Excel needs. |
+| csvkit | CSV utilities. pandas delimiter detection and column mapping are sufficient. |
+| polars / duckdb | Alternative data processing. pandas is already installed and validated for CSV/Excel. No performance bottleneck for single-file processing. |
+| regex library (3rd-party) | Python's built-in `re` module handles all pattern matching needs. `utils/patterns.py` already has extensive regex patterns. |
 
-# After (auth applied to all routes in this router)
-router = APIRouter(dependencies=[Depends(require_auth)])
+## Integration Points
 
-@router.post("/upload")
-async def upload(file: UploadFile):
-    ...
-```
+### Backend (FastAPI)
 
-For admin routes, use `APIRouter(dependencies=[Depends(require_admin)])`.
+**Router:** `api/extract.py`
+- Add `format` parameter to upload endpoint (detect ECF vs standard Exhibit A)
+- Add optional `convey_file` parameter for dual-file upload
+- Reuse existing `ExtractionResult` and `PartyEntry` models
 
-The `/api/health` endpoint lives on `app` directly (not a router), so it remains unauthenticated. The `/api/admin/users/{email}/check` endpoint needs special handling -- see PITFALLS.md.
+**Models:** `models/extract.py`
+- No changes needed — `PartyEntry` already has all fields (name, address, entity type, notes)
+- Optional: Add `case_metadata` field to `ExtractionResult` for county/legal/applicant/case# (defer until phase implementation)
 
-### CORS Configuration (No New Libraries)
+**Service:** `services/extract/`
+- New file: `ecf_parser.py` — ECF-specific header extraction (county, legal description, applicant, case number)
+- New file: `convey_processor.py` — Parse Convey 640 CSV/Excel with column mapping
+- New file: `merge_service.py` — Merge PDF respondent data with Convey 640 metadata (PDF is source of truth for names/addresses)
+- Reuse: `pdf_extractor.py`, `name_parser.py`, `address_parser.py`, `export_service.py`
 
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| `CORSMiddleware` | (built-in Starlette) | CORS headers | Already in use, but misconfigured. |
+### Frontend (React)
 
-**Confidence:** HIGH -- verified against FastAPI official CORS documentation.
+**Page:** `pages/Extract.tsx`
+- Add format selector radio buttons: "Standard Exhibit A" vs "ECF Multiunit Application"
+- Conditional dual-file upload UI when ECF selected:
+  - Slot 1: "ECF PDF (Required)" — `.pdf` only
+  - Slot 2: "Convey 640 CSV/Excel (Optional)" — `.csv, .xlsx, .xls`
+- Reuse existing `FileUpload` component with `multiple={true}`
+- Pass both files in single multipart/form-data request
 
-**Critical Finding:** The current config has `allow_origins=["*"]` with `allow_credentials=True`. Per the CORS spec and confirmed in FastAPI docs: "None of `allow_origins`, `allow_methods` and `allow_headers` can be set to `['*']` if `allow_credentials` is set to `True`." This is not just insecure -- it is spec-invalid and browsers will reject credential-bearing requests.
+**Components:** No new components needed
+- `FileUpload.tsx` already handles multi-file drag-drop
+- `DataTable.tsx` already displays results with filtering
+- `Modal.tsx` already handles export configuration
 
-**Recommended Configuration:**
+## Recommended Approach
 
-```python
-# Add to Settings in config.py
-cors_origins: list[str] = ["https://tools.tablerocktx.com"]
-environment: str = "development"
+### Phase 1: PDF-Only ECF Extraction
+1. Add ECF format detection in `format_detector.py` (look for "MULTIUNIT" or case number pattern in header)
+2. Create `ecf_parser.py` to extract case metadata from PDF header
+3. Reuse `pdf_extractor.extract_party_list()` for respondent text
+4. Reuse `parser.parse_entries()` for numbered entry parsing
+5. Map to mineral export with case metadata in County/Campaign Name fields
 
-# In main.py
-origins = settings.cors_origins
-if settings.environment == "development":
-    origins = ["http://localhost:5173", "http://localhost:8000"]
+### Phase 2: Convey 640 Merge
+1. Create `convey_processor.py` to parse CSV/Excel with flexible column mapping
+2. Create `merge_service.py` to:
+   - Match PDF respondents to Convey 640 rows by name fuzzy match
+   - Use PDF names/addresses as source of truth (correct OCR errors)
+   - Pull county/STR/applicant/case# from Convey 640 metadata
+   - Fill mineral export fields with maximum coverage
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
-)
-```
+### Phase 3: Frontend Dual Upload
+1. Add format selector to Extract page
+2. Show two file slots when ECF selected
+3. Send both files in single request (FastAPI handles multipart with multiple files)
+4. Display merged results with case metadata
 
-### Encryption (No New Libraries)
+## Version Updates Needed
 
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| `cryptography` (Fernet) | >=42.0.0 (already installed) | Symmetric encryption for API keys in Firestore | Already in use via `shared/encryption.py`. Pattern is sound (Fernet with `enc:` prefix for migration). |
+**NONE.** All dependencies are current and sufficient.
 
-**Confidence:** HIGH -- Fernet is the standard symmetric encryption choice for Python. Already implemented correctly.
+**Optional future consideration:** Upgrade pandas to 3.0.1 for performance improvements, but current >=2.1.0 constraint already permits 3.x. No code changes required (pandas 3.0 maintains backward compatibility for basic DataFrame operations).
 
-**Required Change:** Fail at startup if `ENCRYPTION_KEY` is not set in production. The current fallback-to-plaintext pattern silently stores secrets unencrypted.
+## Confidence Assessment
 
-```python
-# In Settings class or startup hook
-@app.on_event("startup")  # or lifespan
-async def startup_event():
-    if settings.environment == "production" and not settings.encryption_key:
-        raise RuntimeError(
-            "ENCRYPTION_KEY is required in production. "
-            "Generate one with: python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
-        )
-```
-
-### Firestore Subcollections (No New Libraries)
-
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| `google-cloud-firestore` | >=2.14.0 (already installed) | Subcollection pattern for revenue rows | Revenue statements currently embed all rows in a single document. Firestore has a 1MB document size limit. Move rows to a subcollection: `revenue_statements/{id}/rows/{row_id}`. |
-
-**Confidence:** HIGH -- subcollections are a core Firestore feature. This is the standard pattern for unbounded lists.
-
-**Pattern:**
-
-```python
-# Before: single document with embedded rows array
-doc_ref = db.collection("revenue_statements").document(stmt_id)
-await doc_ref.set({"rows": [...hundreds of rows...], "metadata": {...}})
-
-# After: metadata in parent doc, rows in subcollection
-doc_ref = db.collection("revenue_statements").document(stmt_id)
-await doc_ref.set({"metadata": {...}, "row_count": len(rows)})
-
-# Batch write rows to subcollection (commit every 500 -- Firestore limit)
-batch = db.batch()
-rows_ref = doc_ref.collection("rows")
-for i, row in enumerate(rows):
-    batch.set(rows_ref.document(), row)
-    if (i + 1) % 500 == 0:
-        await batch.commit()
-        batch = db.batch()
-if i % 500 != 499:
-    await batch.commit()
-```
-
-### Testing (Existing Libraries, New Patterns)
-
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| `pytest` | >=7.4.0 (already installed) | Test runner | Standard Python test framework. Already a dependency. |
-| `pytest-asyncio` | >=0.23.0 (already installed) | Async test support | Required for testing async FastAPI endpoints. Already a dependency. |
-| `httpx` | >=0.26.0 (already installed) | Test HTTP client | FastAPI's `TestClient` is built on httpx. Already a dependency. |
-
-**Confidence:** HIGH -- verified against FastAPI official testing documentation.
-
-**Auth Mocking Pattern (verified from FastAPI docs):**
-
-Use `app.dependency_overrides` to mock auth dependencies in tests. This is the FastAPI-recommended approach -- no additional mocking libraries needed.
-
-```python
-# conftest.py
-import pytest
-from fastapi.testclient import TestClient
-from app.main import app
-from app.core.auth import require_auth, require_admin
-
-MOCK_USER = {"uid": "test-uid", "email": "test@tablerocktx.com"}
-MOCK_ADMIN = {"uid": "admin-uid", "email": "james@tablerocktx.com"}
-
-def mock_require_auth():
-    return MOCK_USER
-
-def mock_require_admin():
-    return MOCK_ADMIN
-
-@pytest.fixture
-def client():
-    """Test client with auth mocked to return a regular user."""
-    app.dependency_overrides[require_auth] = mock_require_auth
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides = {}
-
-@pytest.fixture
-def admin_client():
-    """Test client with auth mocked to return an admin user."""
-    app.dependency_overrides[require_auth] = mock_require_auth
-    app.dependency_overrides[require_admin] = mock_require_admin
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides = {}
-
-@pytest.fixture
-def unauthed_client():
-    """Test client with NO auth override -- tests 401 responses."""
-    # Don't override -- let the real require_auth run and reject
-    with TestClient(app) as c:
-        yield c
-```
-
-**Note:** Test functions use normal `def` (not `async def`) with `TestClient`. The `TestClient` handles async internally. Only use `async def` tests with `@pytest.mark.asyncio` when testing service-layer functions directly.
-
-## Alternatives Considered
-
-| Category | Recommended | Alternative | Why Not |
-|----------|-------------|-------------|---------|
-| Auth middleware | Router-level `Depends()` | Global middleware via `BaseHTTPMiddleware` | Middleware runs on every request including static files and health checks. Router dependencies are scoped to specific routes and integrate with FastAPI's dependency injection (return values, error handling). |
-| Auth middleware | Router-level `Depends()` | Per-endpoint `Depends(require_auth)` on each function | Works but error-prone -- easy to forget on new endpoints. Router-level ensures all endpoints in a tool router are protected by default. |
-| CORS | Explicit origin list from config | `allow_origin_regex` | Regex is harder to audit and easier to misconfigure. An explicit list is clearer for a single-domain internal app. |
-| Secret management | Fernet encryption + startup validation | Google Secret Manager | Overkill for this use case. The app only encrypts GHL API keys in Firestore. Fernet with a single env var is simpler and already implemented. Secret Manager is better when you have many secrets or need rotation. |
-| Secret management | Fernet (existing) | `python-jose` / JWT-based encryption | Wrong tool. JWTs are for tokens, not at-rest encryption. Fernet is purpose-built for symmetric encrypt/decrypt. |
-| Testing | `TestClient` + `dependency_overrides` | `unittest.mock.patch` on Firebase | Fragile -- patches internal implementation. `dependency_overrides` is FastAPI's official mechanism and survives refactors. |
-| Testing | `pytest` + `httpx` sync TestClient | `pytest-asyncio` + `httpx.AsyncClient` | Adds complexity. FastAPI docs recommend sync TestClient for API tests. Reserve async tests for service-layer unit tests only. |
-| Firestore structure | Subcollections for revenue rows | Separate top-level collection with foreign key | Subcollections co-locate related data, simplify security rules, and allow deleting a statement to cascade-delete its rows. Top-level collections require manual cleanup. |
-
-## No New Dependencies Required
-
-This milestone requires zero new pip or npm packages. Everything needed is already installed:
-
-- `fastapi` (router dependencies, CORS middleware)
-- `cryptography` (Fernet encryption)
-- `google-cloud-firestore` (subcollections)
-- `pytest` + `pytest-asyncio` + `httpx` (testing)
-- `firebase-admin` (token verification)
-
-## Configuration Changes Required
-
-Add to `Settings` class in `backend/app/core/config.py`:
-
-```python
-# CORS
-cors_origins: list[str] = ["https://tools.tablerocktx.com"]
-environment: str = "development"
-```
-
-Add `ENVIRONMENT` and `CORS_ORIGINS` env vars to Cloud Run deployment config.
+| Area | Confidence | Rationale |
+|------|------------|-----------|
+| PDF extraction | **HIGH** | PyMuPDF 1.27.2 is current (Mar 2026). Existing `pdf_extractor.py` handles multi-column OCC PDFs in production. ECF PDFs are same format (2-3 columns, numbered entries, Exhibit A section). |
+| CSV/Excel processing | **HIGH** | pandas 3.0.1 is current (Jan 2026). Existing `csv_processor.py` handles delimiter detection and flexible column mapping. Convey 640 has known column names (easier than title opinion CSVs already processed). |
+| Name/address parsing | **HIGH** | Existing parsers validated on OCC Exhibit A data. ECF respondents have identical format (name on line 1, address on lines 2-3). |
+| Entity detection | **HIGH** | Same entity types (Individual, Trust, LLC, Estate, etc.) in ECF as existing formats. |
+| Mineral export | **HIGH** | `MINERAL_EXPORT_COLUMNS` already defined. ECF data maps to same fields. |
+| Frontend file upload | **MEDIUM** | `FileUpload.tsx` supports multi-file. Need UI pattern for "PDF required, CSV optional" — implementation detail, not stack limitation. |
 
 ## Sources
 
-- FastAPI Router Dependencies: https://fastapi.tiangolo.com/tutorial/bigger-applications/ (verified via WebFetch)
-- FastAPI CORS: https://fastapi.tiangolo.com/tutorial/cors/ (verified via WebFetch -- confirms wildcard + credentials is invalid)
-- FastAPI Testing: https://fastapi.tiangolo.com/tutorial/testing/ (verified via WebFetch)
-- FastAPI Dependency Overrides: https://fastapi.tiangolo.com/advanced/testing-dependencies/ (verified via WebFetch)
-- Existing codebase: `backend/app/core/auth.py`, `backend/app/main.py`, `backend/app/services/shared/encryption.py`
+- [PyMuPDF Documentation](https://pymupdf.readthedocs.io/) — Latest version 1.27.2, March 2026
+- [PyMuPDF PyPI](https://pypi.org/project/PyMuPDF/) — Version history and installation
+- [pandas 3.0.1 Documentation](https://pandas.pydata.org/docs/whatsnew/v3.0.0.html) — Released January 21, 2026
+- [pandas.read_excel Documentation](https://pandas.pydata.org/docs/reference/api/pandas.read_excel.html) — CSV/Excel reading
+- [openpyxl Documentation](https://openpyxl.readthedocs.io/en/latest/) — Latest version 3.1.5
+- Existing codebase: `backend/requirements.txt`, `services/extract/`, `services/title/`, `utils/patterns.py`, `frontend/components/FileUpload.tsx`

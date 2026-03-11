@@ -1,271 +1,685 @@
-# Architecture Patterns
+# Architecture Patterns: ECF/Convey 640 Integration
 
-**Domain:** Security hardening, Firestore restructuring, and test infrastructure for an existing FastAPI + React + Firestore internal toolbox
+**Domain:** ECF PDF + Convey 640 CSV/Excel merge for OCC multiunit well applications
 **Researched:** 2026-03-11
+**Context:** Adding new extraction format to existing Extract tool
 
-## Recommended Architecture
+## Executive Summary
 
-The existing tool-per-module monolith is well-structured. Security hardening layers on top of it without restructuring -- the key is applying existing auth dependencies (`require_auth`, `require_admin`) consistently, tightening CORS at the middleware level, and restructuring one Firestore collection. No new services or layers are needed.
+ECF/Convey 640 integration fits naturally into the existing Extract tool architecture with **minimal structural changes**. The tool-per-module pattern accommodates this as a new format mode alongside existing OCC Exhibit A parsers. Key insight: this is primarily **parser diversification**, not architectural redesign.
 
-### Component Boundaries
+**Integration strategy:** Add ECF-specific parsers + CSV merge logic to `services/extract/`, extend existing format detection, modify upload endpoint to accept dual files, reuse export infrastructure with metadata mapping.
 
-| Component | Responsibility | Communicates With | Changes Needed |
-|-----------|---------------|-------------------|----------------|
-| **CORS Middleware** (`main.py`) | Origin validation | Inbound HTTP requests | Replace `allow_origins=["*"]` with config-driven allowlist |
-| **Auth Dependencies** (`core/auth.py`) | Token verification + allowlist check | All API routers, Firestore (allowlist) | No code changes -- already correct. Just needs to be wired into unprotected routers |
-| **Tool Routers** (`api/*.py`) | HTTP handling per tool | Service layer, auth dependencies | Add `Depends(require_auth)` to all unprotected endpoints |
-| **Admin Router** (`api/admin.py`) | User management, settings, profile images | Auth dependencies, Firestore | Add `Depends(require_admin)` to unprotected admin endpoints (GET users, settings, profile, preferences) |
-| **Firestore Service** (`services/firestore_service.py`) | All Firestore CRUD | Google Firestore | Restructure `revenue_statements` to use subcollection for rows; add encryption for config docs |
-| **Config** (`core/config.py`) | Environment + settings | All layers | Add `cors_origins`, `encryption_key` as required field |
-| **Encryption** (`services/shared/encryption.py`) | Fernet encrypt/decrypt | Admin settings persistence | Require `ENCRYPTION_KEY` at startup; encrypt sensitive config before Firestore write |
-| **Test Suite** (`tests/`) | Verification | All backend components via httpx `TestClient` | New directory; test auth enforcement, parsing pipelines |
+**Confidence:** HIGH — existing architecture was designed for multiple Exhibit A formats; ECF is just another format with optional CSV accelerator.
 
-### Data Flow
+---
 
-**Current auth flow (working but inconsistently applied):**
+## Existing Extract Tool Architecture (Baseline)
+
+### Current Component Structure
+
 ```
-Browser -> ApiClient (injects Firebase ID token)
-       -> FastAPI middleware (CORS - currently allows *)
-       -> Router endpoint
-       -> [MISSING on most routes] Depends(require_auth) -> verify_firebase_token()
-       -> Service layer processes request
-       -> Firestore/GCS persistence
-       -> Response
-```
+api/extract.py (router)
+  └─► validate_upload() → PDF bytes
+      └─► extract_text_from_pdf() → full text
+          └─► detect_format() → ExhibitFormat enum
+              ├─► TABLE_ATTENTION → parse_table_pdf()
+              ├─► TABLE_SPLIT_ADDR → parse_table_pdf()
+              ├─► FREE_TEXT_LIST → parse_exhibit_a()
+              └─► FREE_TEXT_NUMBERED → parse_exhibit_a()
+                  └─► parse_single_entry() → PartyEntry
+                      ├─► parse_address()
+                      ├─► parse_name()
+                      └─► detect_entity_type()
 
-**Target auth flow (after hardening):**
-```
-Browser -> ApiClient (injects Firebase ID token)
-       -> FastAPI CORS middleware (explicit origin allowlist)
-       -> Router endpoint with Depends(require_auth) on ALL tool routes
-       -> verify_firebase_token() -> allowlist check -> decoded user dict
-       -> Service layer processes request (user identity from token, not headers)
-       -> Firestore/GCS persistence
-       -> Response
+POST /extract/export/{csv,excel}
+  └─► to_csv() / to_excel()
+      └─► _entries_to_dataframe() → mineral export format
 ```
 
-**Revenue Firestore restructuring data flow:**
+**Key characteristics:**
+- Format detection drives parser selection
+- All parsers output uniform `PartyEntry` model
+- Export layer maps `PartyEntry` → `MINERAL_EXPORT_COLUMNS`
+- Frontend is format-agnostic (works with `PartyEntry[]`)
+
+---
+
+## Recommended Architecture for ECF/Convey 640
+
+### High-Level Data Flow
+
 ```
-Current:  revenue_statements/{id} = { ...metadata, rows: [{...}, {...}, ...] }
-          (rows embedded in document -- hits 1MB limit on large statements)
-
-Target:   revenue_statements/{id} = { ...metadata, total_rows: N }
-          revenue_statements/{id}/rows/{row_id} = { ...row_data }
-          (rows in subcollection -- no document size limit, cheaper reads when only metadata needed)
+PDF (required) ─────┐
+                    ├──► Merge Logic ──► PartyEntry[] ──► Export
+CSV/Excel (opt) ────┘
 ```
 
-## Patterns to Follow
+**Merge principle:** PDF is source of truth for respondent list. CSV provides accelerator data (metadata, partial address corrections, property info).
 
-### Pattern 1: Router-Level Auth via Dependencies (existing pattern)
-**What:** FastAPI's `Depends()` for auth enforcement at the router or endpoint level.
-**When:** Every endpoint except `/api/health`.
-**Why this approach:** The `require_auth` and `require_admin` dependencies already exist and work. The GHL router already uses this pattern on all its endpoints. Just replicate across other routers.
+### Component Mapping
 
-Two strategies, use the simpler one:
+| Component | Exists? | Modification | New? |
+|-----------|---------|--------------|------|
+| **Format Detection** | ✓ | Add `ECF_EXHIBIT_A` enum value | Extension |
+| **PDF Parser** | — | — | NEW: `ecf_parser.py` |
+| **CSV Parser** | — | — | NEW: `convey640_parser.py` |
+| **Merge Logic** | — | — | NEW: `ecf_merge_service.py` |
+| **Metadata Extractor** | — | — | NEW: `ecf_metadata_extractor.py` |
+| **Upload Endpoint** | ✓ | Accept optional CSV/Excel file | Modification |
+| **Export Service** | ✓ | Map ECF metadata to mineral columns | Extension |
+| **PartyEntry Model** | ✓ | Add optional fields (case_number, legal_description, applicant) | Extension |
+| **Frontend FileUpload** | ✓ | Support dual-file upload UI | Extension |
+| **Frontend Extract.tsx** | ✓ | Show ECF metadata fields | Extension |
 
-**Option A -- Per-endpoint (current GHL pattern, recommended):**
+---
+
+## New Components (Detail)
+
+### 1. ECF Parser (`ecf_parser.py`)
+
+**Location:** `backend/app/services/extract/ecf_parser.py`
+
+**Responsibility:** Parse ECF PDF Exhibit A respondent list
+
+**Interface:**
 ```python
-@router.post("/upload")
-async def upload(file: UploadFile, user: dict = Depends(require_auth)):
-    # user is verified, contains email, uid, etc.
+def parse_ecf_exhibit_a(pdf_bytes: bytes) -> list[PartyEntry]:
+    """Parse ECF multiunit well application Exhibit A."""
 ```
 
-**Option B -- Router-level default dependency:**
+**Logic:**
+1. Extract text via `extract_text_from_pdf()` (reuse existing)
+2. Locate Exhibit A section (similar to `extract_party_list()`)
+3. Split into numbered entries (reuse `_split_into_entries()` pattern)
+4. Parse each entry:
+   - Extract entry number
+   - Extract name (may be multi-line)
+   - Extract address (street, city, state, ZIP)
+   - Detect entity type (reuse `detect_entity_type()`)
+   - Populate `PartyEntry`
+
+**Reuse opportunities:**
+- `extract_text_from_pdf()` (pdf_extractor.py)
+- `parse_address()` (address_parser.py)
+- `parse_name()` (name_parser.py)
+- `detect_entity_type()` (patterns.py)
+- `_split_into_entries()` pattern (parser.py)
+
+**Differences from existing parsers:**
+- ECF format may have different header text (e.g., "RESPONDENTS" vs "Exhibit A")
+- Entry numbering may not have "U" prefix for unknown addresses
+- Address layout may be more standardized (single line vs multi-line)
+
+---
+
+### 2. Convey 640 Parser (`convey640_parser.py`)
+
+**Location:** `backend/app/services/extract/convey640_parser.py`
+
+**Responsibility:** Parse Convey 640 CSV/Excel export
+
+**Interface:**
 ```python
-router = APIRouter(dependencies=[Depends(require_auth)])
+def parse_convey640(file_bytes: bytes, filename: str) -> Convey640Data:
+    """Parse Convey 640 CSV or Excel file."""
+
+@dataclass
+class Convey640Data:
+    """Structured data from Convey 640 export."""
+    metadata: CaseMetadata
+    respondents: list[Convey640Respondent]
+
+@dataclass
+class CaseMetadata:
+    county: str
+    legal_description: str  # STR (Section-Township-Range)
+    applicant: str
+    case_number: str
+
+@dataclass
+class Convey640Respondent:
+    entry_number: str
+    name: str
+    address: str
+    city: str
+    state: str
+    zip_code: str
 ```
 
-Use Option A because it makes auth explicit at each endpoint, and some routers mix auth levels (e.g., ETL has both `require_auth` and `require_admin` endpoints). Router-level dependencies would still need per-endpoint overrides.
+**Logic:**
+1. Detect file type (CSV vs Excel)
+2. Load into pandas DataFrame
+3. Extract metadata from header rows or dedicated columns
+4. Parse respondent rows into structured format
+5. Return `Convey640Data` object
 
-### Pattern 2: Config-Driven CORS
-**What:** Move CORS origins from hardcoded `["*"]` to `Settings` with environment-aware defaults.
-**When:** Startup, in `main.py`.
+**Reuse opportunities:**
+- Pandas CSV/Excel reading (already used in Title/Proration/GHL tools)
+- Address parsing/validation (shared utilities)
 
+---
+
+### 3. Merge Service (`ecf_merge_service.py`)
+
+**Location:** `backend/app/services/extract/ecf_merge_service.py`
+
+**Responsibility:** Merge PDF respondents with CSV metadata/corrections
+
+**Interface:**
 ```python
-# config.py
-cors_origins: list[str] = ["http://localhost:5173"]  # dev default
-
-# In production, set CORS_ORIGINS=https://tools.tablerocktx.com
-
-# main.py
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
-)
+def merge_ecf_data(
+    pdf_entries: list[PartyEntry],
+    convey_data: Convey640Data | None,
+) -> tuple[list[PartyEntry], CaseMetadata | None]:
+    """Merge PDF (source of truth) with CSV accelerator data."""
 ```
 
-### Pattern 3: Firestore Subcollection Migration (Revenue Rows)
-**What:** Move `rows` array out of parent document into a subcollection.
-**When:** During `save_revenue_statement` and `get_revenue_statements`.
+**Merge strategy:**
 
-Key constraint: This must be backwards-compatible. Read functions should handle both old (embedded rows) and new (subcollection) formats during migration.
+| Field | PDF | CSV | Merge Rule |
+|-------|-----|-----|------------|
+| **Respondent list** | Authoritative | Reference | PDF wins; CSV used for validation only |
+| **Names** | Primary | Secondary | PDF name is primary; CSV name used if PDF is garbled |
+| **Addresses** | Primary | Secondary | PDF address is primary; CSV fills gaps if PDF missing |
+| **Entity type** | Detected | Not present | PDF detection only |
+| **County** | Not present | Present | CSV metadata populates this |
+| **Legal description** | Not present | Present | CSV metadata populates this |
+| **Applicant** | Not present | Present | CSV metadata populates this |
+| **Case number** | Not present | Present | CSV metadata populates this |
 
+**Merge logic:**
+1. If no CSV: return PDF entries + null metadata
+2. If CSV:
+   - Match PDF entries to CSV entries by entry number
+   - For each PDF entry:
+     - Keep PDF name (primary)
+     - Keep PDF address if present; otherwise use CSV address
+     - Add CSV metadata to entry (county, case_number, etc.)
+   - Return merged entries + CSV metadata
+
+**Conflict resolution:**
+- PDF entry count != CSV entry count → log warning, use PDF count
+- Entry number mismatch → match by position if numbers don't align
+- Name/address both garbled in PDF → flag entry, use CSV as fallback
+
+---
+
+### 4. Metadata Extractor (`ecf_metadata_extractor.py`)
+
+**Location:** `backend/app/services/extract/ecf_metadata_extractor.py`
+
+**Responsibility:** Extract case metadata from ECF PDF header
+
+**Interface:**
 ```python
-# Write path (new): save rows to subcollection
-async def save_revenue_statement(job_id: str, statement_data: dict) -> dict:
-    rows = statement_data.pop("rows", [])
-    # Save parent doc WITHOUT rows
-    await doc_ref.set(statement_doc)
-    # Save rows to subcollection
-    batch = db.batch()
-    for i, row in enumerate(rows):
-        row_ref = doc_ref.collection("rows").document(str(i))
-        batch.set(row_ref, row)
-        # ... commit every 500
-
-# Read path (backwards-compatible):
-async def get_revenue_statements(job_id: str) -> list[dict]:
-    for doc in docs:
-        data = doc.to_dict()
-        if "rows" not in data or not data["rows"]:
-            # New format: fetch from subcollection
-            row_docs = await doc.reference.collection("rows").get()
-            data["rows"] = [r.to_dict() for r in row_docs]
+def extract_ecf_metadata(pdf_text: str) -> CaseMetadata | None:
+    """Extract case metadata from ECF PDF header (county, case number, applicant, STR)."""
 ```
 
-### Pattern 4: Startup Validation for Required Secrets
-**What:** Fail fast if `ENCRYPTION_KEY` is missing.
-**When:** App startup in `main.py` or via Pydantic validator.
+**Logic:**
+1. Search for header patterns in first page text:
+   - County: "County" followed by name
+   - Case number: "Cause CD No." or "Case CD"
+   - Applicant: "Application of" followed by name
+   - Legal description: Section-Township-Range pattern
+2. Return `CaseMetadata` object or None if not found
 
+**Reuse opportunities:**
+- Regex patterns for legal descriptions (reuse from Proration tool's `legal_description_parser.py`)
+- Text cleaning utilities (utils/patterns.py)
+
+---
+
+## Modified Components (Detail)
+
+### 5. Format Detection (MODIFIED: `format_detector.py`)
+
+**Changes:**
+- Add `ECF_EXHIBIT_A` to `ExhibitFormat` enum
+- Add detection pattern for ECF format:
+  ```python
+  _ECF_HEADER = re.compile(
+      r"(RESPONDENTS|multiunit\s+horizontal\s+well)", re.IGNORECASE
+  )
+  _CASE_NUMBER = re.compile(r"Cause\s+CD\s+No\.", re.IGNORECASE)
+  ```
+- Update `detect_format()` to check for ECF patterns before other formats
+
+**Integration point:** `api/extract.py` uses format hint to route to ECF parser
+
+---
+
+### 6. Upload Endpoint (MODIFIED: `api/extract.py`)
+
+**Changes:**
+- Accept optional second file (`csv_file: UploadFile | None`)
+- Detect ECF format (either via format_hint or auto-detection)
+- If ECF format:
+  1. Parse PDF → `pdf_entries`
+  2. Parse CSV (if provided) → `convey_data`
+  3. Merge → `merged_entries, metadata`
+  4. Return `ExtractionResult` with entries + metadata
+
+**New signature:**
 ```python
-# config.py -- make encryption_key required in production
-@property
-def require_encryption(self) -> bool:
-    return self.environment == "production" or bool(self.encryption_key)
-
-# main.py startup
-if not settings.encryption_key:
-    if settings.environment == "production":
-        raise RuntimeError("ENCRYPTION_KEY is required in production")
-    logger.warning("ENCRYPTION_KEY not set -- sensitive data will not be encrypted")
+@router.post("/upload", response_model=UploadResponse)
+async def upload_pdf(
+    file: Annotated[UploadFile, File(description="PDF file containing Exhibit A")],
+    csv_file: Annotated[UploadFile | None, File(description="Optional Convey 640 CSV/Excel")] = None,
+    request: Request,
+    format_hint: Optional[str] = Query(None, description="Manual format hint"),
+) -> UploadResponse:
 ```
 
-### Pattern 5: Test Infrastructure with httpx AsyncClient
-**What:** pytest + httpx for testing FastAPI endpoints with auth mocking.
-**When:** All backend tests.
-
+**Flow:**
 ```python
-# conftest.py
-@pytest.fixture
-def app():
-    from app.main import app
-    return app
-
-@pytest.fixture
-async def client(app):
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        yield c
-
-@pytest.fixture
-def auth_headers():
-    """Mock auth headers. Override require_auth dependency in tests."""
-    return {"Authorization": "Bearer test-token"}
-
-@pytest.fixture(autouse=True)
-def override_auth(app):
-    """Replace require_auth with a mock that returns a test user."""
-    async def mock_require_auth():
-        return {"uid": "test-uid", "email": "test@tablerocktx.com"}
-    app.dependency_overrides[require_auth] = mock_require_auth
-    yield
-    app.dependency_overrides.clear()
+if fmt == ExhibitFormat.ECF_EXHIBIT_A:
+    pdf_entries = parse_ecf_exhibit_a(file_bytes)
+    convey_data = None
+    if csv_file:
+        csv_bytes = await csv_file.read()
+        convey_data = parse_convey640(csv_bytes, csv_file.filename)
+    merged_entries, metadata = merge_ecf_data(pdf_entries, convey_data)
+    # Populate name fields for individuals
+    for entry in merged_entries:
+        parsed = parse_name(entry.primary_name, entry.entity_type.value)
+        if parsed.is_person:
+            entry.first_name = parsed.first_name
+            # ...
+    result = ExtractionResult(
+        success=True,
+        entries=merged_entries,
+        metadata=metadata,  # NEW field
+        # ...
+    )
 ```
 
-## Anti-Patterns to Avoid
+---
 
-### Anti-Pattern 1: Global Auth Middleware Instead of Dependencies
-**What:** Adding a middleware that checks auth on every request and filtering by path prefix.
-**Why bad:** FastAPI's dependency injection is the idiomatic approach. Middleware-based auth requires path matching regex, is harder to test, doesn't integrate with OpenAPI docs, and can't vary auth level per endpoint.
-**Instead:** Use `Depends(require_auth)` per endpoint or `dependencies=[...]` per router.
+### 7. PartyEntry Model (EXTENDED: `models/extract.py`)
 
-### Anti-Pattern 2: Migrating All Firestore Documents at Once
-**What:** Running a one-time migration script to move all revenue rows to subcollections.
-**Why bad:** Risk of data loss, downtime, and partial migration failures. Revenue data may span many documents.
-**Instead:** Dual-read pattern (check for embedded rows, fall back to subcollection). New writes always use subcollection. Optionally run a background migration later, but it is not required for correctness.
+**New optional fields:**
+```python
+class PartyEntry(BaseModel):
+    # ... existing fields ...
 
-### Anti-Pattern 3: Trusting x-user-email Headers for Identity
-**What:** Reading user identity from request headers set by the frontend.
-**Why bad:** These headers are trivially spoofable. Any HTTP client can set `x-user-email: admin@company.com`.
-**Instead:** Extract user identity exclusively from the verified Firebase token (already available in the `user` dict returned by `require_auth`).
-
-### Anti-Pattern 4: Testing Against Live Firestore
-**What:** Running tests that read/write to the real Firestore database.
-**Why bad:** Flaky tests, test pollution, cost, and risk of corrupting production data.
-**Instead:** Mock Firestore calls in unit tests. For integration tests, use Firestore emulator or mock the `get_firestore_client()` function.
-
-## Suggested Build Order
-
-Build order is constrained by dependencies between components. The critical path is:
-
-```
-Phase 1: Auth enforcement (no dependencies, highest security impact)
-  |- Add require_auth to all unprotected tool routers
-  |- Add require_admin to unprotected admin endpoints
-  |- Replace x-user-email header usage with token-derived identity
-  |- Lock down CORS origins in config
-
-Phase 2: Encryption + config hardening (depends on auth being solid)
-  |- Require ENCRYPTION_KEY at startup
-  |- Encrypt sensitive app_config docs before Firestore write
-  |- Encrypt admin/app settings
-
-Phase 3: Firestore restructuring (independent of auth, but lower priority)
-  |- Revenue rows subcollection migration (dual-read pattern)
-  |- Fix ETL N+1 with batch retrieval
-  |- Define composite indexes (remove client-side sort fallbacks)
-
-Phase 4: Test infrastructure (should verify phases 1-3)
-  |- Set up pytest + httpx + conftest with auth mocking
-  |- Auth enforcement smoke tests (verify 401 without token on every route)
-  |- Parsing pipeline regression tests (Extract, Revenue parsers)
+    # ECF-specific metadata (optional, populated from Convey 640 or PDF header)
+    case_number: Optional[str] = Field(None, description="OCC case number (e.g., CD 202600909)")
+    applicant: Optional[str] = Field(None, description="Well applicant name")
+    legal_description: Optional[str] = Field(None, description="Section-Township-Range")
+    county: Optional[str] = Field(None, description="County name")
 ```
 
-**Phase ordering rationale:**
-- Auth enforcement first because it is the highest-severity security gap and has zero dependencies on other changes.
-- CORS lockdown ships with auth because both are `main.py` / config changes.
-- Encryption second because it depends on the auth model being stable (encrypted config is read during auth flows).
-- Firestore restructuring third because it is a data modeling concern independent of security, and the dual-read pattern means no migration downtime.
-- Tests last because they should verify the hardened system, not the pre-hardened one. Also, auth mocking fixtures need to know the final auth dependency structure.
+**Backward compatibility:** All new fields are optional; existing OCC Exhibit A exports unchanged.
 
-## Unprotected Endpoints Inventory
+---
 
-Routers with NO auth on any endpoint (all routes exposed):
-- **extract.py** -- upload, export, parse-entries, enrich (7 endpoints)
-- **title.py** -- upload, export, preview, enrich, validate (7 endpoints)
-- **proration.py** -- all RRC + upload + export (14 endpoints)
-- **revenue.py** -- upload, export, summary, validate, debug (7 endpoints)
-- **ghl_prep.py** -- upload, export (4 endpoints)
-- **history.py** -- jobs list, delete, detail, entries (5 endpoints)
-- **ai_validation.py** -- status, validate (2 endpoints)
+### 8. Export Service (EXTENDED: `export_service.py`)
 
-Routers with PARTIAL auth:
-- **admin.py** -- POST/PUT/DELETE users + settings use `require_admin`, but GET users, GET settings, profile image upload/get, preferences have NO auth (8 unprotected of 12)
-- **enrichment.py** -- config update uses `require_admin`, but status/get-config/lookup have no auth (3 unprotected of 5)
-- **etl.py** -- entity corrections + relationships use `require_admin`, but health/status/search/detail/relationships-get/ownership have no auth (6 unprotected of 8)
+**Changes:**
+- Map ECF metadata to mineral export columns:
+  - `entry.county` → `"County"` column
+  - `entry.case_number` → `"Notes/Comments"` (or dedicated field if MINERAL_EXPORT_COLUMNS updated)
+  - `entry.legal_description` → `"Notes/Comments"`
+  - `entry.applicant` → `"Notes/Comments"` or `"Tags"`
 
-Router with FULL auth:
-- **ghl.py** -- all endpoints use `require_auth` (correct)
+**Modified function:**
+```python
+def _entries_to_dataframe(
+    entries: list[PartyEntry],
+    *,
+    county: str = "",
+    campaign_name: str = "",
+) -> pd.DataFrame:
+    # ...
+    row["County"] = entry.county or county  # Prefer entry-level county
+    notes_parts = []
+    if entry.notes:
+        notes_parts.append(entry.notes)
+    if entry.case_number:
+        notes_parts.append(f"Case: {entry.case_number}")
+    if entry.legal_description:
+        notes_parts.append(f"STR: {entry.legal_description}")
+    row["Notes/Comments"] = "; ".join(notes_parts)
+    # ...
+```
 
-**Total: ~63 unprotected endpoints need `require_auth` or `require_admin` added.**
+---
+
+### 9. Frontend FileUpload (EXTENDED: `components/FileUpload.tsx`)
+
+**Current:** Single-file upload only
+
+**Change:** Add dual-file upload mode
+
+**New prop:**
+```typescript
+interface FileUploadProps {
+  // ... existing props ...
+  mode?: 'single' | 'dual'  // NEW
+  primaryLabel?: string     // NEW (e.g., "PDF File")
+  secondaryLabel?: string   // NEW (e.g., "CSV/Excel (Optional)")
+  secondaryAccept?: string  // NEW (e.g., ".csv,.xlsx")
+}
+```
+
+**UI change:**
+- If `mode === 'dual'`:
+  - Show two separate drop zones (side by side or stacked)
+  - Primary zone: PDF only
+  - Secondary zone: CSV/Excel, with "(Optional)" label
+  - Return both files via callback: `onFilesSelected([pdfFile, csvFile?])`
+
+**Alternative:** Keep single-file upload, show second FileUpload conditionally in Extract.tsx (simpler, recommended).
+
+---
+
+### 10. Frontend Extract Page (EXTENDED: `pages/Extract.tsx`)
+
+**Changes:**
+
+1. **Dual-file upload UI:**
+   ```typescript
+   const [csvFile, setCsvFile] = useState<File | null>(null)
+
+   // Show second FileUpload when ECF format selected
+   {formatHint === 'ECF_EXHIBIT_A' && (
+     <div className="mt-4">
+       <FileUpload
+         onFilesSelected={(files) => setCsvFile(files[0])}
+         accept=".csv,.xlsx"
+         multiple={false}
+         label="Convey 640 Data (Optional)"
+         description="Upload CSV or Excel for metadata"
+       />
+     </div>
+   )}
+   ```
+
+2. **Upload with both files:**
+   ```typescript
+   const formData = new FormData()
+   formData.append('file', file)  // PDF
+   if (csvFile) {
+     formData.append('csv_file', csvFile)
+   }
+   ```
+
+3. **Display ECF metadata:**
+   ```typescript
+   {activeJob?.result?.metadata && (
+     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+       <h4 className="font-medium text-blue-900 mb-2">Case Information</h4>
+       <dl className="grid grid-cols-2 gap-2 text-sm">
+         <dt className="text-gray-600">County:</dt>
+         <dd className="text-gray-900">{metadata.county}</dd>
+         <dt className="text-gray-600">Case Number:</dt>
+         <dd className="text-gray-900">{metadata.case_number}</dd>
+         {/* ... */}
+       </dl>
+     </div>
+   )}
+   ```
+
+4. **Format hint dropdown:**
+   ```typescript
+   <option value="ECF_EXHIBIT_A">ECF Multiunit Well Application</option>
+   ```
+
+---
+
+## Component Dependency Graph
+
+```
+api/extract.py (upload endpoint)
+  ├─► format_detector.py (detect ECF format)
+  │   └─► NEW: ECF_EXHIBIT_A enum
+  ├─► ecf_parser.py (parse PDF) [NEW]
+  │   ├─► pdf_extractor.py (reuse)
+  │   ├─► address_parser.py (reuse)
+  │   ├─► name_parser.py (reuse)
+  │   └─► patterns.py (detect_entity_type, reuse)
+  ├─► convey640_parser.py (parse CSV) [NEW]
+  │   └─► pandas (already used)
+  ├─► ecf_merge_service.py (merge logic) [NEW]
+  │   └─► models/extract.py (PartyEntry)
+  └─► export_service.py (to_csv/to_excel)
+      └─► MODIFIED: map ECF metadata to columns
+
+models/extract.py
+  └─► PartyEntry (EXTENDED with optional fields)
+
+pages/Extract.tsx
+  ├─► FileUpload.tsx (reuse, conditionally show second instance)
+  └─► API call (formData with file + csv_file)
+```
+
+---
+
+## Integration Points
+
+### 1. Backend Integration Points
+
+| Component | Integration Type | Change |
+|-----------|------------------|--------|
+| `format_detector.py` | Extension | Add ECF pattern detection |
+| `api/extract.py` | Modification | Accept optional CSV file, route to ECF parser |
+| `models/extract.py` | Extension | Add optional ECF metadata fields to PartyEntry |
+| `export_service.py` | Modification | Map ECF metadata to mineral export columns |
+
+### 2. Frontend Integration Points
+
+| Component | Integration Type | Change |
+|-----------|------------------|--------|
+| `Extract.tsx` | Modification | Conditional second FileUpload, display metadata |
+| `FileUpload.tsx` | Reuse | No change; just use two instances |
+| `api.ts` | No change | FormData already supports multiple files |
+
+### 3. Shared Service Integration Points
+
+| Service | Used By | Change |
+|---------|---------|--------|
+| `pdf_extractor.py` | ECF parser | Reuse (no change) |
+| `address_parser.py` | ECF parser | Reuse (no change) |
+| `name_parser.py` | ECF parser | Reuse (no change) |
+| `patterns.py` | ECF parser | Reuse `detect_entity_type()` (no change) |
+| `export_utils.py` | Export service | No change (MINERAL_EXPORT_COLUMNS already defined) |
+
+---
+
+## Data Flow (End-to-End)
+
+### Scenario 1: PDF Only (No CSV)
+
+```
+User uploads ECF PDF
+  └─► POST /extract/upload?format_hint=ECF_EXHIBIT_A
+      └─► validate_upload(file) → pdf_bytes
+          └─► extract_text_from_pdf(pdf_bytes) → full_text
+              └─► detect_format(full_text) → ECF_EXHIBIT_A
+                  └─► parse_ecf_exhibit_a(pdf_bytes) → pdf_entries
+                      └─► extract_ecf_metadata(full_text) → metadata
+                          └─► merge_ecf_data(pdf_entries, None) → (entries, metadata)
+                              └─► ExtractionResult(entries, metadata)
+                                  └─► Frontend displays table + metadata panel
+
+User clicks "Mineral" export
+  └─► POST /extract/export/csv
+      └─► to_csv(entries, county=metadata.county)
+          └─► _entries_to_dataframe() → DataFrame
+              └─► dataframe_to_csv_bytes() → CSV download
+```
+
+### Scenario 2: PDF + CSV (Full Merge)
+
+```
+User uploads ECF PDF + Convey 640 CSV
+  └─► POST /extract/upload (FormData with file + csv_file)
+      └─► validate_upload(file) → pdf_bytes
+      └─► validate_upload(csv_file) → csv_bytes
+          └─► parse_ecf_exhibit_a(pdf_bytes) → pdf_entries
+          └─► parse_convey640(csv_bytes) → convey_data
+              └─► merge_ecf_data(pdf_entries, convey_data) → (merged_entries, metadata)
+                  └─► ExtractionResult(merged_entries, metadata)
+                      └─► Frontend displays table + metadata panel
+
+Export flow same as Scenario 1
+```
+
+---
+
+## Build Order (Dependency-Aware)
+
+### Phase 1: Backend Foundation (No Frontend Changes)
+
+1. **Extend PartyEntry model** (`models/extract.py`)
+   - Add optional fields: `case_number`, `applicant`, `legal_description`, `county`
+   - No dependencies
+
+2. **Create ECF metadata extractor** (`ecf_metadata_extractor.py`)
+   - Extract county, case number, applicant, STR from PDF text
+   - Dependencies: `utils/patterns.py` (reuse legal description regex from Proration)
+
+3. **Create ECF parser** (`ecf_parser.py`)
+   - Parse ECF Exhibit A respondent list
+   - Dependencies: `pdf_extractor.py`, `address_parser.py`, `name_parser.py`, `patterns.py`
+   - Test independently with sample ECF PDF
+
+### Phase 2: CSV Integration
+
+4. **Create Convey 640 parser** (`convey640_parser.py`)
+   - Parse CSV/Excel into structured format
+   - Dependencies: `pandas` (already available)
+   - Test independently with sample Convey 640 file
+
+5. **Create merge service** (`ecf_merge_service.py`)
+   - Merge PDF entries with CSV data
+   - Dependencies: `models/extract.py` (PartyEntry), `convey640_parser.py`
+   - Test with sample PDF + CSV pairs
+
+### Phase 3: API Integration
+
+6. **Extend format detector** (`format_detector.py`)
+   - Add `ECF_EXHIBIT_A` enum value
+   - Add detection patterns for ECF format
+   - Test with sample ECF PDFs
+
+7. **Modify upload endpoint** (`api/extract.py`)
+   - Accept optional `csv_file` parameter
+   - Route ECF format to ECF parser + merge service
+   - Return result with metadata
+   - Test via Swagger UI (`/docs`)
+
+### Phase 4: Export Integration
+
+8. **Extend export service** (`export_service.py`)
+   - Map ECF metadata fields to mineral export columns
+   - Test export output with merged entries
+
+### Phase 5: Frontend Integration
+
+9. **Update Extract page** (`Extract.tsx`)
+   - Add ECF format option to dropdown
+   - Show conditional second FileUpload for CSV
+   - Display metadata panel when present
+   - Send FormData with both files
+
+10. **Test end-to-end**
+    - Upload ECF PDF only → verify respondent list + metadata
+    - Upload ECF PDF + CSV → verify merged data
+    - Export mineral CSV → verify metadata in output
+
+---
 
 ## Scalability Considerations
 
-| Concern | Current (small team) | At scale | Notes |
-|---------|---------------------|----------|-------|
-| Auth verification | Firebase token verify per request | Same -- Firebase handles scale | Token caching possible but unnecessary at current scale |
-| Revenue doc size | Rows embedded in document | Hits 1MB Firestore limit | Subcollection migration fixes this |
-| Firestore indexes | Client-side sort fallback | Slower queries, higher read costs | Define composite indexes to eliminate fallbacks |
-| Test suite | None | Regressions go undetected | Start with smoke tests + parser regression tests |
+| Concern | At 100 entries | At 1000 entries | At 10,000 entries |
+|---------|----------------|-----------------|-------------------|
+| **PDF parsing** | In-memory (PyMuPDF) | In-memory | May need streaming/chunking for very large PDFs |
+| **CSV parsing** | Pandas in-memory | Pandas in-memory | Pandas handles well (tested up to millions of rows) |
+| **Merge logic** | O(n) linear match | O(n) with dict lookup | Use dict for O(1) lookups by entry_number |
+| **Frontend preview** | Full table render | Virtualized table | Virtualized table (react-window) |
+
+**Current state:** Proration tool already handles thousands of rows via pandas; no immediate scalability issues expected.
+
+---
+
+## Anti-Patterns to Avoid
+
+### Anti-Pattern 1: Separate ECF Tool
+**What goes wrong:** Duplicates all Extract infrastructure (upload, preview, export, AI review, enrichment)
+**Why it happens:** Temptation to create clean-room implementation
+**Consequences:** Code duplication, divergent UX, maintenance burden
+**Prevention:** Treat ECF as format extension, not new tool
+
+### Anti-Pattern 2: CSV as Source of Truth
+**What goes wrong:** CSV OCR errors propagate to final export, undermining data quality
+**Why it happens:** CSV has richer metadata, tempting to prioritize it
+**Consequences:** Garbage-in-garbage-out; users lose trust in extraction
+**Prevention:** PDF is authoritative for respondent list; CSV is accelerator only
+
+### Anti-Pattern 3: Tight Coupling Between PDF and CSV Parsers
+**What goes wrong:** Merge logic embedded in parsers; can't test independently
+**Why it happens:** Convenience of parsing + merging in one step
+**Consequences:** Hard to debug mismatches, fragile to format changes
+**Prevention:** Keep parsers pure (output structured data); merge in separate service
+
+### Anti-Pattern 4: Frontend Dual-File Upload as Atomic Unit
+**What goes wrong:** Forcing both files to upload simultaneously complicates state management
+**Why it happens:** Desire for single upload button
+**Consequences:** Poor UX if CSV fails; can't process PDF-only mode cleanly
+**Prevention:** PDF uploads independently; CSV is optional second step (or conditional second FileUpload)
+
+---
+
+## Validation Strategy
+
+### Unit Testing
+
+| Component | Test Cases |
+|-----------|------------|
+| `ecf_parser.py` | Parse sample ECF PDF → verify entry count, names, addresses |
+| `convey640_parser.py` | Parse sample CSV → verify metadata, respondent count |
+| `ecf_merge_service.py` | Merge with matching entries → verify PDF wins; Merge with mismatched counts → verify handling |
+| `ecf_metadata_extractor.py` | Extract from header text → verify county, case number, STR |
+
+### Integration Testing
+
+| Scenario | Test |
+|----------|------|
+| PDF only | Upload ECF PDF → verify entries + metadata extraction |
+| PDF + CSV | Upload both → verify merge logic, metadata population |
+| Export | Export merged data → verify mineral format columns populated |
+
+### End-to-End Testing
+
+1. Upload sample ECF PDF (no CSV) → verify preview table + metadata panel
+2. Upload same PDF + Convey 640 CSV → verify merged entries differ from PDF-only
+3. Export to mineral CSV → verify county, case number in output
+4. Verify backward compatibility: upload non-ECF PDF → existing flow works unchanged
+
+---
+
+## Migration Path
+
+**Phase 1 (Backend):** Implement parsers, merge service, API changes. Test via Swagger UI. No frontend changes yet.
+
+**Phase 2 (Frontend):** Add ECF format option + conditional CSV upload. Test with Phase 1 backend.
+
+**Phase 3 (Polish):** Add metadata display panel, improve merge conflict logging, add format detection confidence scoring.
+
+**Rollback plan:** ECF format is opt-in (via format_hint). If bugs found, remove ECF option from dropdown; existing users unaffected.
+
+---
 
 ## Sources
 
-- Existing codebase analysis: `backend/app/core/auth.py`, `backend/app/main.py`, `backend/app/services/firestore_service.py`, all files in `backend/app/api/`
-- FastAPI dependency injection: established pattern already used in `ghl.py` router
-- Firestore subcollection pattern: standard Firestore data modeling for unbounded arrays
-- Firestore 1MB document size limit: Firestore documented constraint
+- **Existing Extract tool codebase:** `/api/extract.py`, `/services/extract/`, `/models/extract.py`
+- **Frontend Extract page:** `Extract.tsx`, `FileUpload.tsx`
+- **Export utilities:** `export_utils.py`, `MINERAL_EXPORT_COLUMNS`
+- **PROJECT.md:** ECF/Convey 640 requirements
+- **Confidence level:** HIGH (based on direct codebase analysis)
 
 ---
 

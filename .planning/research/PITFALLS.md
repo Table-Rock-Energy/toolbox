@@ -1,271 +1,406 @@
-# Domain Pitfalls
+# Pitfalls Research
 
-**Domain:** Security hardening of a production FastAPI + React internal toolbox
+**Domain:** ECF PDF parsing and Convey 640 CSV/Excel merge for Extract tool
 **Researched:** 2026-03-11
-**Confidence:** HIGH (based on direct codebase analysis + established patterns for retroactive auth hardening)
+**Confidence:** HIGH
 
 ## Critical Pitfalls
 
-Mistakes that cause outages, security regressions, or require rewrites.
+### Pitfall 1: Multi-Line Address Parsing with Inconsistent Line Breaks
+
+**What goes wrong:**
+ECF PDFs contain multi-line addresses (name line, street line, city/state/ZIP line) but PDF text extraction may not preserve line breaks consistently. Addresses collapse into single-line text or break at wrong positions, causing name fragments to bleed into address fields or vice versa.
+
+**Why it happens:**
+PDF text extraction returns text in reading order but doesn't always preserve visual layout. Multi-column or complex layouts can result in text blocks being extracted out of order. The existing parser (`_separate_name_and_address`) relies on detecting street patterns (`^\d+\s+`, `P.O. Box`, `c/o`) and city/state/ZIP patterns, but if line breaks are missing, these patterns may match fragments within names (e.g., "123 Trust" detected as street address).
+
+**How to avoid:**
+- Test PDF extraction with multiple ECF filing formats to identify layout variations
+- Implement line-aware parsing that preserves `\n` boundaries and treats each line as a parsing unit
+- Add heuristic checks: if "street pattern" appears before sufficient name text (e.g., <10 chars), flag as suspicious
+- Validate against known entity types: if detected "street address" contains trust/estate keywords, likely misclassification
+- Use existing `_split_into_entries` pattern detection but enhance with address-specific line counting
+
+**Warning signs:**
+- Names shorter than 10 characters (flagging condition already exists in `_check_flagging`)
+- ZIP codes or state abbreviations appearing in `primary_name` field
+- Entity types detected as Individual when address contains "Trust" or "Estate"
+- Very long street addresses (>150 chars) indicating collapsed multi-line data
+
+**Phase to address:**
+Phase 1 (ECF PDF Parsing) — parser implementation must handle line breaks correctly from the start
 
 ---
 
-### Pitfall 1: Locking Out the Only Admin During Auth Rollout
+### Pitfall 2: Convey 640 Line Number Contamination in Name Fields
 
-**What goes wrong:** Adding `Depends(require_auth)` to all routes simultaneously breaks the `/api/admin/users/{email}/check` endpoint that the frontend's `AuthContext.tsx` calls *before* the user is fully authenticated. The frontend calls `checkAuthorization()` at line 46 without an auth token (it's a pre-auth check). If that endpoint now requires auth, the frontend enters a dead loop: can't check authorization without a token, can't get authorized without passing the check.
+**What goes wrong:**
+Convey 640 CSV/Excel exports from OCR often embed entry line numbers directly in name fields (e.g., "1. John Smith" or "U45 Jane Doe Trust"). When merging, these line numbers prevent exact string matching and contaminate the clean name data from PDFs.
 
-**Why it happens:** The current auth flow is: Firebase sign-in -> frontend calls `/admin/users/{email}/check` (unauthenticated) -> if allowed, proceed. This is a chicken-and-egg dependency that breaks when you blanket-apply auth.
+**Why it happens:**
+OCR tools parse the visual layout of PDFs and sometimes capture the entry number prefix as part of the name text. The Convey 640 export may not clean this up. If the merge logic uses naive string comparison or doesn't strip line numbers before matching, identical respondents won't match.
 
-**Consequences:** All users locked out of the application, including the admin who would need to fix it. Production outage with no self-service recovery path.
+**How to avoid:**
+- Pre-clean Convey 640 names: strip entry number patterns (`^\s*(U\s*)?\d+\.\s*`) before any matching logic
+- Normalize both PDF and CSV names: lowercase, remove extra spaces, strip punctuation for comparison
+- Use fuzzy matching (Levenshtein distance or Jaro-Winkler) with threshold (e.g., 85% similarity) instead of exact match
+- Separate line number extraction into dedicated field (`entry_number`) before name comparison
+- Test with known OCR datasets to identify contamination patterns
 
-**Prevention:**
-1. Map the exact auth flow before touching any routes: Firebase sign-in -> token acquisition -> authorization check -> app access.
-2. Move the allowlist check INTO `get_current_user` / `require_auth` itself (the dependency already has the email from the decoded token at line 329 of `auth.py`). This eliminates the need for the unauthenticated `/check` endpoint entirely.
-3. If keeping `/check` as a separate endpoint, explicitly exclude it from auth requirements or redesign it to accept a Bearer token.
-4. Deploy auth changes behind a feature flag or environment variable so you can roll back without a code deploy.
+**Warning signs:**
+- Merge success rate <70% when line numbers are present
+- Duplicate entries with slight variations (e.g., "John Smith" vs "1. John Smith")
+- Entry number field populated from CSV but not matching PDF entry numbers
+- Names starting with digits in merged output
 
-**Detection:** Test the full sign-in flow in a staging environment before deploying. Specifically test: fresh browser -> Google sign-in -> app loads. If the app shows "not authorized" or hangs on loading, this pitfall has been hit.
-
-**Phase:** Must be addressed in the FIRST phase, before any other auth work begins.
-
----
-
-### Pitfall 2: Frontend `return true` on Backend Failure Negates All Backend Auth
-
-**What goes wrong:** `AuthContext.tsx` line 54-55: when the backend is unreachable or returns an error, `checkAuthorization` returns `true`. This means if the backend is slow, temporarily down, or returns a 401/403 after auth is added, the frontend silently grants access. Any backend auth hardening is undermined by the frontend's fail-open behavior.
-
-**Why it happens:** Added as a dev convenience ("if backend is unavailable, allow access") but shipped to production. It's easy to forget this exists because it only triggers during error conditions.
-
-**Consequences:** Users who should be rejected (removed from allowlist, unauthorized) can access the frontend and make API calls if the backend check fails for any reason. Combined with the current `allow_origins=["*"]` CORS, this is exploitable.
-
-**Prevention:**
-1. Change the catch block to `return false` (fail-closed).
-2. Add a clear "Backend unavailable" error state in the UI instead of silently granting access.
-3. For local development, use `import.meta.env.DEV` to conditionally allow the fail-open behavior.
-
-**Detection:** Search for `return true` in catch blocks within auth-related frontend code. Test by stopping the backend and verifying the frontend shows an error, not the app.
-
-**Phase:** Must be fixed in the same deployment as backend auth hardening. Fixing backend without fixing frontend creates a false sense of security.
+**Phase to address:**
+Phase 2 (Convey 640 CSV Parsing) — normalization must happen before merge attempt in Phase 3
 
 ---
 
-### Pitfall 3: CORS `allow_origins=["*"]` with `allow_credentials=True` Is Invalid Per Spec
+### Pitfall 3: ZIP Code Data Type Loss in Excel Import
 
-**What goes wrong:** The current CORS config (`main.py` line 50-55) sets `allow_origins=["*"]` with `allow_credentials=True`. Per the CORS specification, browsers MUST reject responses with `Access-Control-Allow-Origin: *` when credentials are included. Some browsers enforce this strictly, others don't. When you tighten CORS to specific origins, you may break the frontend if the origin doesn't exactly match (e.g., trailing slash, www vs non-www, http vs https).
+**What goes wrong:**
+ZIP codes for Northeastern US states (MA, CT, RI, NH, VT, NJ, NY) start with 0 (e.g., 02101, 06511). Excel automatically converts these to integers when opening CSV files, stripping leading zeros (02101 becomes 2101). When merging Convey 640 data, ZIP codes become invalid and don't match PDF-extracted values.
 
-**Why it happens:** The wildcard was set during development and never updated. The comment on line 51 literally says "In production, specify allowed origins" but nobody did.
+**Why it happens:**
+Excel interprets numeric-looking strings as numbers by default, removing leading zeros. When saving CSV, the leading zero is permanently lost unless the column is pre-formatted as Text. Pandas `read_csv` with default `dtype=None` may infer numeric type for ZIP columns.
 
-**Consequences:**
-- If tightened incorrectly, every API call from the frontend fails with CORS errors. Users see a blank/broken app.
-- Common mistake: setting `allow_origins=["https://tools.tablerocktx.com"]` but forgetting `http://localhost:5173` for development, breaking local dev.
+**How to avoid:**
+- Force ZIP code columns to string dtype when reading CSV/Excel: `dtype={'zip': str}` in pandas
+- Add validation: if ZIP is numeric and <10000, flag as missing leading zero
+- Implement ZIP code formatting: pad to 5 digits with leading zeros if 4 digits detected
+- Check state-ZIP correlation: if state is MA/CT/RI/NH/VT/ME and ZIP doesn't start with 0, auto-prepend 0
+- Warn users during upload if ZIP codes appear malformed (all <10000 or mixed 4/5 digit)
 
-**Prevention:**
-1. Use an environment variable for allowed origins: `CORS_ORIGINS=https://tools.tablerocktx.com` in production, `http://localhost:5173,http://localhost:8000` in development.
-2. Parse the env var as a comma-separated list in `config.py`.
-3. Test CORS changes from the actual production domain, not just local dev (use the browser network tab to verify `Access-Control-Allow-Origin` header).
-4. Keep `allow_credentials=True` only when origins are explicitly listed (not `*`).
+**Warning signs:**
+- ZIP codes with 4 digits instead of 5
+- State abbreviations for Northeast states paired with ZIPs not starting with 0
+- Merge logic favoring CSV ZIP over PDF when CSV has data type corruption
+- ZIP validation failures in `_check_flagging` (existing pattern: `^\d{5}(-\d{4})?$`)
 
-**Detection:** After deploying CORS changes, check the browser console for `CORS policy` errors. Test from both production URL and local dev.
-
-**Phase:** CORS lockdown should be deployed together with auth hardening, not separately.
-
----
-
-### Pitfall 4: Firestore Revenue Subcollection Migration Loses Production Data
-
-**What goes wrong:** Moving revenue `rows` from an embedded array in the revenue statement document to a subcollection requires a data migration. If the migration script reads old docs and writes to the new subcollection but the app is simultaneously serving requests, you get: (a) new uploads writing to the old format that the migration already "completed," (b) reads failing because code expects subcollection but data is still in the old format, or (c) partial migrations where some documents are migrated and others aren't.
-
-**Why it happens:** Firestore has no schema migrations, no transactions across collections, and no way to atomically move data from a field to a subcollection. The app must handle both old and new formats during the transition.
-
-**Consequences:** Revenue data appears missing or incomplete. Users re-upload PDFs, creating duplicates. Worst case: data loss if old documents are modified/deleted before migration completes.
-
-**Prevention:**
-1. Write the new code to READ from both formats (check for subcollection first, fall back to embedded `rows` field). Deploy this read-path change first.
-2. Write a one-time migration script that copies `rows` to subcollections WITHOUT deleting the embedded array.
-3. After migration is verified complete, deploy code that WRITES to subcollections.
-4. Only after confirming all documents are migrated AND no code reads the old format, remove the embedded `rows` field in a cleanup pass.
-5. Never delete old data until the new format is proven in production for at least a week.
-
-**Detection:** Monitor Firestore reads/writes during migration. If revenue statement reads return 0 rows but the document exists, the migration has a gap.
-
-**Phase:** This should be its own discrete phase, NOT bundled with auth changes. Too many moving parts at once.
+**Phase to address:**
+Phase 2 (Convey 640 CSV Parsing) — must be handled at file ingestion, before any storage or merge
 
 ---
 
-### Pitfall 5: Requiring ENCRYPTION_KEY at Startup Breaks Existing Deployments
+### Pitfall 4: Entity Type Detection Failure for Deceased Parties
 
-**What goes wrong:** The plan says "Require ENCRYPTION_KEY at startup -- fail fast if missing." But the current production deployment may not have this env var set (the encryption module currently falls back to plaintext). Adding a hard startup requirement means the next deploy crashes immediately if the Cloud Run service doesn't have the secret configured.
+**What goes wrong:**
+Respondent entries like "John Smith, Deceased" or "Estate of Jane Doe" are misclassified as Individual instead of Estate. Deceased parties have special legal handling requirements (heirs, estate representatives), but if entity type is wrong, downstream workflows fail.
 
-**Why it happens:** Environment variable requirements are invisible until they cause a failure. Cloud Run deploys are triggered by `git push`, so a missing env var won't be caught until the container tries to start.
+**Why it happens:**
+The existing `detect_entity_type` pattern matching checks for "ESTATE" and "DECEASED" keywords, but pattern order matters. If "Deceased" appears after the name in comma-separated format and Individual pattern matches first (default fallback), Estate detection never runs. Additionally, "c/o [Executor Name]" patterns may override entity detection.
 
-**Consequences:** Production outage. The new container fails to start, Cloud Run keeps the old revision running (if available), but if the old revision is already replaced or the service scales to 0 and back, the app is down.
+**How to avoid:**
+- Reorder entity detection: check Estate patterns BEFORE Individual fallback
+- Add deceased-specific patterns: `, Deceased`, `Deceased$`, `late [name]`, `formerly [name]`
+- Extract deceased annotations to notes field but still classify as Estate
+- Check for executor/administrator keywords: "by [Name], Executor" should flag Estate type
+- Implement two-pass detection: first pass extracts annotations, second pass classifies base entity
 
-**Prevention:**
-1. Add `ENCRYPTION_KEY` to the Cloud Run service configuration BEFORE deploying the code that requires it. Use `gcloud run services update table-rock-tools --update-secrets=ENCRYPTION_KEY=encryption-key:latest` or `--update-env-vars`.
-2. Generate the Fernet key and store it in GCP Secret Manager first.
-3. In the startup check, log a CRITICAL warning instead of crashing on the first deploy. Add a hard requirement only after confirming the key is present in production.
-4. Handle the migration of existing plaintext values: on first startup with the key, re-encrypt all plaintext values in Firestore.
+**Warning signs:**
+- Names ending with "Deceased" but entity_type=Individual
+- "Estate of" in primary_name field but entity_type≠Estate
+- Notes field contains "heir of" but no Estate classification
+- c/o addresses with "Executor" or "Administrator" in recipient name
 
-**Detection:** Before deploying, run `gcloud run services describe table-rock-tools --format='value(spec.template.spec.containers[0].env)'` to verify the env var exists.
-
-**Phase:** Environment setup must happen BEFORE the code deploy. Add this as a pre-deployment checklist item.
-
----
-
-### Pitfall 6: Allowlist Dual-Storage Race Condition During Auth Hardening
-
-**What goes wrong:** The allowlist lives in both `data/allowed_users.json` (local file) and Firestore. `save_allowlist()` writes to the local file synchronously, then fires-and-forgets a Firestore write (`loop.create_task` at line 71 of `auth.py`). If the Firestore write fails silently (which it will, since failures are caught and logged as warnings at line 83), the local file and Firestore diverge. On the next container restart, `init_allowlist_from_firestore()` overwrites the local file with stale Firestore data, reverting any changes made since the last successful Firestore sync.
-
-**Why it happens:** Cloud Run containers are ephemeral. The local JSON file is lost on every deploy or scale-to-zero. Firestore is the actual source of truth, but writes to it are fire-and-forget with silent failure handling.
-
-**Consequences:** Admin adds a user, user can access the app, then on next deploy the user is removed because the Firestore write failed and the local file was rebuilt from stale Firestore data. In a security hardening context, this means users you REMOVED might reappear.
-
-**Prevention:**
-1. Make Firestore writes synchronous (await them) in the allowlist save path. If Firestore write fails, surface the error to the admin.
-2. Eliminate the local JSON file as a cache. Read directly from Firestore. Use in-memory caching with a TTL instead.
-3. At minimum, change the fire-and-forget `create_task` to an awaited call in the admin API endpoints (which are already async).
-
-**Detection:** After adding/removing a user, check Firestore directly (`gcloud firestore documents get`) to confirm the write landed.
-
-**Phase:** Fix before or during auth hardening. A diverged allowlist undermines the entire auth model.
+**Phase to address:**
+Phase 1 (ECF PDF Parsing) — entity type detection must cover these edge cases from initial implementation
 
 ---
 
-## Moderate Pitfalls
+### Pitfall 5: Merge Logic Choosing CSV Over PDF for Name Data
+
+**What goes wrong:**
+PDF is designated as source of truth, but merge logic accidentally prefers Convey 640 CSV data when CSV fields are populated and PDF fields are parsed as None or empty string. OCR-corrupted names from CSV overwrite clean PDF names, defeating the purpose of the merge.
+
+**Why it happens:**
+Naive merge logic using `csv_value or pdf_value` or `csv_value if csv_value else pdf_value` will choose CSV when both exist, assuming CSV is equally trustworthy. If PDF parser fails to extract a field (e.g., address parsing fails, returns None), merge falls back to CSV, which may have OCR errors.
+
+**How to avoid:**
+- Implement explicit precedence: `pdf_value if pdf_value is not None else csv_value`
+- For name fields: ALWAYS use PDF, ignore CSV (CSV only provides metadata like county, STR, case number)
+- For address fields: PDF primary, CSV fallback only if PDF parsing completely fails
+- Add merge audit logging: record which source was used for each field
+- Flag merged records where CSV was used for name/address: require manual review
+
+**Warning signs:**
+- Exported data contains OCR artifacts in names (misspellings, garbled text) despite clean PDF source
+- Address fields with impossible combinations (e.g., "Oklahoma City, TX" from OCR error)
+- Merge output has fewer records than PDF input (indicates CSV-based deduplication happened)
+- Entity types from CSV (if Convey 640 includes them) override PDF-detected types
+
+**Phase to address:**
+Phase 3 (PDF-CSV Merge) — merge logic must explicitly encode "PDF is source of truth" rule
 
 ---
 
-### Pitfall 7: Testing External Dependencies Without Mocks Causes Flaky Tests
+### Pitfall 6: Name Parser Failure on Mc/Mac/O' Prefixes
 
-**What goes wrong:** Writing tests for auth-protected routes that actually hit Firebase Admin SDK, Firestore, and GCS creates tests that fail when credentials aren't available (CI environment), when Firestore has unexpected data, or when Firebase token verification times out.
+**What goes wrong:**
+Irish/Scottish names like "O'Brien", "McDonald's Trust", "MacGregor Estate" are misparsed. Apostrophes are stripped as punctuation, "Mc" is treated as middle initial, or name splitting separates "Mac" from rest of name. First/last name fields end up corrupted.
 
-**Prevention:**
-1. Mock `verify_firebase_token` to return a known decoded token dict. Mock `is_user_allowed` to return `True`/`False`.
-2. Use `app.dependency_overrides` in FastAPI tests to replace `require_auth` and `require_admin` with test fixtures that return predictable user dicts.
-3. For Firestore, mock at the service level (`firestore_service.py` functions), not at the Firestore client level.
-4. For RRC scraping tests, save HTML fixtures in `test-data/` and mock the HTTP requests.
-5. Create a `conftest.py` with reusable fixtures: `authenticated_client`, `admin_client`, `unauthenticated_client`.
+**Why it happens:**
+The existing `parse_person_name` function splits on spaces and uses suffix/prefix detection, but doesn't have special handling for Celtic name prefixes. Apostrophes in "O'Name" may be removed by `clean_text` or treated as word boundary. "Mc"/"Mac" may match middle initial pattern if followed by capital letter (e.g., "McDonald" → first="Mc", middle="", last="Donald").
 
-**Detection:** If tests pass locally but fail in CI, or pass on first run but fail on second, external dependencies are leaking.
+**How to avoid:**
+- Add prefix preservation rules: keep "O'", "Mc", "Mac", "D'", "De", "Van", "Von" attached to following name part
+- Use Unicode-aware apostrophe handling: recognize both ASCII apostrophe (U+0027) and typographic apostrophe (U+2019)
+- Implement capitalization check: "McDonald" has two capital letters, not typical first/middle/last pattern
+- Test against known Irish/Scottish name corpus
+- Preserve original casing: don't force title case if original has internal capitals (McDonald not Mcdonald)
 
-**Phase:** Set up test infrastructure (mocks, fixtures, conftest.py) as the FIRST testing task, before writing any individual tests.
+**Warning signs:**
+- First names containing "Mc" or "O" as standalone values
+- Last names missing expected prefix (e.g., "Brien" instead of "O'Brien")
+- Names with apostrophes removed entirely
+- Entity type detection failing because "McDonald Trust" became "Donald Trust"
 
----
-
-### Pitfall 8: Replacing x-user-email Headers Breaks Job Attribution
-
-**What goes wrong:** The current system uses spoofable `x-user-email` and `x-user-name` headers for job attribution (stored in Firestore `jobs` collection as `user_id` and `user_name`). Switching to token-based identity changes the user identifier format -- Firebase tokens provide a `uid` (like `abc123def`) instead of an email. Existing jobs in Firestore have email-based `user_id` values. After the switch, job history queries (`get_user_jobs` filtering by `user_id`) stop matching old jobs.
-
-**Prevention:**
-1. Store BOTH `user_id` (Firebase UID) and `user_email` on new jobs.
-2. Query job history by email (which is in the decoded token) rather than UID, for backwards compatibility.
-3. Do NOT backfill old jobs -- just ensure the query works for both old (email-based) and new (UID-based) records.
-
-**Detection:** After deploying, check if the Dashboard's "recent jobs" shows historical jobs for existing users.
-
-**Phase:** Address during the auth enforcement phase, when adding `Depends(require_auth)` to tool routes.
+**Phase to address:**
+Phase 1 (ECF PDF Parsing) — name parsing enhancement before any export
 
 ---
 
-### Pitfall 9: Composite Firestore Indexes Not Deployed Before Code That Needs Them
+### Pitfall 7: Trustee Name Conflation with Trust Entity Name
 
-**What goes wrong:** The codebase already has fallback code for missing composite indexes (lines 225-232 in `firestore_service.py` -- catches exceptions and falls back to client-side sorting). If new queries are added during restructuring that require composite indexes, and those indexes aren't created before the code deploys, queries will either fail or silently fall back to unordered/incomplete results.
+**What goes wrong:**
+Entry text like "Smith Family Trust, John Smith as Trustee" is parsed with "John Smith" as primary_name instead of "Smith Family Trust". The trust entity is lost and replaced with individual trustee name, breaking entity type classification.
 
-**Prevention:**
-1. Define all required indexes in a `firestore.indexes.json` file.
-2. Deploy indexes with `gcloud firestore indexes composite create` BEFORE deploying the code that uses them.
-3. Firestore indexes can take 5-20 minutes to build. Verify they're ACTIVE before deploying.
-4. Keep the client-side sort fallback but log it at WARNING level so you know when it's being used.
+**Why it happens:**
+The `_extract_notes` function extracts trustee info to notes field but doesn't restructure the primary name. The `_clean_name` function removes "c/o" prefixes which may contain trustee info, and the parser assumes first substantial text is the name. "Trustee" pattern matching happens after name extraction.
 
-**Detection:** Search backend logs for "composite index missing" or "falling back to client-side sort" after deploying.
+**How to avoid:**
+- Reverse parsing order: detect trust/trustee patterns FIRST, extract trust name as primary
+- Parse structure: "[Trust Name], [Trustee Name] as Trustee" → primary_name="[Trust Name]", notes="Trustee: [Trustee Name]"
+- Use entity type to guide parsing: if "Trust" detected, prioritize trust name over individual names
+- Handle "by [Name], Trustee" format: extract representative to notes, keep entity as primary
+- Test with known trust naming patterns: "[Family Name] Trust", "[Name] Living Trust", etc.
 
-**Phase:** Index deployment must be a pre-step before any Firestore restructuring code deploys.
+**Warning signs:**
+- Entity type detected as Trust but primary_name looks like individual name (First Last format)
+- Notes field contains "Trustee: [Name]" but primary_name matches that same name
+- Trust keyword in notes but entity_type=Individual
+- Export shows individuals where trusts expected (e.g., all entries have first/middle/last names)
 
----
-
-### Pitfall 10: Admin Settings Stored in Plaintext While Encryption Migration Is In-Flight
-
-**What goes wrong:** The plan includes both "encrypt admin/app settings before Firestore persistence" and "require ENCRYPTION_KEY at startup." If these are deployed in the wrong order, you get a window where: (a) the app reads encrypted values but doesn't have the key (returns garbled data), or (b) the app writes encrypted values, then on restart falls back to plaintext reads because the key env var wasn't persisted correctly.
-
-**Prevention:**
-1. Deploy in this exact order: (a) add ENCRYPTION_KEY to Cloud Run env, (b) deploy code that CAN encrypt but doesn't require it, (c) run a one-time migration to encrypt existing plaintext values, (d) deploy code that requires encryption.
-2. The `decrypt_value` function already handles the `enc:` prefix gracefully (line 66 of `encryption.py`). Leverage this: encrypted values have the prefix, plaintext values don't. The code can handle both.
-3. Never deploy encryption-required code before the key is confirmed present AND existing data is migrated.
-
-**Detection:** After enabling encryption, read back a known value from Firestore and verify it decrypts correctly.
-
-**Phase:** Encryption changes should be a standalone step, deployed after ENCRYPTION_KEY is in the environment but before auth hardening.
+**Phase to address:**
+Phase 1 (ECF PDF Parsing) — entity-aware parsing must prioritize entity name over representative name
 
 ---
 
-## Minor Pitfalls
+### Pitfall 8: PDF Format Variation Across OCC Filing Dates
+
+**What goes wrong:**
+ECF PDF format changes over time as OCC updates filing templates. Older filings use different layout, fonts, spacing, or section headers. Parser works on recent filings but fails on older PDFs from different years.
+
+**Why it happens:**
+The existing Extract tool has format detection (`format_detector.py`) but only distinguishes OCC Exhibit A formats. ECF filings from different periods may have different:
+- Section header text ("RESPONDENTS" vs "RESPONDENT LIST" vs "PARTIES")
+- Entry numbering (continuous vs restarting after "ADDRESS UNKNOWN")
+- Address formatting (comma-separated vs line-separated)
+- Font/spacing affecting text extraction order
+
+**How to avoid:**
+- Collect sample ECF PDFs spanning multiple years (2020-2026) before building parser
+- Implement format detection heuristics: detect section headers, numbering patterns, layout structure
+- Use flexible pattern matching: regex with optional components for section headers
+- Add version detection: extract filing date from header, apply version-specific parsing rules
+- Fail gracefully: if format not recognized, flag entire filing for manual review rather than partial parse
+
+**Warning signs:**
+- Parser works on test PDFs but fails in production on older filings
+- Entry number extraction fails (returns no matches or wrong sequence)
+- Section detection misses "ADDRESS UNKNOWN" boundary in older formats
+- Address parsing success rate varies dramatically by filing date
+
+**Phase to address:**
+Phase 1 (ECF PDF Parsing) — format detection must be robust before any production use
 
 ---
 
-### Pitfall 11: `auto_error=False` on HTTPBearer Silently Passes Unauthenticated Requests
+### Pitfall 9: Case Metadata Extraction Failure from PDF Header
 
-**What goes wrong:** In `auth.py` line 31: `security = HTTPBearer(auto_error=False)`. This means if no `Authorization` header is present, FastAPI does NOT return 401 automatically -- it passes `None` to `get_current_user`. The current `get_current_user` returns `None` for unauthenticated users (line 318). Only `require_auth` raises 401. If a developer adds `Depends(get_current_user)` instead of `Depends(require_auth)` to a new route, it silently allows unauthenticated access.
+**What goes wrong:**
+County, legal description, applicant, and case number are required for mineral export output but are extracted incorrectly or missing. Header parsing fails when these fields span multiple lines or use inconsistent formatting.
 
-**Prevention:** When adding auth to routes, always use `Depends(require_auth)`, never `Depends(get_current_user)` for protected routes. Add a code review checklist item for this. Consider renaming `get_current_user` to `get_optional_user` to make the distinction obvious.
+**Why it happens:**
+PDF headers often use non-standard layouts: fields may be in tables, use label-value pairs with varying separators, or split across pages. Text extraction may not preserve field structure. Applicant names may contain commas (e.g., "Smith Oil & Gas, LLC") which break comma-based parsing.
 
-**Detection:** Grep for `Depends(get_current_user)` in route files. Any occurrence that isn't explicitly optional auth is a bug.
+**How to avoid:**
+- Develop header parser separately from respondent parser (different text structure)
+- Use label-based extraction: find "County:", "Legal Description:", "Applicant:" labels and extract following text
+- Handle multi-line fields: county may be "COUNTY OF GRADY" or just "GRADY"; legal description spans 3-5 lines
+- Store unparsed header text for fallback: if structured extraction fails, provide raw text for manual entry
+- Validate extracted values: county against known OK county list, case number format (e.g., CD-XXXXXX)
 
-**Phase:** Verify during the auth enforcement phase.
+**Warning signs:**
+- County field contains legal description text (multi-line bleed)
+- Case number has extra text appended (parsing didn't stop at field boundary)
+- Applicant field truncated or missing when name contains special characters
+- Legal description incomplete (only first line captured)
+
+**Phase to address:**
+Phase 1 (ECF PDF Parsing) — metadata extraction is parallel track to respondent parsing
+
+---
+
+### Pitfall 10: Merge Match Rate Too Low (Undetected Mismatches)
+
+**What goes wrong:**
+PDF contains 50 respondents, Convey 640 CSV has 48, but merge only matches 25. Many valid matches missed due to overly strict matching criteria or name variations not accounted for. Users assume merge is complete but half the metadata is lost.
+
+**Why it happens:**
+String matching algorithms are too strict (exact match only) or fuzzy matching threshold too high (>95% similarity required). Name variations not normalized:
+- "Smith, John A." (PDF) vs "John A Smith" (CSV) — comma placement differs
+- "ABC Trust" (PDF) vs "ABC Living Trust" (CSV) — extra word in CSV
+- "O'Brien" (PDF) vs "OBrien" (CSV) — apostrophe stripped in OCR
+- Entry number mismatch: PDF entry U15 corresponds to CSV entry 30 (renumbering occurred)
+
+**How to avoid:**
+- Use multi-strategy matching: try exact match, then fuzzy (85% threshold), then phonetic (Soundex/Metaphone)
+- Normalize aggressively: remove punctuation, extra spaces, "Living"/"Family", common trust words
+- Try bidirectional matching: PDF→CSV and CSV→PDF, combine results
+- Match by position first: PDF entry 1 likely matches CSV entry 1 even if names differ slightly
+- Report match statistics: show matched/unmatched counts, flag records below similarity threshold for review
+- Allow manual match confirmation: UI displays side-by-side PDF/CSV candidates for user approval
+
+**Warning signs:**
+- Match rate <60% when CSV has similar record count to PDF
+- Unmatched records with visually similar names when inspected manually
+- Position-based matching would succeed but name-based matching fails
+- Many unmatched records have only minor differences (punctuation, spacing, word order)
+
+**Phase to address:**
+Phase 3 (PDF-CSV Merge) — matching algorithm must be tuned after parser testing, before UI implementation
 
 ---
 
-### Pitfall 12: SSE Progress Streams May Not Send Auth Tokens
+## Technical Debt Patterns
 
-**What goes wrong:** The GoHighLevel bulk send uses Server-Sent Events (`/api/ghl/send/{job_id}/progress`) for real-time progress. SSE connections via `EventSource` in the browser do NOT support custom headers (no `Authorization` header). If this endpoint gets `Depends(require_auth)`, SSE connections will fail with 401.
+| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
+|----------|-------------------|----------------|-----------------|
+| Exact string matching only (no fuzzy) | Simple implementation, fast | Low merge success rate, manual fixes required | Never — fuzzy matching is core requirement |
+| CSV field overwrites PDF field if populated | Simple merge logic | Violates "PDF is source of truth", OCR errors propagate | Never — explicit precedence required |
+| Skip entry number normalization | Faster CSV parsing | Line numbers contaminate names, merge fails | Never — must strip before any processing |
+| Use pandas default dtypes for CSV | No explicit dtype specification | ZIP codes lose leading zeros | Never — dtype must be explicit |
+| Single PDF format parser (no version detection) | Works for test files | Fails on older/newer filings in production | Only acceptable for MVP if all test files are recent (post-2024) |
+| Manual case metadata entry (skip header parsing) | Faster Phase 1 implementation | Users must type county/case# for every filing | Acceptable for MVP if filing volume is low (<10/month) |
+| Store merged data without audit trail | Simpler data model | Can't debug merge errors, unknown data provenance | Never — must track PDF vs CSV source per field |
 
-**Prevention:**
-1. For SSE endpoints, use a query parameter token approach: `/api/ghl/send/{job_id}/progress?token=<firebase-id-token>`.
-2. Create a `require_auth_or_token_param` dependency that checks both the header and a query param.
-3. Alternatively, use `fetch()` with `ReadableStream` instead of `EventSource` on the frontend (supports headers but more complex).
+## Integration Gotchas
 
-**Detection:** After adding auth to GHL routes, test the bulk send feature end-to-end and verify the progress bar updates.
+| Integration | Common Mistake | Correct Approach |
+|-------------|----------------|------------------|
+| Pandas CSV reading | Use default `read_csv()` without dtype | Specify `dtype={'zip': str, 'entry_number': str}` to prevent type coercion |
+| Mineral export format | Assume Extract mineral export matches Title mineral export | Verify MINERAL_EXPORT_COLUMNS constant is shared/identical across tools |
+| Entity type enum | Use string literals instead of EntityType enum | Import from `app.models.extract.EntityType`, use enum values consistently |
+| Existing parser reuse | Copy-paste parser code for ECF format | Extend existing parser classes, add ECF format to format detection |
+| Address parser | Write new address parser for ECF | Reuse `services/shared/address_parser.py`, extend if needed |
+| Firestore job storage | Create separate collection for ECF jobs | Use existing `extract_jobs` collection, add `format` field to distinguish |
 
-**Phase:** Address when adding auth to GHL routes specifically.
+## Performance Traps
 
----
+| Trap | Symptoms | Prevention | When It Breaks |
+|------|----------|------------|----------------|
+| Loading entire CSV into memory for fuzzy matching | Slow merge (>30s for 50 records) | Use indexed lookup by entry number first, fuzzy match only for unmatched | >500 records in CSV |
+| N×M fuzzy string comparison (PDF entries × CSV rows) | Exponential slowdown | Early termination: stop after first high-similarity match (>90%) | N×M >10,000 comparisons |
+| Re-parsing PDF for every merge attempt | Redundant PDF extraction on each CSV upload | Cache parsed PDF results in session or Firestore | Users upload multiple CSV versions |
+| Regex compilation inside loop | Slow pattern matching | Compile regex patterns once at module level (already done in `patterns.py`) | N/A — existing patterns are pre-compiled |
 
-## Phase-Specific Warnings
+## Security Mistakes
 
-| Phase Topic | Likely Pitfall | Mitigation |
-|-------------|---------------|------------|
-| Auth enforcement on all routes | Pitfall 1 (admin lockout) + Pitfall 2 (frontend fail-open) | Fix frontend auth context FIRST, then restructure the auth check flow, then add `Depends(require_auth)` to routes |
-| CORS lockdown | Pitfall 3 (origin mismatch) | Add env var for origins, test from production domain, keep dev origins |
-| ENCRYPTION_KEY requirement | Pitfall 5 (startup crash) + Pitfall 10 (migration ordering) | Set env var in Cloud Run BEFORE deploying code. Deploy encryption as standalone step |
-| Firestore revenue restructuring | Pitfall 4 (data loss during migration) | Read-both-formats code first, then migration script, then write-new-format code |
-| Allowlist hardening | Pitfall 6 (dual-storage divergence) | Make Firestore writes synchronous, eliminate local file dependency |
-| Header replacement (x-user-email) | Pitfall 8 (job history breaks) | Store both UID and email, query by email for backwards compat |
-| Test suite creation | Pitfall 7 (flaky external deps) | Build mock infrastructure first, use `dependency_overrides` |
-| Firestore indexes | Pitfall 9 (indexes not ready) | Deploy indexes 20+ minutes before code that needs them |
-| SSE endpoints | Pitfall 12 (EventSource can't send headers) | Use query param token for SSE auth |
+| Mistake | Risk | Prevention |
+|---------|------|------------|
+| Trust CSV uploaded filenames | Path traversal, filename injection | Sanitize filenames, store with generated UUIDs, validate extensions |
+| Display raw PDF text in error messages | Information disclosure (PII in logs) | Truncate text samples to first 50 chars, redact names/addresses in logs |
+| Allow arbitrary CSV column names | CSV injection attacks in Excel | Validate column headers against expected schema, reject unexpected columns |
+| Store uploaded files indefinitely | Storage cost, compliance risk | Implement retention policy (delete after 90 days), document in privacy policy |
 
-## Recommended Phase Ordering (Risk-Based)
+## UX Pitfalls
 
-Based on these pitfalls, the safest order is:
+| Pitfall | User Impact | Better Approach |
+|---------|-------------|-----------------|
+| No merge preview before commit | Users don't see what data came from PDF vs CSV | Show side-by-side comparison table: PDF column, CSV column, Merged column |
+| Silent merge failures | Low match rate goes unnoticed, incomplete data exported | Display match statistics: "45/50 matched (90%)", list unmatched entries |
+| No manual match override | Users can't fix false negatives from fuzzy matching | Provide UI to manually link PDF entry to CSV row |
+| Cryptic flagging reasons | Users see "flagged" but don't know why | Show specific reason: "No address found", "Invalid ZIP format: 1234" |
+| PDF-only mode feels incomplete | Users expect CSV to be required, confused when optional | Clear UI messaging: "CSV optional — improves metadata, but PDF has all names/addresses" |
+| No validation summary | Users export without reviewing flags | Show summary before export: "3 entries flagged, 5 addresses incomplete — review?" |
 
-1. **Pre-deploy infrastructure** (Pitfalls 5, 9): Set ENCRYPTION_KEY in Cloud Run, deploy Firestore indexes
-2. **Frontend auth fix** (Pitfall 2): Change `return true` to `return false` in catch block
-3. **Auth flow restructuring** (Pitfalls 1, 6, 11): Move allowlist check into `require_auth`, fix dual-storage, rename `get_current_user`
-4. **Backend auth enforcement** (Pitfalls 8, 12): Add `Depends(require_auth)` to all routes, handle SSE + header migration
-5. **CORS lockdown** (Pitfall 3): Environment-based origin allowlist
-6. **Encryption hardening** (Pitfall 10): Encrypt existing plaintext values, then require key
-7. **Firestore restructuring** (Pitfalls 4, 9): Revenue subcollection migration with dual-read support
-8. **Test suite** (Pitfall 7): Mock infrastructure first, then auth smoke tests, then parsing regression tests
+## "Looks Done But Isn't" Checklist
 
----
+- [ ] **Merge logic:** Often missing audit trail (which fields came from PDF vs CSV) — verify `merge_audit` metadata stored
+- [ ] **ZIP code handling:** Often missing leading zero restoration for Northeast states — verify state-ZIP correlation check exists
+- [ ] **Entity type detection:** Often missing deceased/estate patterns — verify Estate patterns run before Individual fallback
+- [ ] **Name normalization:** Often missing Mc/Mac/O' prefix handling — verify prefix preservation in name parser
+- [ ] **Address parsing:** Often missing multi-line preservation — verify line-aware parsing for ECF format
+- [ ] **CSV column validation:** Often missing dtype enforcement — verify `dtype={'zip': str}` in pandas read
+- [ ] **Fuzzy matching threshold:** Often missing tuning/testing — verify match rate >75% on real sample data
+- [ ] **Header metadata:** Often missing multi-line field support — verify legal description captures all lines
+- [ ] **Format detection:** Often missing version handling — verify parser works on filings from 2020-2026
+- [ ] **Match statistics:** Often missing from UI — verify unmatched record list displayed to user
+
+## Recovery Strategies
+
+| Pitfall | Recovery Cost | Recovery Steps |
+|---------|---------------|----------------|
+| ZIP code leading zeros lost | LOW | Run batch correction: detect state, prepend 0 if needed, update Firestore records |
+| Merge used CSV names instead of PDF | MEDIUM | Re-run merge with corrected precedence logic, requires re-upload of PDF+CSV |
+| Entry numbers contaminated names | MEDIUM | Run name cleaning script with regex strip, update database, re-export |
+| Entity types misclassified | LOW | Re-run entity detection with corrected pattern order, update records in place |
+| Multi-line addresses collapsed | HIGH | Re-parse original PDFs with fixed line-aware logic, replace all extracted data |
+| Fuzzy matching too strict (low match rate) | MEDIUM | Lower threshold from 95% to 85%, re-run merge, review new matches manually |
+| Case metadata extraction failed | LOW | Extract header text separately, provide manual entry form, store alongside auto-extracted |
+| PDF format variation unhandled | MEDIUM | Add format detection for specific filing date range, re-parse affected PDFs |
+| Trustee names replaced entity names | MEDIUM | Re-parse with entity-first logic, swap primary_name and notes fields if needed |
+| Name parser broke Celtic prefixes | MEDIUM | Add prefix preservation rules, re-parse affected names, validate against originals |
+
+## Pitfall-to-Phase Mapping
+
+| Pitfall | Prevention Phase | Verification |
+|---------|------------------|--------------|
+| Multi-line address parsing | Phase 1 | Test with 10 ECF PDFs, address parse success rate >90% |
+| Line number contamination | Phase 2 | Inspect parsed CSV names, no entries start with digits or "U\d+" |
+| ZIP code data type loss | Phase 2 | Load CSV, check all ZIP codes are strings with correct length |
+| Deceased entity detection | Phase 1 | Test cases with "Deceased", "Estate of" patterns, verify Estate classification |
+| Merge precedence (CSV over PDF) | Phase 3 | Merge audit log shows PDF source for name/address fields |
+| Mc/Mac/O' name parsing | Phase 1 | Test with Irish/Scottish names, verify prefixes preserved |
+| Trustee/trust name conflation | Phase 1 | Test with trust entries, verify entity name is primary not trustee |
+| PDF format variation | Phase 1 | Test with PDFs from 2020-2026, parser handles all formats |
+| Case metadata extraction | Phase 1 | Extract county/case#/applicant from 5 sample PDFs, 100% success |
+| Low merge match rate | Phase 3 | Merge 3 PDF+CSV pairs, match rate >75%, report unmatched records |
 
 ## Sources
 
-- Direct codebase analysis of `backend/app/core/auth.py`, `backend/app/main.py`, `frontend/src/contexts/AuthContext.tsx`, `backend/app/services/shared/encryption.py`, `backend/app/services/firestore_service.py` (HIGH confidence)
-- CORS specification behavior with credentials: established web standard (HIGH confidence)
-- Firestore migration patterns and batch limits: established GCP patterns (HIGH confidence)
-- FastAPI `dependency_overrides` for testing: established FastAPI pattern (HIGH confidence)
-- EventSource header limitation: browser API specification (HIGH confidence)
+### PDF Parsing Research
+- [A Comparative Study of PDF Parsing Tools](https://arxiv.org/html/2410.09871v1) — Layout and multi-column challenges
+- [How to Parse PDFs Effectively: Tools, Methods & Use Cases](https://parabola.io/blog/best-methods-pdf-parsing) — Best practices for 2026
+- [Challenges When Parsing PDFs With Python](https://www.theseattledataguy.com/challenges-you-will-face-when-parsing-pdfs-with-python-how-to-parse-pdfs-with-python/) — Multi-line text extraction issues
+
+### CSV/Excel Data Quality
+- [5 CSV File Import Errors (and How to Fix Them)](https://ingestro.com/blog/5-csv-file-import-errors-and-how-to-fix-them-quickly) — Column matching, encoding issues
+- [Excel Import Errors and Fixes](https://flatfile.com/blog/the-top-excel-import-errors-and-how-to-fix-them/) — Data type coercion problems
+- [How to Match and Merge Data in Excel](https://www.thebricks.com/resources/guide-how-to-match-and-merge-data-in-excel) — Merging strategies
+
+### ZIP Code Handling
+- [Working with Leading Zeros in Northeast ZIP Codes](https://help.littlegreenlight.com/article/53-working-with-leading-zeros-in-northeast-zip-codes) — Leading zero loss
+- [Keeping Leading Zeros in Excel](https://support.microsoft.com/en-us/office/keeping-leading-zeros-and-large-numbers-1bf7b935-36e1-4985-842f-5dfa51f85fe7) — Microsoft official guidance
+- [Excel ZIP Code Tricks](https://blog.batchgeo.com/excel-zip-code-tricks-leading-zeros-shorten-to-five-digits/) — Text formatting solutions
+
+### Fuzzy String Matching
+- [Fuzzy String Matching in Python Tutorial](https://www.datacamp.com/tutorial/fuzzy-string-python) — Algorithm overview
+- [Deep Dive into String Similarity](https://medium.com/data-science-collective/deep-dive-into-string-similarity-from-edit-distance-to-fuzzy-matching-theory-and-practice-in-68e214c0cb1d) — Levenshtein, Jaro-Winkler
+- [Fuzzy Matching 101: Complete Guide](https://dataladder.com/fuzzy-matching-101/) — False positive prevention
+
+### Name Parsing Edge Cases
+- [First and Last Name Validation for Forms](https://a-tokyo.medium.com/first-and-last-name-validation-for-forms-and-databases-d3edf29ad29d) — Special character handling
+- [Why Mac and Mc Surnames Contain Second Capital Letter](https://www.todayifoundout.com/index.php/2014/02/mac-mc-surnames-often-contain-second-capital-letter/) — Celtic name patterns
+- [HumanName Class Documentation](https://nameparser.readthedocs.io/en/latest/modules.html) — Nameparser library prefix handling
+
+### Legal Entity Types
+- [Estate vs. Trust: What's the Difference?](https://smartasset.com/estate-planning/estate-vs-trust) — Entity classification
+- [Is a Trust a Legal Entity?](https://www.esapllc.com/is-a-trust-a-legal-entity-2024/) — Trust entity status
 
 ---
-
-*Pitfalls audit: 2026-03-11*
+*Pitfalls research for: ECF PDF parsing and Convey 640 CSV/Excel merge*
+*Researched: 2026-03-11*
