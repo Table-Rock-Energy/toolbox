@@ -1,74 +1,93 @@
-# Roadmap: Table Rock Tools v1.3 Security Hardening
+# Roadmap: Table Rock Tools v1.4 ECF Extraction
 
 ## Overview
 
-Harden the application's security posture in three phases: enforce authentication and lock down CORS across all endpoints, require and apply encryption for sensitive stored config, then build a backend test suite that verifies the hardened system. Every phase delivers a complete, independently verifiable capability.
+Add ECF/Convey 640 as a new extraction format within the existing Extract tool. The build validates PDF parsing independently (Phase 1), adds CSV processing (Phase 2), integrates merge logic with export (Phase 3), then wires up the frontend (Phase 4). Each phase delivers a testable capability via Swagger before the next begins.
 
 ## Phases
 
 **Phase Numbering:**
-- Integer phases (1, 2, 3): Planned milestone work
+- Integer phases (1, 2, 3, 4): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [x] **Phase 1: Auth Enforcement and CORS Lockdown** - All endpoints require authentication, CORS restricted to explicit origins, frontend fails closed
-- [x] **Phase 2: Encryption Hardening** - Application requires encryption key at startup and encrypts sensitive settings before Firestore persistence (completed 2026-03-11)
-- [ ] **Phase 3: Backend Test Suite** - Test infrastructure with auth smoke tests and parsing regression tests
+- [ ] **Phase 1: ECF PDF Parsing** - Parse ECF Exhibit A respondent lists from OCC multiunit well application PDFs with entity detection and case metadata
+- [ ] **Phase 2: Convey 640 Processing** - Parse optional Convey 640 CSV/Excel files with name normalization and ZIP code preservation
+- [ ] **Phase 3: Merge and Export** - Combine PDF-authoritative respondent data with CSV metadata and export to mineral format
+- [ ] **Phase 4: Frontend Integration** - Dual-file upload UI in Extract page with metadata display and mineral export
 
 ## Phase Details
 
-### Phase 1: Auth Enforcement and CORS Lockdown
-**Goal**: Every API request (except health check) is verified against a valid Firebase token, CORS rejects unknown origins, and the frontend denies access when the backend is unreachable
+### Phase 1: ECF PDF Parsing
+**Goal**: Users can upload an ECF PDF and get accurately parsed respondent data with case metadata, without needing any CSV file
 **Depends on**: Nothing (first phase)
-**Requirements**: AUTH-01, AUTH-02, SEC-01
+**Requirements**: ECF-01, ECF-02, ECF-03, ECF-04, ECF-05
 **Success Criteria** (what must be TRUE):
-  1. Unauthenticated requests to any tool endpoint (Extract, Title, Proration, Revenue, GHL Prep, History, ETL) return 401
-  2. CORS preflight requests from origins not in the allowlist are rejected; production allows only `https://tools.tablerocktx.com`
-  3. Frontend shows login screen (not a broken state) when the backend is unreachable, with a development-mode override for local work
-  4. The admin user (`james@tablerocktx.com`) can still log in and access all tools after auth enforcement is applied (no lockout)
-**Plans:** 2 plans
+  1. User uploads an ECF PDF via `/api/extract/upload` and receives a list of numbered respondent entries with parsed name and address fields
+  2. Multi-line respondent names and addresses are correctly preserved (no name fragments bleeding into address or vice versa)
+  3. Case metadata (county, legal description, applicant name, case number, well name) is extracted from the PDF header and returned in the response
+  4. Each respondent has an entity type assigned (Individual, Trust, LLC, Estate, Corporation, etc.) with deceased parties classified as Estate
+  5. Format detector identifies ECF filings distinctly from existing OCC Exhibit A format and routes to the ECF parser
+**Plans**: TBD
 
 Plans:
-- [x] 01-01-PLAN.md -- Backend auth enforcement, CORS lockdown, dev-mode bypass, SSE auth, and test suite
-- [x] 01-02-PLAN.md -- Frontend fail-closed auth, ApiClient 401 interceptor, SSE token, login banner
+- [ ] 01-01: ECF format detection, PDF parser, and metadata extractor
+- [ ] 01-02: Entity type detection enhancements and API endpoint wiring
 
-### Phase 2: Encryption Hardening
-**Goal**: Sensitive API keys stored in Firestore are encrypted at rest, and the application refuses to start without the encryption key in production
-**Depends on**: Phase 1
-**Requirements**: ENC-01, ENC-02
+### Phase 2: Convey 640 Processing
+**Goal**: Users can upload a Convey 640 CSV or Excel file and get clean, normalized respondent and metadata records
+**Depends on**: Nothing (independent of Phase 1; can run in parallel)
+**Requirements**: CSV-01, CSV-02, CSV-03, CSV-04
 **Success Criteria** (what must be TRUE):
-  1. Application fails to start when `ENVIRONMENT=production` and `ENCRYPTION_KEY` is not set, with a clear error message in the logs
-  2. Admin/app settings (Gemini, Google Maps, PDL, SearchBug, GHL API keys) are stored encrypted in Firestore -- raw Firestore reads show ciphertext, not plaintext
-  3. Settings are decrypted transparently on read -- the application behaves identically to before from the user's perspective
-**Plans:** 2/2 plans complete
+  1. User uploads a Convey 640 CSV or Excel file and receives parsed respondent rows with names stripped of entry line numbers
+  2. ZIP codes with leading zeros (e.g., 02101 for Massachusetts) are preserved as strings in the parsed output
+  3. Metadata columns (county, section-township-range, applicant, case number, classification) are extracted and returned separately from respondent data
+**Plans**: TBD
 
 Plans:
-- [ ] 02-01-PLAN.md -- Startup ENCRYPTION_KEY guard, hardened encrypt/decrypt, storage boundary encryption in admin settings
-- [ ] 02-02-PLAN.md -- Gap closure: encrypt settings in Firestore seed path (init_app_settings_from_firestore)
+- [ ] 02-01: Convey 640 parser with column mapping, name normalization, and ZIP preservation
 
-### Phase 3: Backend Test Suite
-**Goal**: Critical security paths and parsing pipelines have automated test coverage that catches regressions
-**Depends on**: Phase 2
-**Requirements**: TEST-01, TEST-02, TEST-03
+### Phase 3: Merge and Export
+**Goal**: When both PDF and CSV are provided, the system merges them with PDF as source of truth and exports to mineral format with maximum field coverage
+**Depends on**: Phase 1, Phase 2
+**Requirements**: MRG-01, MRG-02, MRG-03, MRG-04, EXP-01, EXP-02, EXP-03
 **Success Criteria** (what must be TRUE):
-  1. `make test` runs a pytest suite with auth mocking via `app.dependency_overrides` -- no real Firebase tokens needed
-  2. Every protected route has a smoke test confirming 401 without token and success with valid token
-  3. At least one revenue parser and one extract parser have regression tests with representative fixtures asserting expected output structure
-  4. All tests pass in CI (GitHub Actions) without GCP credentials or external service access
-**Plans:** 2 plans
+  1. When PDF and CSV are both provided, merged output uses PDF names and addresses (not CSV values that may contain OCR errors)
+  2. CSV metadata (county, STR, case number) appears in the merged result even when the PDF header extraction is incomplete
+  3. Entries are matched by entry number, and mismatched counts or unmatched entries are flagged with warnings in the response
+  4. Merged results export to mineral export CSV and Excel formats with county, case number, applicant, and legal description populating the appropriate columns
+  5. PDF-only mode (no CSV) still produces a valid mineral export with whatever metadata the PDF header provides
+**Plans**: TBD
 
 Plans:
-- [x] 03-01-PLAN.md -- Auth smoke test expansion for full route coverage (TEST-01, TEST-02)
-- [ ] 03-02-PLAN.md -- Parser regression tests (Extract + Revenue) and CI workflow (TEST-03)
+- [ ] 03-01: Merge service with entry-number matching and PDF precedence rules
+- [ ] 03-02: Mineral export mapping for ECF metadata fields
+
+### Phase 4: Frontend Integration
+**Goal**: Users can upload ECF PDFs (with optional CSV) through the Extract UI and view, review, and export respondent data
+**Depends on**: Phase 3
+**Requirements**: FE-01, FE-02, FE-03, FE-04
+**Success Criteria** (what must be TRUE):
+  1. Extract page shows a dual-file upload when ECF format is selected: PDF upload is required, CSV/Excel upload is optional
+  2. Results table displays respondent entries with name, entity type, address, city, state, and ZIP columns
+  3. Case metadata (county, case number, applicant, well name) displays above the results table in a summary panel
+  4. User can export results as mineral export CSV or Excel using the existing export buttons
+**Plans**: TBD
+
+Plans:
+- [ ] 04-01: Dual-file upload UI and ECF format selection
+- [ ] 04-02: Results table, metadata panel, and export wiring
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4
+(Phases 1 and 2 may execute in parallel since they are independent)
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Auth Enforcement and CORS Lockdown | 2/2 | Complete | 2026-03-11 |
-| 2. Encryption Hardening | 2/2 | Complete   | 2026-03-11 |
-| 3. Backend Test Suite | 1/2 | In Progress | - |
+| 1. ECF PDF Parsing | 0/2 | Not started | - |
+| 2. Convey 640 Processing | 0/1 | Not started | - |
+| 3. Merge and Export | 0/2 | Not started | - |
+| 4. Frontend Integration | 0/2 | Not started | - |

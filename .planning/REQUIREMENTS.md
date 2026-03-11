@@ -74,32 +74,32 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ECF-01 | — | Pending |
-| ECF-02 | — | Pending |
-| ECF-03 | — | Pending |
-| ECF-04 | — | Pending |
-| ECF-05 | — | Pending |
-| CSV-01 | — | Pending |
-| CSV-02 | — | Pending |
-| CSV-03 | — | Pending |
-| CSV-04 | — | Pending |
-| MRG-01 | — | Pending |
-| MRG-02 | — | Pending |
-| MRG-03 | — | Pending |
-| MRG-04 | — | Pending |
-| EXP-01 | — | Pending |
-| EXP-02 | — | Pending |
-| EXP-03 | — | Pending |
-| FE-01 | — | Pending |
-| FE-02 | — | Pending |
-| FE-03 | — | Pending |
-| FE-04 | — | Pending |
+| ECF-01 | Phase 1 | Pending |
+| ECF-02 | Phase 1 | Pending |
+| ECF-03 | Phase 1 | Pending |
+| ECF-04 | Phase 1 | Pending |
+| ECF-05 | Phase 1 | Pending |
+| CSV-01 | Phase 2 | Pending |
+| CSV-02 | Phase 2 | Pending |
+| CSV-03 | Phase 2 | Pending |
+| CSV-04 | Phase 2 | Pending |
+| MRG-01 | Phase 3 | Pending |
+| MRG-02 | Phase 3 | Pending |
+| MRG-03 | Phase 3 | Pending |
+| MRG-04 | Phase 3 | Pending |
+| EXP-01 | Phase 3 | Pending |
+| EXP-02 | Phase 3 | Pending |
+| EXP-03 | Phase 3 | Pending |
+| FE-01 | Phase 4 | Pending |
+| FE-02 | Phase 4 | Pending |
+| FE-03 | Phase 4 | Pending |
+| FE-04 | Phase 4 | Pending |
 
 **Coverage:**
 - v1.4 requirements: 20 total
-- Mapped to phases: 0
-- Unmapped: 20
+- Mapped to phases: 20
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-11*
-*Last updated: 2026-03-11 after initial definition*
+*Last updated: 2026-03-11 after roadmap creation*

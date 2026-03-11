@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: ECF Extraction
-status: defining
+status: roadmapped
 stopped_at: null
 last_updated: "2026-03-11"
-last_activity: 2026-03-11 -- Milestone v1.4 started
+last_activity: 2026-03-11 -- Roadmap created (4 phases, 20 requirements mapped)
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
-  total_plans: 0
+  total_plans: 7
   completed_plans: 0
   percent: 0
 ---
@@ -21,14 +21,29 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results. Everything else is secondary to parsing accuracy and data integrity.
-**Current focus:** Defining requirements for ECF Extraction
+**Current focus:** Phase 1 - ECF PDF Parsing
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-11 — Milestone v1.4 started
+Phase: 1 of 4 (ECF PDF Parsing)
+Plan: 0 of 2 in current phase
+Status: Ready to plan
+Last activity: 2026-03-11 — Roadmap created
+
+Progress: [░░░░░░░░░░] 0%
+
+## Performance Metrics
+
+**Velocity:**
+- Total plans completed: 0
+- Average duration: —
+- Total execution time: 0 hours
+
+**By Phase:**
+
+| Phase | Plans | Total | Avg/Plan |
+|-------|-------|-------|----------|
+| - | - | - | - |
 
 ## Accumulated Context
 
@@ -37,6 +52,7 @@ Last activity: 2026-03-11 — Milestone v1.4 started
 - [Milestone]: ECF extraction integrates into existing Extract tool as new format mode
 - [Milestone]: PDF is source of truth for respondent data; CSV optional accelerator
 - [Milestone]: Convey 640 metadata (county, STR, case#) maps to mineral export fields
+- [Roadmap]: Phases 1 and 2 are independent — can execute in parallel if desired
 
 ### Pending Todos
 
@@ -44,7 +60,8 @@ None yet.
 
 ### Blockers/Concerns
 
-None yet.
+- [Research]: Convey 640 schema is unknown (MEDIUM risk) — need sample files to validate column mapping in Phase 2
+- [Research]: Fuzzy matching deferred to v2 — Phase 3 merge uses entry-number matching only
 
 ### Quick Tasks Completed
 
@@ -54,5 +71,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-11
-Stopped at: null
+Stopped at: Roadmap created, ready to plan Phase 1
 Resume file: None
