@@ -94,15 +94,15 @@ from pathlib import Path
 
 app = FastAPI()
 
-# API routes
+# API routes (must be registered BEFORE static mount)
 app.include_router(extract_router, prefix="/api/extract")
-app.include_router(title_router, prefix="/api/title")
 # ... other routers
 
-# Serve React SPA (MUST be last)
-frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
-if frontend_dist.exists():
-    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")
+# Static dir = /app/static (Dockerfile copies frontend/dist → ./static)
+STATIC_DIR = Path(__file__).parent.parent / "static"  # /app/static
+if STATIC_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+    # SPA routing handled by custom middleware (not a single mount)
 ```
 
 **CRITICAL Order:**
@@ -120,7 +120,7 @@ if frontend_dist.exists():
 docker build -t test-deploy .
 
 # Check dist/ exists
-docker run --rm test-deploy ls -la frontend/dist
+docker run --rm test-deploy ls -la static
 
 # Expected output:
 # drwxr-xr-x  index.html

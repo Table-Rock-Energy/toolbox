@@ -1,605 +1,308 @@
 # Pdfplumber Workflows Reference
 
 ## Contents
-- Primary/Fallback Extraction Workflow
-- Revenue Statement Processing Workflow
-- Table Extraction and Validation Workflow
+- Primary/Fallback Extraction Pipeline
+- Exhibit A Table Parsing Workflow
 - Debugging Failed Extractions
-- Performance Optimization Workflow
+- Adding pdfplumber to a New Tool
+- Performance Optimization
 
 ---
 
-## Primary/Fallback Extraction Workflow
+## Primary/Fallback Extraction Pipeline
 
-Used in Extract and Revenue tools. PyMuPDF first, pdfplumber fallback.
+PyMuPDF runs first in both Extract and Revenue tools. pdfplumber activates on failure or garbled output. The two tools differ in their fallback strategy:
 
-### Complete Extraction Pipeline
+| Tool | Trigger | pdfplumber Mode |
+|------|---------|-----------------|
+| Extract | PyMuPDF returns `< 100 chars` | `extract_text(layout=True)` |
+| Revenue | PyMuPDF garbled score `≥ 3` | `extract_text()` default |
+
+### Revenue Tool Fallback (Garbled Text Comparison)
 
 ```python
-# toolbox/backend/app/services/extract/pdf_extractor.py
-from __future__ import annotations
-
+# backend/app/services/revenue/pdf_extractor.py
+import io
 import fitz  # PyMuPDF
 import pdfplumber
-import logging
-from pathlib import Path
 
-logger = logging.getLogger(__name__)
+def extract_text(pdf_bytes: bytes, use_fallback: bool = True) -> str:
+    """PyMuPDF first; pdfplumber if garbled."""
+    pymupdf_text = None
+    pdfplumber_text = None
 
-def extract_pdf_with_fallback(pdf_path: str | Path) -> tuple[str, str]:
-    """
-    Extract PDF text with fallback strategy.
-    Returns (text, method_used)
-    """
-    pdf_path = Path(pdf_path)
-    
-    if not pdf_path.exists():
-        raise FileNotFoundError(f"PDF not found: {pdf_path}")
-    
-    # Step 1: Try PyMuPDF (primary)
-    text, method = try_pymupdf(pdf_path)
-    
-    # Step 2: Validate extraction quality
-    if is_valid_extraction(text):
-        logger.info(f"Extracted {len(text)} chars with {method}")
-        return text, method
-    
-    # Step 3: Fallback to pdfplumber
-    logger.warning(f"PyMuPDF extraction insufficient ({len(text)} chars), falling back")
-    text, method = try_pdfplumber(pdf_path)
-    
-    # Step 4: Final validation
-    if not is_valid_extraction(text):
-        raise ValueError(
-            f"PDF extraction failed. Both PyMuPDF and pdfplumber returned "
-            f"<50 characters. PDF may be scanned or image-based."
-        )
-    
-    return text, method
-
-def try_pymupdf(pdf_path: Path) -> tuple[str, str]:
-    """Extract with PyMuPDF"""
     try:
-        doc = fitz.open(pdf_path)
-        text = "\n\n".join(page.get_text() for page in doc)
-        doc.close()
-        return text, "pymupdf"
+        pymupdf_text = extract_text_pymupdf(pdf_bytes)
+    except Exception:
+        pass
+
+    if pymupdf_text and len(pymupdf_text.strip()) > 100:
+        garbled = detect_garbled_text(pymupdf_text)
+        if not garbled["garbled"]:
+            return pymupdf_text
+
+    if use_fallback:
+        try:
+            pdfplumber_text = extract_text_pdfplumber(pdf_bytes)
+        except Exception:
+            pass
+
+    if pymupdf_text and pdfplumber_text:
+        pymupdf_score = detect_garbled_text(pymupdf_text)["score"]
+        plumber_score = detect_garbled_text(pdfplumber_text)["score"]
+        return pdfplumber_text if plumber_score < pymupdf_score else pymupdf_text
+
+    return pymupdf_text or pdfplumber_text or ""
+```
+
+### Extract Tool Fallback (Length Check)
+
+```python
+# backend/app/services/extract/pdf_extractor.py
+def extract_text_from_pdf(file_bytes: bytes, num_columns: int | None = None) -> str:
+    if num_columns is None:
+        num_columns = detect_column_count(file_bytes)
+
+    text = _extract_with_pymupdf(file_bytes, num_columns=num_columns)
+
+    if not text or len(text.strip()) < 100:
+        logger.info("PyMuPDF returned minimal text, falling back to pdfplumber")
+        text = _extract_with_pdfplumber(file_bytes)
+
+    return clean_text(text)
+
+def _extract_with_pdfplumber(file_bytes: bytes) -> str:
+    try:
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            return "\n\n".join(
+                page.extract_text(layout=True) or ""
+                for page in pdf.pages
+            )
     except Exception as e:
-        logger.error(f"PyMuPDF failed: {e}")
-        return "", "pymupdf_failed"
-
-def try_pdfplumber(pdf_path: Path) -> tuple[str, str]:
-    """Extract with pdfplumber"""
-    with pdfplumber.open(pdf_path) as pdf:
-        text = "\n\n".join(
-            page.extract_text() or "" 
-            for page in pdf.pages
-        )
-    return text, "pdfplumber"
-
-def is_valid_extraction(text: str) -> bool:
-    """Check if extraction returned meaningful text"""
-    return text and len(text.strip()) >= 50
+        logger.error(f"pdfplumber extraction failed: {e}")
+        return ""
 ```
 
 ### Checklist: Adding PDF Extraction to New Tool
 
 Copy this checklist when implementing PDF processing:
 
-- [ ] Import both `fitz` (PyMuPDF) and `pdfplumber`
-- [ ] Try PyMuPDF first with error handling
-- [ ] Validate extraction quality (min 50 chars)
-- [ ] Fallback to pdfplumber if validation fails
-- [ ] Log which method succeeded
-- [ ] Raise descriptive error if both fail (mention OCR requirement)
-- [ ] Close PyMuPDF documents explicitly or use context manager
-- [ ] Use pdfplumber context manager (`with pdfplumber.open()`)
+- [ ] Import `io`, `fitz`, and `pdfplumber`
+- [ ] Wrap upload bytes in `io.BytesIO()` before opening with pdfplumber
+- [ ] Try PyMuPDF first (faster, better for most PDFs)
+- [ ] Validate extraction quality (`len(text.strip()) > 100`)
+- [ ] Fallback to pdfplumber if PyMuPDF insufficient
+- [ ] Guard `page.extract_text()` result with `or ""`
+- [ ] Log which method succeeded for debugging
+- [ ] Raise descriptive `RuntimeError` if both fail (mention OCR for scanned PDFs)
+- [ ] Always use `with pdfplumber.open()` context manager (prevents file handle leaks)
 
 ---
 
-## Revenue Statement Processing Workflow
+## Exhibit A Table Parsing Workflow
 
-Multi-step workflow for parsing revenue PDFs into M1 CSV format.
+OCC Exhibit A PDFs in Devon-style and Mewbourne-style formats have explicit tables. The `table_parser.py` uses pdfplumber directly for these.
 
-### Complete Revenue Processing Pipeline
+### Full Table Parse Flow
 
 ```python
-# toolbox/backend/app/services/revenue/statement_parser.py
-from __future__ import annotations
-
-import pdfplumber
-import pandas as pd
+# backend/app/services/extract/table_parser.py
+import io
 import logging
-from pathlib import Path
-from typing import List, Dict
+import pdfplumber
+
+from app.models.extract import PartyEntry
+from app.services.extract.format_detector import ExhibitFormat
 
 logger = logging.getLogger(__name__)
 
-def process_revenue_statement(pdf_path: Path) -> pd.DataFrame:
-    """
-    Extract revenue data from PDF and convert to M1 format.
-    
-    Steps:
-    1. Extract all tables from PDF
-    2. Identify revenue table (vs summary/header tables)
-    3. Normalize column headers
-    4. Validate required columns exist
-    5. Transform to M1 format
-    """
-    
-    # Step 1: Extract tables
-    tables = extract_all_tables(pdf_path)
-    if not tables:
-        raise ValueError(f"No tables found in {pdf_path.name}")
-    
-    # Step 2: Identify revenue table
-    revenue_table = identify_revenue_table(tables)
-    if not revenue_table:
-        raise ValueError("Could not identify revenue table (missing expected columns)")
-    
-    # Step 3: Normalize headers
-    df = normalize_revenue_table(revenue_table)
-    
-    # Step 4: Validate required columns
-    validate_columns(df)
-    
-    # Step 5: Transform to M1 format
-    m1_df = transform_to_m1(df)
-    
-    logger.info(f"Processed {len(m1_df)} revenue rows from {pdf_path.name}")
-    return m1_df
+_HEADER_KEYWORDS = {
+    "name", "attention", "attn", "address", "city", "state", "zip",
+    "no", "no.", "number", "#", "mailing", "respondent",
+}
 
-def extract_all_tables(pdf_path: Path) -> List[List[List[str]]]:
-    """Extract all tables from PDF"""
-    all_tables = []
-    
-    with pdfplumber.open(pdf_path) as pdf:
-        for page_num, page in enumerate(pdf.pages, 1):
-            tables = page.extract_tables({
-                "vertical_strategy": "lines",
-                "horizontal_strategy": "lines",
-                "intersection_tolerance": 3
-            })
-            
-            logger.debug(f"Found {len(tables)} tables on page {page_num}")
-            all_tables.extend(tables)
-    
-    return all_tables
+def parse_table_pdf(file_bytes: bytes, fmt: ExhibitFormat) -> list[PartyEntry]:
+    entries = []
 
-def identify_revenue_table(tables: List[List[List[str]]]) -> List[List[str]] | None:
-    """Find the main revenue table (has Well, Owner, Volume columns)"""
-    required_keywords = ['well', 'owner', 'volume']
-    
-    for table in tables:
-        if len(table) < 2:
-            continue
-        
-        # Check if header row contains required keywords
-        header = [str(cell).lower() for cell in table[0]]
-        header_text = ' '.join(header)
-        
-        if all(keyword in header_text for keyword in required_keywords):
-            return table
-    
-    return None
-
-def normalize_revenue_table(table: List[List[str]]) -> pd.DataFrame:
-    """Convert table to DataFrame with normalized headers"""
-    if not table or len(table) < 2:
-        raise ValueError("Table is empty or missing data rows")
-    
-    # Extract headers and rows
-    headers = [str(h).strip() for h in table[0]]
-    rows = table[1:]
-    
-    # Create DataFrame
-    df = pd.DataFrame(rows, columns=headers)
-    
-    # Normalize column names
-    df.columns = [col.lower().replace(' ', '_') for col in df.columns]
-    
-    # Remove empty rows
-    df = df[df.astype(str).apply(lambda row: row.str.strip().str.len().sum() > 0, axis=1)]
-    
-    return df
-
-def validate_columns(df: pd.DataFrame) -> None:
-    """Ensure required columns exist"""
-    required = ['well_name', 'owner_name', 'volume', 'revenue']
-    missing = [col for col in required if col not in df.columns]
-    
-    if missing:
-        raise ValueError(f"Missing required columns: {missing}. Found: {list(df.columns)}")
-
-def transform_to_m1(df: pd.DataFrame) -> pd.DataFrame:
-    """Transform to M1 upload format (29 columns)"""
-    # See Revenue tool spec for full M1 column mapping
-    m1_columns = [
-        'Property Number', 'Owner Number', 'Owner Name',
-        'Production Month', 'Product', 'Volume', 'Revenue',
-        # ... 22 more columns
-    ]
-    
-    # Map revenue table to M1 format
-    m1_df = pd.DataFrame({
-        'Owner Name': df['owner_name'],
-        'Volume': df['volume'],
-        'Revenue': df['revenue'],
-        # ... additional mappings
-    })
-    
-    return m1_df
-```
-
-### Checklist: Revenue PDF Processing
-
-Copy this when processing new revenue statement vendors:
-
-- [ ] Extract all tables with `page.extract_tables()`
-- [ ] Log table count per page for debugging
-- [ ] Identify revenue table by header keywords
-- [ ] Handle multiple tables (summary, detail, totals)
-- [ ] Normalize column headers (lowercase, underscores)
-- [ ] Remove empty rows after DataFrame creation
-- [ ] Validate required columns exist before transformation
-- [ ] Map to M1 29-column format
-- [ ] Test with 3+ sample PDFs from vendor
-- [ ] Document vendor-specific quirks in code comments
-
----
-
-## Table Extraction and Validation Workflow
-
-Robust table extraction with validation and error handling.
-
-### Production-Grade Table Extraction
-
-```python
-# toolbox/backend/app/services/revenue/table_extractor.py
-from __future__ import annotations
-
-import pdfplumber
-import logging
-from typing import List, Dict, Optional
-
-logger = logging.getLogger(__name__)
-
-def extract_validated_tables(
-    pdf_path: str,
-    min_rows: int = 2,
-    min_cols: int = 2,
-    require_headers: bool = True
-) -> List[pd.DataFrame]:
-    """
-    Extract tables with comprehensive validation.
-    
-    Returns list of DataFrames, one per valid table found.
-    """
-    valid_tables = []
-    
-    with pdfplumber.open(pdf_path) as pdf:
-        for page_num, page in enumerate(pdf.pages, 1):
+    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+        for page_num, page in enumerate(pdf.pages):
             tables = page.extract_tables()
-            
             if not tables:
-                logger.debug(f"Page {page_num}: no tables detected")
+                logger.debug("No tables on page %d", page_num + 1)
                 continue
-            
-            for table_num, table in enumerate(tables, 1):
-                # Validate table structure
-                validation_result = validate_table(
-                    table, 
-                    page_num, 
-                    table_num,
-                    min_rows=min_rows,
-                    min_cols=min_cols
-                )
-                
-                if not validation_result['valid']:
-                    logger.warning(
-                        f"Page {page_num} Table {table_num}: "
-                        f"{validation_result['reason']}"
-                    )
+
+            for table in tables:
+                if not table:
                     continue
-                
-                # Convert to DataFrame
-                df = table_to_dataframe(table, require_headers)
-                valid_tables.append(df)
-                
-                logger.info(
-                    f"Page {page_num} Table {table_num}: "
-                    f"extracted {len(df)} rows × {len(df.columns)} cols"
-                )
-    
-    if not valid_tables:
-        raise ValueError(f"No valid tables found in {pdf_path}")
-    
-    return valid_tables
+                for row in table:
+                    # Skip empty rows and header rows
+                    if not row or not any(cell for cell in row if cell and cell.strip()):
+                        continue
+                    cells = [c.strip() if c else "" for c in row]
+                    first = cells[0].lower() if cells[0] else ""
+                    if first in _HEADER_KEYWORDS:
+                        continue
+                    # parse row into PartyEntry...
 
-def validate_table(
-    table: List[List[str]], 
-    page_num: int,
-    table_num: int,
-    min_rows: int = 2,
-    min_cols: int = 2
-) -> Dict[str, any]:
-    """Validate table structure"""
-    
-    if not table:
-        return {'valid': False, 'reason': 'empty table'}
-    
-    if len(table) < min_rows:
-        return {
-            'valid': False, 
-            'reason': f'only {len(table)} rows (need {min_rows})'
-        }
-    
-    # Check column consistency
-    col_counts = [len(row) for row in table]
-    if len(set(col_counts)) > 1:
-        return {
-            'valid': False,
-            'reason': f'inconsistent columns: {col_counts}'
-        }
-    
-    if col_counts[0] < min_cols:
-        return {
-            'valid': False,
-            'reason': f'only {col_counts[0]} columns (need {min_cols})'
-        }
-    
-    return {'valid': True}
-
-def table_to_dataframe(table: List[List[str]], require_headers: bool) -> pd.DataFrame:
-    """Convert validated table to DataFrame"""
-    import pandas as pd
-    
-    if require_headers:
-        headers = [str(h).strip() for h in table[0]]
-        rows = table[1:]
-        df = pd.DataFrame(rows, columns=headers)
-    else:
-        df = pd.DataFrame(table)
-    
-    # Clean data
-    df = df.applymap(lambda x: str(x).strip() if x else '')
-    
-    # Remove completely empty rows
-    df = df[df.astype(bool).any(axis=1)]
-    
-    return df
+    return entries
 ```
 
-### Iterate-Until-Pass: Table Extraction
+### Checklist: Exhibit A Table Parsing
 
-When table extraction fails, follow this debugging loop:
-
-1. **Extract with default settings**
-   ```python
-   tables = page.extract_tables()
-   ```
-
-2. **Validate extraction**: Check if tables exist and have expected structure
-   ```bash
-   # Run extraction and log table count
-   python3 -m app.services.revenue.table_extractor
-   ```
-
-3. **If validation fails**, adjust extraction settings and repeat step 2:
-   ```python
-   # Try text-based strategy for borderless tables
-   tables = page.extract_tables({
-       "vertical_strategy": "text",
-       "horizontal_strategy": "text"
-   })
-   ```
-
-4. **If still failing**, visualize table detection:
-   ```python
-   # Debug: save page image with table boundaries
-   im = page.to_image()
-   im.debug_tablefinder()
-   im.save('debug_tables.png')
-   ```
-
-5. **Only proceed when**:
-   - Table count matches expected (e.g., 1 main table per page)
-   - All tables pass validation (min rows/cols)
-   - Headers extracted correctly
+- [ ] Open from `io.BytesIO(file_bytes)`
+- [ ] Log pages with no tables (debug level, not warning)
+- [ ] Skip rows where all cells are empty or whitespace
+- [ ] Skip header rows by checking against `_HEADER_KEYWORDS`
+- [ ] Strip whitespace from all cell values (`cell.strip() if cell else ""`)
+- [ ] Handle `None` cells (pdfplumber returns `None` for empty table cells)
+- [ ] Log entry count on completion
 
 ---
 
 ## Debugging Failed Extractions
 
-When `extract_text()` or `extract_tables()` fails or returns poor results.
+When `extract_text()` or `extract_tables()` returns empty or garbled output.
 
-### Diagnostic Workflow
+### Diagnostic Script
 
 ```python
-# toolbox/backend/app/services/extract/pdf_diagnostics.py
+# Run from backend/ directory:
+# python3 -c "from app.services.extract.pdf_diagnostics import diagnose_pdf; diagnose_pdf('problem.pdf')"
+import io
 import pdfplumber
-from pathlib import Path
 
-def diagnose_pdf(pdf_path: Path):
-    """
-    Run diagnostics on problematic PDF.
-    Prints detailed info about PDF structure.
-    """
-    print(f"\n=== Diagnosing {pdf_path.name} ===\n")
-    
-    with pdfplumber.open(pdf_path) as pdf:
-        print(f"Total pages: {len(pdf.pages)}")
-        print(f"Metadata: {pdf.metadata}\n")
-        
-        for i, page in enumerate(pdf.pages[:3], 1):  # First 3 pages
-            print(f"--- Page {i} ---")
-            print(f"Size: {page.width:.1f} × {page.height:.1f} points")
-            
-            # Character count
-            chars = page.chars
-            print(f"Characters: {len(chars)}")
-            
-            if chars:
-                # Font analysis
-                fonts = {}
-                for char in chars:
-                    font = char.get('fontname', 'Unknown')
-                    fonts[font] = fonts.get(font, 0) + 1
-                
-                print(f"Fonts: {fonts}")
-            
-            # Text extraction quality
+def diagnose_pdf(pdf_path: str):
+    with open(pdf_path, "rb") as f:
+        pdf_bytes = f.read()
+
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        print(f"Pages: {len(pdf.pages)}")
+        print(f"Metadata: {pdf.metadata}")
+
+        for i, page in enumerate(pdf.pages[:3]):
+            print(f"\n--- Page {i+1} ---")
+            print(f"Size: {page.width:.0f} × {page.height:.0f} pt")
+            print(f"Chars: {len(page.chars)}")
+
             text = page.extract_text()
-            print(f"Extracted text length: {len(text) if text else 0}")
-            print(f"First 100 chars: {text[:100] if text else 'EMPTY'}")
-            
-            # Table detection
-            tables = page.extract_tables()
-            print(f"Tables detected: {len(tables)}")
-            
-            if tables:
-                for j, table in enumerate(tables, 1):
-                    print(f"  Table {j}: {len(table)} rows × {len(table[0])} cols")
-            
-            print()
+            print(f"Text length: {len(text) if text else 0}")
+            if text:
+                print(f"Preview: {text[:120]!r}")
 
-# Usage:
-# python3 -c "from app.services.extract.pdf_diagnostics import diagnose_pdf; diagnose_pdf(Path('problem.pdf'))"
+            tables = page.extract_tables()
+            print(f"Tables: {len(tables)}")
+            for j, t in enumerate(tables):
+                print(f"  Table {j}: {len(t)} rows × {len(t[0]) if t else 0} cols")
 ```
 
-### Visual Debugging
+### Visual Table Debugging
 
 ```python
-def debug_table_detection(pdf_path: Path, page_num: int = 0):
-    """Save image showing detected table boundaries"""
-    with pdfplumber.open(pdf_path) as pdf:
+def debug_table_detection(pdf_bytes: bytes, page_num: int = 0, output: str = "debug.png"):
+    """Save image showing pdfplumber's detected table boundaries."""
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         page = pdf.pages[page_num]
-        
-        # Generate image with table boundaries
         im = page.to_image(resolution=150)
         im.debug_tablefinder()
-        
-        output_path = f"debug_page_{page_num}.png"
-        im.save(output_path)
-        print(f"Saved debug image to {output_path}")
+        im.save(output)
+        print(f"Saved: {output}")
 ```
 
 ### Common Failure Modes
 
-| Symptom | Likely Cause | Solution |
-|---------|--------------|----------|
-| Empty string from `extract_text()` | Scanned PDF (images, no text layer) | Requires OCR preprocessing |
-| `extract_tables()` returns `[]` | No table borders detected | Try `vertical_strategy="text"` |
-| Mangled text, wrong order | Multi-column layout | Use `extract_text(layout=True)` |
-| Table has wrong row/col count | Merged cells, complex borders | Adjust `intersection_tolerance` |
-| Some characters missing | Font embedding issues | Fallback to PyMuPDF or OCR |
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `extract_text()` returns `None` | Scanned PDF — no text layer | OCR required (pytesseract + pdf2image) |
+| `extract_tables()` returns `[]` | No line borders detected | Try `vertical_strategy="text"` |
+| Text order scrambled | Multi-column layout | Use `extract_text(layout=True)` |
+| Table has inconsistent column counts | Merged cells | Adjust `intersection_tolerance` or handle in parser |
+| Characters missing | Font subset embedding | pdfplumber may handle better than PyMuPDF; compare scores |
+| `None` in table cells | Empty table cell | Always guard: `cell or ""` |
+
+### Iterate-Until-Pass: Table Extraction
+
+1. Run default: `tables = page.extract_tables()`
+2. Validate: check table count, row count, column consistency
+3. If empty → try `vertical_strategy="text"`:
+   ```python
+   tables = page.extract_tables({"vertical_strategy": "text", "horizontal_strategy": "text"})
+   ```
+4. If still failing → visualize: `page.to_image().debug_tablefinder().save("debug.png")`
+5. If visual shows correct detection but data wrong → adjust `intersection_tolerance`
+6. Only proceed when tables pass: count matches expected, all rows have consistent columns
 
 ---
 
-## Performance Optimization Workflow
+## Adding pdfplumber to a New Tool
 
-Optimize pdfplumber for large PDFs or high-throughput scenarios.
-
-### Benchmark and Optimize
+Use this pattern when building a new tool that processes PDFs:
 
 ```python
-import time
-import pdfplumber
-from pathlib import Path
+# backend/app/services/new_tool/pdf_extractor.py
+from __future__ import annotations
 
-def benchmark_extraction(pdf_path: Path):
-    """Measure extraction performance"""
-    
-    # Test 1: Default extraction
-    start = time.time()
-    with pdfplumber.open(pdf_path) as pdf:
-        text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-    default_time = time.time() - start
-    
-    # Test 2: Layout mode
-    start = time.time()
-    with pdfplumber.open(pdf_path) as pdf:
-        text = "\n".join(page.extract_text(layout=True) or "" for page in pdf.pages)
-    layout_time = time.time() - start
-    
-    # Test 3: Table extraction
-    start = time.time()
-    with pdfplumber.open(pdf_path) as pdf:
-        tables = [page.extract_tables() for page in pdf.pages]
-    table_time = time.time() - start
-    
-    print(f"Default extraction: {default_time:.2f}s")
-    print(f"Layout mode: {layout_time:.2f}s ({layout_time/default_time:.1f}x slower)")
-    print(f"Table extraction: {table_time:.2f}s")
+import io
+import logging
+
+import fitz  # PyMuPDF - primary
+import pdfplumber  # fallback
+
+logger = logging.getLogger(__name__)
+
+
+def extract_text(pdf_bytes: bytes) -> str:
+    """Extract text with PyMuPDF primary and pdfplumber fallback."""
+    # Primary: PyMuPDF (fast)
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        text = "\n\n".join(page.get_text("text") for page in doc)
+        doc.close()
+        if text and len(text.strip()) > 100:
+            logger.info("Extracted %d chars with PyMuPDF", len(text))
+            return text
+    except Exception as e:
+        logger.warning("PyMuPDF failed: %s", e)
+
+    # Fallback: pdfplumber
+    logger.info("Falling back to pdfplumber")
+    try:
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            text = "\n\n".join(page.extract_text() or "" for page in pdf.pages)
+        if text and len(text.strip()) > 50:
+            return text
+    except Exception as e:
+        logger.error("pdfplumber failed: %s", e)
+
+    raise RuntimeError(
+        "PDF text extraction failed with both PyMuPDF and pdfplumber. "
+        "PDF may be scanned — OCR preprocessing required."
+    )
+```
+
+---
+
+## Performance Optimization
+
+### Choose the Right Mode
+
+```python
+# Fast path — single-column, no layout needed (Revenue tool)
+text = page.extract_text()                    # ~50ms/page
+
+# Layout path — multi-column, column order matters (Extract tool fallback)
+text = page.extract_text(layout=True)         # ~150-250ms/page
+
+# Table path — structured data with borders (Exhibit A tables)
+tables = page.extract_tables()                # ~100ms/page, varies by table count
 ```
 
 ### Optimization Checklist
 
-Copy this when optimizing PDF processing:
-
-- [ ] Profile current performance (baseline timing)
-- [ ] Use default `extract_text()` for single-column PDFs (3-5x faster than layout mode)
-- [ ] Only enable `layout=True` when multi-column detected
-- [ ] Process pages lazily with generators (avoid loading all into memory)
-- [ ] Use PyMuPDF for simple text extraction (10x faster than pdfplumber)
-- [ ] Cache extracted text in storage/DB to avoid re-extraction
-- [ ] For 100+ page PDFs, process in batches of 10-20 pages
-- [ ] Consider async processing for multiple PDFs (see **fastapi** skill)
-- [ ] Monitor memory usage with large PDFs (use `psutil` or CloudWatch)
-- [ ] Document extraction method used (PyMuPDF vs pdfplumber) in job metadata
-
-### Production Optimization Pattern
-
-```python
-# toolbox/backend/app/services/extract/optimized_extractor.py
-from __future__ import annotations
-
-import fitz  # PyMuPDF
-import pdfplumber
-import logging
-from pathlib import Path
-from typing import Generator
-
-logger = logging.getLogger(__name__)
-
-def extract_pdf_optimized(pdf_path: Path) -> str:
-    """
-    Optimized extraction:
-    1. Try PyMuPDF (10x faster)
-    2. Detect if layout mode needed
-    3. Only use pdfplumber layout mode if necessary
-    """
-    
-    # Try PyMuPDF first
-    try:
-        with fitz.open(pdf_path) as doc:
-            text = "\n\n".join(page.get_text() for page in doc)
-            if len(text.strip()) > 50:
-                logger.info(f"Extracted with PyMuPDF in fast path")
-                return text
-    except Exception as e:
-        logger.warning(f"PyMuPDF failed: {e}")
-    
-    # Fallback to pdfplumber with smart layout detection
-    with pdfplumber.open(pdf_path) as pdf:
-        # Check first page for layout complexity
-        first_page = pdf.pages[0]
-        needs_layout = is_multi_column(first_page)
-        
-        logger.info(f"Using pdfplumber (layout={needs_layout})")
-        
-        # Extract with appropriate settings
-        return "\n\n".join(
-            page.extract_text(layout=needs_layout) or ""
-            for page in pdf.pages
-        )
-
-def is_multi_column(page) -> bool:
-    """Quick check for multi-column layout"""
-    chars = page.chars[:500]  # Sample first 500 chars
-    if not chars:
-        return False
-    
-    x_positions = [c['x0'] for c in chars]
-    # Multi-column if characters span 2+ distinct x-regions
-    return len(set(int(x / 100) for x in x_positions)) > 1
+- [ ] Profile baseline timing before optimizing
+- [ ] Use `extract_text()` (no layout) for Revenue tool fallback — single-column PDFs
+- [ ] Use `extract_text(layout=True)` only in Extract tool fallback — multi-column Exhibit A
+- [ ] Check PyMuPDF first — it's 5-10x faster than pdfplumber for plain text
+- [ ] Cache extracted text in GCS/Firestore to avoid re-extraction on re-upload
+- [ ] Log extraction method and char count for each job (helps diagnose future issues)
+- [ ] For 50+ page PDFs, consider processing pages in batches with generators
+- [ ] See **fastapi** skill for async handling of concurrent PDF uploads

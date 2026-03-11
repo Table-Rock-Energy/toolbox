@@ -2,401 +2,219 @@
 
 ## Contents
 - StorageService Methods
-- Configuration Properties
-- GCS Client Objects
-- Return Types and Error Cases
+- Domain Helper Classes
+- Config Properties
+- Return Types Summary
 
 ---
 
 ## StorageService Methods
 
+All methods are **synchronous**. The GCS Python client is synchronous; so is the local filesystem fallback. Import the module-level instance:
+
+```python
+from app.services.storage_service import storage_service
+```
+
 ### upload_file
 
-**Signature:**
 ```python
-async def upload_file(
+def upload_file(
     self,
-    file_content: bytes,
-    filename: str,
-    subfolder: str = ""
+    content: bytes | BinaryIO,
+    path: str,
+    content_type: str = "application/octet-stream",
 ) -> str
 ```
 
-**Parameters:**
-- `file_content: bytes` - Raw file bytes (PDF, CSV, Excel, etc.)
-- `filename: str` - Original filename (preserved for debugging)
-- `subfolder: str` - Logical folder within bucket/data directory (e.g., `"uploads/extract"`)
-
-**Returns:**
-- `str` - Relative path to the stored file: `"{subfolder}/{filename}"`
-- Example: `"uploads/extract/exhibit_a.pdf"`
-
-**Behavior:**
-1. Tries GCS upload if `config.use_gcs` and `self.bucket` is not None
-2. Falls back to local filesystem (`backend/data/{subfolder}/{filename}`)
-3. Creates parent directories as needed
-4. Logs which backend was used (info level)
-
-**Exceptions:**
-- Generally doesn't raise exceptions (fallback handles GCS failures)
-- May raise filesystem errors if local disk is full or permissions are wrong (rare)
-
----
+- `content`: Raw bytes or a file-like object (must be seekable — seek is called if GCS fails and falls back to local)
+- `path`: Full storage path, e.g., `"uploads/extract/doc.pdf"` or `"rrc-data/oil_proration.csv"`
+- `content_type`: GCS metadata MIME type
+- Returns: GCS URI (`"gs://bucket/path"`) on success; local path string on fallback
 
 ### download_file
 
-**Signature:**
 ```python
-async def download_file(self, file_path: str) -> bytes
+def download_file(self, path: str) -> bytes | None
 ```
 
-**Parameters:**
-- `file_path: str` - Relative path from upload (e.g., `"rrc-data/oil_proration.csv"`)
+Returns `None` if not found in GCS **or** locally. NEVER raises on a missing file.
 
-**Returns:**
-- `bytes` - Raw file content
-
-**Behavior:**
-1. Tries GCS download if `config.use_gcs` and `self.bucket` is not None
-2. Falls back to local filesystem
-3. Checks `blob.exists()` before downloading from GCS
-
-**Exceptions:**
-- `FileNotFoundError` - File not found in GCS or local storage
-- **You must handle this exception**
-
-**Example:**
 ```python
-try:
-    content = await storage.download_file("uploads/missing.pdf")
-except FileNotFoundError:
-    raise HTTPException(status_code=404, detail="File not found")
+# DO — check for None
+content = storage_service.download_file("rrc-data/oil_proration.csv")
+if content is None:
+    raise HTTPException(503, "RRC data unavailable")
 ```
-
----
 
 ### file_exists
 
-**Signature:**
 ```python
-async def file_exists(self, file_path: str) -> bool
+def file_exists(self, path: str) -> bool
 ```
 
-**Parameters:**
-- `file_path: str` - Relative path to check
+Checks GCS first, then local. Never raises.
 
-**Returns:**
-- `bool` - `True` if file exists in GCS or local storage, `False` otherwise
-
-**Behavior:**
-1. Checks GCS first via `blob.exists()`
-2. Falls back to local filesystem check
-3. Never raises exceptions
-
-**Use case:** Conditional logic, avoiding exceptions for control flow
+### get_file_info
 
 ```python
-if await storage.file_exists("rrc-data/oil_proration.csv"):
-    # File exists, safe to download
-    content = await storage.download_file("rrc-data/oil_proration.csv")
-else:
-    # File missing, trigger download
-    await trigger_rrc_sync()
+def get_file_info(self, path: str) -> dict | None
 ```
 
----
+Returns `{"size": int, "modified": str (ISO 8601), "content_type": str}` or `None`.
+When using local fallback, `content_type` is always `"application/octet-stream"`.
+
+### delete_file
+
+```python
+def delete_file(self, path: str) -> bool
+```
+
+Idempotent — returns `True` even if the file was already absent.
+
+### list_files
+
+```python
+def list_files(self, prefix: str) -> list[str]
+```
+
+Returns blob names (GCS) or relative paths from `settings.data_dir` (local). Returns `[]` on error.
 
 ### get_signed_url
 
-**Signature:**
 ```python
-def get_signed_url(
-    self,
-    file_path: str,
-    expiration_minutes: int = 60
-) -> str | None
+def get_signed_url(self, path: str, expiration_minutes: int = 60) -> str | None
 ```
 
-**Parameters:**
-- `file_path: str` - Relative path to file
-- `expiration_minutes: int` - How long the URL remains valid (default: 60)
+Returns `None` when GCS is unavailable. GCS-only — there is no local equivalent.
 
-**Returns:**
-- `str` - HTTPS signed URL with expiration token
-- `None` - GCS is unavailable or file doesn't exist
-
-**Behavior:**
-1. **Only works with GCS** (no local filesystem equivalent)
-2. Returns `None` if `self.bucket` is `None` or blob doesn't exist
-3. Generates a time-limited URL that bypasses authentication
-
-**Critical: Always handle None case**
+### is_gcs_enabled (property)
 
 ```python
-# DO
-signed_url = storage.get_signed_url("exports/report.pdf", expiration_minutes=30)
-
-if signed_url:
-    return {"download_url": signed_url}
-else:
-    # Provide local fallback API route
-    return {"download_url": f"/api/files/download?path=exports/report.pdf"}
+@property
+def is_gcs_enabled(self) -> bool
 ```
 
-```python
-# DON'T
-signed_url = storage.get_signed_url("exports/report.pdf")
-return {"download_url": signed_url}  # BAD - May be None
-```
-
-**Why this matters:**
-In local dev (no GCS credentials), `get_signed_url()` **always returns None**. The frontend will receive `{"download_url": null}` and download buttons will silently fail.
+Triggers lazy `_init_client()` on first call. Returns `True` only if GCS client actually initialized successfully.
 
 ---
 
-## Configuration Properties
+## Domain Helper Classes
 
-### Settings (Pydantic BaseSettings)
+Thin wrappers over `StorageService` with pre-configured paths. All methods are synchronous.
+
+### RRCDataStorage (`rrc_storage`)
+
+```python
+from app.services.storage_service import rrc_storage
+
+rrc_storage.oil_path   # "rrc-data/oil_proration.csv"
+rrc_storage.gas_path   # "rrc-data/gas_proration.csv"
+
+rrc_storage.save_oil_data(content: bytes) -> str
+rrc_storage.save_gas_data(content: bytes) -> str
+rrc_storage.get_oil_data() -> bytes | None
+rrc_storage.get_gas_data() -> bytes | None
+rrc_storage.get_status() -> dict
+```
+
+`get_status()` shape:
+```python
+{
+    "oil_available": bool,
+    "gas_available": bool,
+    "oil_size": int,           # 0 if not found
+    "gas_size": int,
+    "oil_modified": str | None,  # ISO datetime
+    "gas_modified": str | None,
+    "storage_type": "gcs" | "local"
+}
+```
+
+### UploadStorage (`upload_storage`)
+
+```python
+from app.services.storage_service import upload_storage
+
+upload_storage.save_upload(
+    content: bytes | BinaryIO,
+    filename: str,          # Original filename — spaces → underscores
+    tool: str,              # "extract" | "title" | "proration" | "revenue"
+    user_id: str | None,    # Optional
+) -> str
+# Path: "uploads/{tool}/{user_id}/{timestamp}_{filename}"
+#    or "uploads/{tool}/{timestamp}_{filename}" (no user_id)
+```
+
+Content-type is inferred from extension: pdf, csv, xlsx, xls, png, jpg, jpeg.
+
+### ProfileStorage (`profile_storage`)
+
+```python
+from app.services.storage_service import profile_storage
+
+profile_storage.save_profile_image(content: bytes, user_id: str, filename: str) -> str
+profile_storage.get_profile_image_url(user_id: str) -> str | None
+# Returns "/api/admin/profile-image/{user_id}" (API proxy, NOT a GCS signed URL)
+
+profile_storage.get_profile_image_path(user_id: str) -> Path | None
+# Local path only — used to stream file from disk in the API proxy endpoint
+
+profile_storage.delete_profile_image(user_id: str) -> bool
+```
+
+`get_profile_image_url()` always returns an API proxy URL to avoid signed URL generation overhead and Cloud Run IAM complexity.
+
+---
+
+## Config Properties
 
 From `backend/app/core/config.py`:
 
 ```python
-class Settings(BaseSettings):
-    # GCS bucket configuration
-    gcs_bucket_name: str = "table-rock-tools-storage"
-    gcs_project_id: str = "tablerockenergy"
-    
-    @property
-    def use_gcs(self) -> bool:
-        """Returns True if GCS bucket name is configured.
-        
-        WARNING: This does NOT guarantee GCS is actually available at runtime.
-        GCS availability depends on valid credentials, network, and permissions.
-        """
-        return bool(self.gcs_bucket_name)
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+settings.gcs_bucket_name      # Optional[str], default "table-rock-tools-storage"
+settings.gcs_project_id       # Optional[str], default "tablerockenergy"
+settings.gcs_rrc_data_folder  # str, default "rrc-data"
+settings.gcs_uploads_folder   # str, default "uploads"
+settings.gcs_profiles_folder  # str, default "profiles"
+settings.data_dir             # Path — local fallback root: backend/data/
+
+settings.use_gcs  # @property: bool(gcs_bucket_name) — True by default!
 ```
 
-**Key Properties:**
-
-| Property | Type | Default | Purpose |
-|----------|------|---------|---------|
-| `gcs_bucket_name` | `str` | `"table-rock-tools-storage"` | Target GCS bucket |
-| `gcs_project_id` | `str` | `"tablerockenergy"` | GCP project ID |
-| `use_gcs` | `bool` (property) | `True` (when bucket name set) | Signals intent to use GCS |
-
-**WARNING: use_gcs is NOT an availability flag**
+### WARNING: use_gcs Is Not a Runtime Availability Check
 
 ```python
-# DON'T - This is a common mistake
-if config.use_gcs:
-    # BAD - Assumes GCS is available, but it may not be
-    url = storage.get_signed_url(path)
-    return url  # May be None!
+settings.use_gcs       # True (gcs_bucket_name is always set by default)
+storage_service.is_gcs_enabled  # False in local dev without credentials
 ```
 
-**The Fix:**
-```python
-# DO - Check actual return values, not config flags
-url = storage.get_signed_url(path)
+Never gate logic on `settings.use_gcs`. Check the actual return value instead:
 
-if url is not None:
-    # GCS is actually available
+```python
+# DON'T
+if settings.use_gcs:
+    return storage_service.get_signed_url(path)  # Still may be None
+
+# DO
+url = storage_service.get_signed_url(path)
+if url:
     return url
-else:
-    # GCS unavailable, use local fallback
-    return f"/api/files/{path}"
+return f"/api/files/download?path={path}"
 ```
 
 ---
 
-## GCS Client Objects
+## Return Types Summary
 
-### google.cloud.storage.Client
-
-**From:** `google-cloud-storage` Python package
-
-**Initialization:**
-```python
-from google.cloud import storage as gcs
-
-# Automatically uses GOOGLE_APPLICATION_CREDENTIALS env var
-client = gcs.Client(project="tablerockenergy")
-```
-
-**Project setup:**
-- Production (Cloud Run): Credentials via Workload Identity (automatic)
-- Local dev: Set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json`
-
----
-
-### google.cloud.storage.Bucket
-
-**Access:**
-```python
-bucket = client.bucket("table-rock-tools-storage")
-
-# Check bucket exists
-if bucket.exists():
-    print("Bucket is accessible")
-```
-
-**Common operations:**
-```python
-# List blobs (files) in bucket
-blobs = list(bucket.list_blobs(prefix="uploads/"))
-
-# Get single blob reference
-blob = bucket.blob("uploads/file.pdf")
-```
-
----
-
-### google.cloud.storage.Blob
-
-**Upload:**
-```python
-blob = bucket.blob("uploads/document.pdf")
-
-# From bytes
-blob.upload_from_string(pdf_bytes)
-
-# From file-like object
-with open("local.pdf", "rb") as f:
-    blob.upload_from_file(f)
-```
-
-**Download:**
-```python
-blob = bucket.blob("uploads/document.pdf")
-
-# To bytes
-content = blob.download_as_bytes()
-
-# To file
-blob.download_to_filename("/tmp/downloaded.pdf")
-```
-
-**Existence check:**
-```python
-blob = bucket.blob("uploads/document.pdf")
-
-if blob.exists():
-    content = blob.download_as_bytes()
-else:
-    raise FileNotFoundError("Blob not found")
-```
-
-**Signed URL generation:**
-```python
-from datetime import timedelta
-
-blob = bucket.blob("uploads/document.pdf")
-
-# Generate URL valid for 1 hour
-url = blob.generate_signed_url(
-    version="v4",
-    expiration=timedelta(minutes=60),
-    method="GET"
-)
-# Returns: "https://storage.googleapis.com/bucket/uploads/document.pdf?X-Goog-Algorithm=..."
-```
-
----
-
-## Return Types and Error Cases
-
-### Upload Return Values
-
-```python
-file_path = await storage.upload_file(
-    file_content=b"content",
-    filename="test.pdf",
-    subfolder="uploads"
-)
-# Type: str
-# Value: "uploads/test.pdf"
-```
-
-**Guarantee:** Always returns a string path, never `None`, never raises exceptions (under normal circumstances).
-
----
-
-### Download Return Values and Errors
-
-```python
-# Success case
-content = await storage.download_file("uploads/test.pdf")
-# Type: bytes
-# Value: b"%PDF-1.4\n..."
-
-# Error case
-try:
-    content = await storage.download_file("missing.pdf")
-except FileNotFoundError as e:
-    # File not in GCS or local storage
-    logger.error(f"File not found: {e}")
-    raise HTTPException(status_code=404, detail="File not found")
-```
-
-**Exceptions you must handle:**
-- `FileNotFoundError` - File doesn't exist in either backend
-
----
-
-### Signed URL Return Values
-
-```python
-# Success case (GCS available)
-url = storage.get_signed_url("uploads/test.pdf", expiration_minutes=30)
-# Type: str
-# Value: "https://storage.googleapis.com/table-rock-tools-storage/uploads/test.pdf?X-Goog-Signature=..."
-
-# Failure case (GCS unavailable or blob doesn't exist)
-url = storage.get_signed_url("uploads/test.pdf")
-# Type: None
-# Value: None
-```
-
-**Type annotation:** `str | None` (union type, requires Python 3.10+)
-
-**Critical pattern:**
-```python
-signed_url = storage.get_signed_url(path)
-
-if signed_url is not None:
-    # Use GCS signed URL
-    return RedirectResponse(url=signed_url)
-else:
-    # Fallback to local file serving
-    content = await storage.download_file(path)
-    return Response(content=content, media_type="application/pdf")
-```
-
----
-
-### File Existence Return Values
-
-```python
-exists = await storage.file_exists("uploads/test.pdf")
-# Type: bool
-# Value: True or False
-
-# Never raises exceptions
-```
-
-**Use cases:**
-1. **Conditional downloads** - Avoid `FileNotFoundError` exceptions
-2. **Scheduled task validation** - Check if RRC data download succeeded
-3. **Cache invalidation** - Check if file needs re-upload
-
-```python
-# Pattern: Check before download
-if await storage.file_exists("rrc-data/oil_proration.csv"):
-    content = await storage.download_file("rrc-data/oil_proration.csv")
-else:
-    logger.warning("RRC data missing, triggering download")
-    await sync_rrc_data()
+| Method | Success Type | Missing / Failure |
+|--------|-------------|-------------------|
+| `upload_file()` | `str` path | Raises on unrecoverable error |
+| `download_file()` | `bytes` | `None` |
+| `file_exists()` | `True` | `False` |
+| `get_file_info()` | `dict` | `None` |
+| `delete_file()` | `True` | `False` on error |
+| `list_files()` | `list[str]` | `[]` |
+| `get_signed_url()` | `str` URL | `None` |
+| `rrc_storage.get_oil_data()` | `bytes` | `None` |
+| `rrc_storage.get_status()` | `dict` | Always returns dict |

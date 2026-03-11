@@ -1,356 +1,130 @@
 # Roadmap & Experiments Reference
 
 ## Contents
-- Feature Flags (Missing)
-- A/B Testing Patterns (Not Implemented)
-- Gradual Rollouts
-- User Feedback Collection
-- Beta Feature Gates
+- Feature Flag Strategy (Missing)
+- Safe Rollout Patterns
+- Phasing UX Improvements
+- Journey Improvement Checklist
 
 ---
 
-## Feature Flags (Missing)
+## Feature Flag Strategy (Missing)
 
-### WARNING: No Feature Flag System
+Table Rock Tools has **no feature flag system**. All changes deploy immediately to all users via `git push → main → Cloud Run`. The user base is small (allowlist-controlled internal users), so the risk of breaking production is high relative to a staged rollout.
 
-The application has **NO feature flag infrastructure**. All features are deployed to production immediately on `git push main`.
+**Recommended minimal approach** — use Firestore to store feature flags per user:
 
-**Problem:** Can't:
-- Test features with subset of users
-- Roll back features without redeploying
-- Run A/B experiments
-- Gate beta features behind opt-in
-
-**Recommendation:** Add LaunchDarkly, PostHog feature flags, or simple environment-based flags.
-
----
-
-## A/B Testing Patterns (Not Implemented)
-
-### Proposed Pattern for Testing UI Variants
-
-**Scenario:** Test two export button placements (top vs bottom of results table).
-
-**Implementation (if feature flags existed):**
-```typescript
-// pages/Extract.tsx
-import { useFeatureFlag } from '../utils/featureFlags';
-
-function Extract() {
-  const exportButtonAtTop = useFeatureFlag('export-button-top', false);
-  const [results, setResults] = useState<PartyEntry[]>([]);
-  
-  const ExportButtons = () => (
-    <div className="flex gap-2">
-      <button onClick={exportCSV}>Export CSV</button>
-      <button onClick={exportExcel}>Export Excel</button>
-    </div>
-  );
-  
-  return (
-    <div>
-      {exportButtonAtTop && <ExportButtons />}
-      
-      <DataTable data={results} columns={columns} />
-      
-      {!exportButtonAtTop && <ExportButtons />}
-    </div>
-  );
-}
-```
-
-**Track variant impact:**
-```typescript
-const handleExport = (format: 'csv' | 'excel') => {
-  trackEvent('export_started', {
-    tool_name: 'extract',
-    export_format: format,
-    export_button_variant: exportButtonAtTop ? 'top' : 'bottom',
-  });
-  
-  // ... export logic
-};
-```
-
-**Analysis:** Compare export rate between variants. If "top" placement increases exports by 20%, ship it to everyone.
-
----
-
-## Gradual Rollouts
-
-### Percentage-Based Rollouts
-
-**Pattern for testing risky changes:**
-
-```typescript
-// utils/featureFlags.ts (proposed)
-export function useFeatureFlag(flagName: string, defaultValue: boolean): boolean {
-  const user = useAuth();
-  
-  // Check backend for flag state
-  const [enabled, setEnabled] = useState(defaultValue);
-  
-  useEffect(() => {
-    fetch(`/api/feature-flags/${flagName}?user=${user.email}`)
-      .then(r => r.json())
-      .then(data => setEnabled(data.enabled));
-  }, [flagName, user.email]);
-  
-  return enabled;
-}
-```
-
-**Backend rollout logic:**
 ```python
-# backend/app/api/feature_flags.py (to be created)
-from hashlib import md5
+# backend/app/core/config.py — add feature flag support
+async def get_feature_flags(user_email: str) -> dict:
+    doc = await firestore_service.get_document("feature_flags", user_email)
+    return doc or {}
 
-@router.get("/feature-flags/{flag_name}")
-async def get_feature_flag(flag_name: str, user: str):
-    # Percentage-based rollout
-    rollout_percentage = {
-        "new-pdf-parser": 10,  # 10% of users
-        "batch-processing": 50,  # 50% of users
-    }.get(flag_name, 0)
-    
-    # Deterministic hash: same user always sees same variant
-    user_hash = int(md5(user.encode()).hexdigest(), 16)
-    user_bucket = user_hash % 100
-    
-    enabled = user_bucket < rollout_percentage
-    
-    return {"enabled": enabled, "rollout_percentage": rollout_percentage}
+# Check flag in an endpoint
+flags = await get_feature_flags(current_user["email"])
+if flags.get("new_extract_ui"):
+    return new_extract_response()
+return legacy_extract_response()
 ```
-
-**Why This Matters:** Roll out new PDF parser to 10% of users first. If error rate spikes, disable flag and fix before wider release.
-
----
-
-## User Feedback Collection
-
-### In-App Feedback Widget
-
-**Current State:** No feedback mechanism in the app. Users must email `james@tablerocktx.com` for issues.
-
-**GOOD - Contextual feedback form:**
-```typescript
-// components/FeedbackButton.tsx
-import { useState } from 'react';
-import { MessageSquare } from 'lucide-react';
-import { Modal } from './Modal';
-
-export function FeedbackButton() {
-  const [showModal, setShowModal] = useState(false);
-  const [feedback, setFeedback] = useState('');
-  const [submitted, setSubmitted] = useState(false);
-  
-  const handleSubmit = async () => {
-    await fetch('/api/feedback', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        feedback,
-        page: window.location.pathname,
-        user: useAuth().user?.email,
-        timestamp: new Date().toISOString(),
-      }),
-    });
-    
-    setSubmitted(true);
-    setTimeout(() => {
-      setShowModal(false);
-      setSubmitted(false);
-      setFeedback('');
-    }, 2000);
-  };
-  
-  return (
-    <>
-      <button 
-        onClick={() => setShowModal(true)}
-        className="fixed bottom-4 right-4 bg-tre-teal text-white p-3 rounded-full shadow-lg hover:bg-tre-navy"
-        aria-label="Send feedback"
-      >
-        <MessageSquare className="w-6 h-6" />
-      </button>
-      
-      {showModal && (
-        <Modal onClose={() => setShowModal(false)}>
-          <h3 className="text-xl font-bold mb-4">Send Feedback</h3>
-          
-          {submitted ? (
-            <p className="text-green-600">✅ Thank you for your feedback!</p>
-          ) : (
-            <>
-              <textarea 
-                value={feedback}
-                onChange={e => setFeedback(e.target.value)}
-                placeholder="What could we improve?"
-                className="w-full h-32 border border-gray-300 rounded p-2"
-              />
-              <div className="flex gap-2 mt-4">
-                <button onClick={handleSubmit} className="btn-primary">
-                  Submit
-                </button>
-                <button onClick={() => setShowModal(false)} className="btn-secondary">
-                  Cancel
-                </button>
-              </div>
-            </>
-          )}
-        </Modal>
-      )}
-    </>
-  );
-}
-```
-
-**Backend storage:**
-```python
-# backend/app/api/feedback.py (to be created)
-from datetime import datetime
-from app.services.firestore_service import firestore_service
-
-@router.post("/feedback")
-async def submit_feedback(
-    feedback: str,
-    page: str,
-    user: str,
-    timestamp: str,
-):
-    await firestore_service.add_document("feedback", {
-        "feedback": feedback,
-        "page": page,
-        "user": user,
-        "timestamp": timestamp,
-        "status": "new",
-    })
-    
-    return {"status": "success"}
-```
-
-**Why This Matters:** Capture feedback at the moment of frustration. User encounters bug → clicks feedback button → describes issue → team gets context-rich report.
-
----
-
-## Beta Feature Gates
-
-### Opt-In Beta Program
-
-**Pattern for testing experimental features:**
 
 ```typescript
-// pages/Settings.tsx
-const [betaOptIn, setBetaOptIn] = useState(false);
+// Frontend: fetch flags after auth
+const [flags, setFlags] = useState<Record<string, boolean>>({});
 
 useEffect(() => {
-  const currentOptIn = localStorage.getItem('beta-opt-in') === 'true';
-  setBetaOptIn(currentOptIn);
-}, []);
+  if (user) {
+    fetch('/api/admin/feature-flags')
+      .then(r => r.json())
+      .then(setFlags);
+  }
+}, [user]);
 
-const handleBetaToggle = (enabled: boolean) => {
-  setBetaOptIn(enabled);
-  localStorage.setItem('beta-opt-in', enabled.toString());
-  
-  trackEvent('beta_program_toggled', {enabled});
-};
-
-<div className="bg-blue-50 border border-blue-200 p-4 rounded">
-  <h3 className="font-bold mb-2">🧪 Beta Features</h3>
-  <p className="mb-4">
-    Get early access to new features before they're released to everyone.
-  </p>
-  
-  <label className="flex items-center gap-2">
-    <input 
-      type="checkbox"
-      checked={betaOptIn}
-      onChange={e => handleBetaToggle(e.target.checked)}
-    />
-    <span>Enable beta features</span>
-  </label>
-  
-  {betaOptIn && (
-    <div className="mt-4 text-sm text-gray-600">
-      <p>Active beta features:</p>
-      <ul className="list-disc ml-6">
-        <li>Batch file processing (Extract tool)</li>
-        <li>Advanced filtering (all tools)</li>
-        <li>Keyboard shortcuts</li>
-      </ul>
-    </div>
-  )}
-</div>
+// Conditionally render new UI
+{flags.new_extract_ui ? <NewExtractPanel /> : <ExtractPanel />}
 ```
 
-**Conditional rendering:**
-```typescript
-// pages/Extract.tsx
-const betaEnabled = localStorage.getItem('beta-opt-in') === 'true';
-
-{betaEnabled && (
-  <div className="bg-blue-50 border border-blue-200 p-4 rounded mb-4">
-    <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded">BETA</span>
-    <h4 className="font-bold mt-2">Batch Processing</h4>
-    <FileUpload multiple={true} onFileSelect={handleBatchUpload} />
-  </div>
-)}
-```
-
-**Why This Matters:** Power users get early access to features, provide feedback before general release. Reduces risk of shipping broken features.
+For admin users in production, toggle flags directly in Firestore console before rolling out to everyone.
 
 ---
 
-## Common Experimentation Anti-Patterns
+## Safe Rollout Patterns
 
-### 1. No Control Group
+Since the allowlist is small and known, safe rollout is simpler than public apps:
 
-**BAD - Ship new feature to 100% of users immediately:**
-```typescript
-// New feature live for everyone
-<NewFeatureComponent />
+**Option 1: Admin-first rollout**
+
+Enable for `james@tablerocktx.com` first via Firestore flag. Validate on real data before enabling for all users.
+
+**Option 2: Environment-gated features**
+
+```python
+# backend/app/core/config.py
+@property
+def new_revenue_parser_enabled(self) -> bool:
+    return self.environment == "development" or os.getenv("ENABLE_NEW_PARSER") == "true"
 ```
 
-**GOOD - A/B test with 50/50 split:**
-```typescript
-const showNewFeature = useFeatureFlag('new-feature', false);
-
-{showNewFeature ? <NewFeatureComponent /> : <OldFeatureComponent />}
+```bash
+# Enable in Cloud Run without redeploying
+gcloud run services update table-rock-tools \
+  --set-env-vars ENABLE_NEW_PARSER=true \
+  --region us-central1
 ```
 
-**Why This Breaks:** Can't measure impact. Is increased engagement due to the new feature or seasonal trends?
+**Option 3: Soft launch with fallback**
 
-### 2. Changing Multiple Things at Once
-
-**BAD - Ship 5 changes together:**
-```typescript
-// New layout + new colors + new copy + new workflow + new export format
+```python
+# Revenue parser: try new parser, fall back to old on failure
+try:
+    result = new_enverus_parser.parse(text)
+    if result.confidence < 0.8:
+        raise ValueError("Low confidence")
+except Exception:
+    result = legacy_energylink_parser.parse(text)
 ```
 
-**GOOD - Test one variable at a time:**
-```typescript
-// Week 1: Test new export format (CSV → Excel)
-// Week 2: Test new button copy ("Export" → "Download Results")
-// Week 3: Test button placement (top → bottom)
-```
+---
 
-**Why This Breaks:** If metrics improve, don't know which change caused it. If metrics decline, don't know which change to revert.
+## Phasing UX Improvements
 
-### 3. No Exit Criteria
+Prioritize journey improvements by friction severity:
 
-**BAD - Run experiment indefinitely:**
-```typescript
-// Feature flag enabled for 6 months, never analyzed
-```
+**Phase 1 — Critical blockers (implement immediately):**
+- [ ] Proration prereq banner (RRC data missing)
+- [ ] FileUpload validation error display
+- [ ] `isAuthorized=false` → show "access pending" instead of redirect
 
-**GOOD - Define success metrics upfront:**
-```markdown
-Hypothesis: Moving export buttons to top will increase export rate
-Metric: % of sessions that export results
-Target: 10% increase
-Sample size: 1000 users per variant
-Duration: 2 weeks
-Decision: Ship if target met, revert if declined
-```
+**Phase 2 — High friction (next sprint):**
+- [ ] Post-export next-step panel
+- [ ] Long-operation progress indicators (RRC download, revenue batch)
+- [ ] RRC download status polling on Settings page
 
-**Why This Breaks:** Technical debt accumulates. Codebase fills with `if (featureFlag)` branches that never get cleaned up.
+**Phase 3 — Engagement improvements (backlog):**
+- [ ] Cross-session job result persistence
+- [ ] Dashboard "resume last job" links
+- [ ] Cross-tool workflow handoff suggestions
+- [ ] Tool usage success rate on Dashboard
+
+**Phase 4 — Analytics foundation:**
+- [ ] Structured event logging to Firestore
+- [ ] Funnel completion tracking per tool
+- [ ] Admin usage dashboard
+
+---
+
+## Journey Improvement Checklist
+
+Copy this checklist when auditing a specific tool's journey:
+
+- [ ] Auth gate: unauthorized users see clear "access pending" vs silent redirect
+- [ ] Prerequisite check: any setup requirements shown before upload (not after failure)
+- [ ] File upload: invalid file type shows inline error
+- [ ] Loading state: all async operations show spinner + descriptive message
+- [ ] Error state: backend errors have actionable detail + recovery button
+- [ ] Empty state: pre-upload empty state explains what file to upload
+- [ ] Zero results: post-upload empty state explains why (not just "no data")
+- [ ] Success state: results load and are scannable without horizontal scrolling
+- [ ] Export: download triggers correctly, post-export guidance shown
+- [ ] Recovery: "Process another file" / reset flow is obvious after export
+
+Validate each step using Playwright browser tools to navigate the actual app. See the **designing-onboarding-paths** skill for implementation patterns on items 3-5.

@@ -98,43 +98,36 @@ async def upload_pdf(file: UploadFile) -> UploadResponse:
 
 ## File Upload Endpoints
 
-### Multi-Level Validation Pattern
+### Shared Upload Validation Helper
+
+Use `validate_upload()` from `core/ingestion.py` — never reimplement this per-router:
 
 ```python
-# toolbox/backend/app/api/extract.py
+# backend/app/api/extract.py
+from app.core.ingestion import validate_upload
+
 @router.post("/upload", response_model=UploadResponse)
 async def upload_pdf(
-    file: Annotated[UploadFile, File(description="PDF file containing Exhibit A")]
+    file: Annotated[UploadFile, File(description="PDF file containing Exhibit A")],
+    request: Request,
 ) -> UploadResponse:
-    # Validate filename
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No file provided")
-    
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Invalid file type. Please upload a PDF file.")
-    
-    # Validate content type
-    if file.content_type and "pdf" not in file.content_type.lower():
-        raise HTTPException(status_code=400, detail="Invalid content type. Please upload a PDF file.")
-    
-    # Read and validate content
-    file_bytes = await file.read()
-    if len(file_bytes) == 0:
-        raise HTTPException(status_code=400, detail="Empty file uploaded")
-    
-    # Process
+    # One-liner handles: filename check, extension, size limit (50MB), empty file
+    file_bytes = await validate_upload(file, allowed_extensions=[".pdf"])
+
     full_text = extract_text_from_pdf(file_bytes)
     if not full_text or len(full_text.strip()) < 50:
         return UploadResponse(
             message="Could not extract text from PDF",
             result=ExtractionResult(
                 success=False,
-                error_message="PDF appears to be empty or unreadable. The document may be scanned/image-based."
-            )
+                error_message="PDF appears to be empty or unreadable. The document may be scanned/image-based.",
+            ),
         )
 ```
 
-**WHY:** Frontend can lie about content type, filename extension doesn't guarantee valid content, empty files crash parsers.
+`validate_upload` raises `HTTPException(400)` for: missing filename, wrong extension, empty file, size > 50MB. It soft-checks content-type (logs warning, doesn't reject — browsers lie).
+
+**WHY:** All validation logic is in one place. Adding a new allowed extension is `[".pdf", ".PDF"]` not touching 5 files.
 
 ### DO: Return Structured Errors for User Feedback
 
@@ -174,30 +167,37 @@ if not entries:
 
 ## Export Endpoints
 
-### Blob Response Pattern
+### Shared Export Response Helper
+
+Use `file_response()` from `core/ingestion.py` — it infers MIME type from extension automatically:
 
 ```python
-# toolbox/backend/app/api/extract.py
+# backend/app/api/extract.py
+from app.core.ingestion import file_response
+
 @router.post("/export/csv")
-async def export_csv(request: ExportRequest) -> Response:
+async def export_csv(request: ExportRequest):
     if not request.entries:
         raise HTTPException(status_code=400, detail="No entries provided for export")
-    
     try:
         csv_bytes = to_csv(request.entries)
         filename = f"{request.filename or 'exhibit_a_export'}.csv"
-        
-        return Response(
-            content=csv_bytes,
-            media_type="text/csv",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
-        )
+        return file_response(csv_bytes, filename)  # Infers text/csv from .csv extension
     except Exception as e:
-        logger.exception(f"Error generating CSV: {e}")
-        raise HTTPException(status_code=500, detail=f"Error generating CSV: {str(e)}") from e
+        logger.exception("Error generating CSV: %s", e)
+        raise HTTPException(status_code=500, detail=f"Error generating CSV: {e!s}") from e
+
+@router.post("/export/excel")
+async def export_excel(request: ExportRequest):
+    if not request.entries:
+        raise HTTPException(status_code=400, detail="No entries provided for export")
+    excel_bytes = to_excel(request.entries)
+    return file_response(excel_bytes, "export.xlsx")  # Infers application/vnd.openxmlformats...
 ```
 
-**WHY:** `Content-Disposition: attachment` triggers browser download, `filename` parameter sets default save name.
+Supported extensions and MIME types in `file_response`: `.csv` → `text/csv`, `.xlsx` → Excel MIME, `.pdf` → `application/pdf`, `.json` → `application/json`. Unknown extensions fall back to `application/octet-stream`.
+
+**WHY:** `Content-Disposition: attachment` triggers browser download; `filename` sets the save name. Centralizing this prevents subtle MIME type bugs.
 
 ### DO: Use Correct MIME Types
 

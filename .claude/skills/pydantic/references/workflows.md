@@ -85,23 +85,21 @@ assert result.model_dump() == {
 
 ```python
 # backend/app/core/config.py
-from pydantic_settings import BaseSettings
 from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env")
+
     # ... existing fields ...
-    
+
     rrc_api_timeout: int = Field(default=30, description="RRC download timeout in seconds")
     rrc_retry_count: int = Field(default=3, description="RRC download retry attempts")
-    
+
     @property
     def rrc_enabled(self) -> bool:
         """RRC downloads enabled if timeout > 0."""
         return self.rrc_api_timeout > 0
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
 ```
 
 2. **Document in CLAUDE.md environment table**

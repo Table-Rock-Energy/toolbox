@@ -11,13 +11,13 @@
 
 ## First-Run Experience Patterns
 
-Table Rock Tools has **no traditional onboarding flow** because it's gated by Firebase Auth + allowlist. Once authorized, users land on the Dashboard and need to understand the 4 tools.
+Table Rock Tools has **no traditional onboarding flow** because it's gated by Firebase Auth + allowlist. Once authorized, users land on the Dashboard and need to understand the 5 tools (Extract, Title, Proration, Revenue, GHL Prep).
 
 ### Current Dashboard Empty State (Needs Improvement)
 
 ```tsx
-// toolbox/frontend/src/pages/Dashboard.tsx:127-132
-{recentActivity.length === 0 ? (
+// frontend/src/pages/Dashboard.tsx:196-201 — actual code
+{recentJobs.length === 0 ? (
   <div className="p-8 text-center text-gray-500">
     <Activity className="w-12 h-12 mx-auto mb-3 text-gray-300" />
     <p className="font-medium">No activity yet</p>
@@ -28,7 +28,7 @@ Table Rock Tools has **no traditional onboarding flow** because it's gated by Fi
 )}
 ```
 
-**Problem:** No call-to-action. User doesn't know what to do next.
+**Problem:** No call-to-action. User knows activity will appear eventually but has no prompt for what to do right now.
 
 ### GOOD - First-Run Dashboard with CTA
 

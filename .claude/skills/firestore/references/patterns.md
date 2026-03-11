@@ -1,453 +1,260 @@
-# Firebase Patterns Reference
+# Firestore Patterns Reference
 
 ## Contents
-- Lazy Firestore Initialization
-- Token Verification with Allowlist
-- Firestore Service Layer
-- Batch Document Syncing
-- Frontend Auth Context
-- Protected Routes
+- Lazy Async Client Initialization
+- Batch Writes with 500-Doc Limit
+- Deterministic Document IDs for Idempotent Upserts
+- Batch Reads with `get_all`
+- Count Aggregation Queries
+- Composite Index Fallback
+- Background Thread: Sync Client Only
 
 ---
 
-## Lazy Firestore Initialization
+## Lazy Async Client Initialization
 
-**Why:** Prevents crashes when GOOGLE_APPLICATION_CREDENTIALS is not set (local dev, testing).
-
-### Backend Service Pattern
+**Why:** Importing Firebase at module level crashes when `GOOGLE_APPLICATION_CREDENTIALS` is not set (local dev, CI). The module-level `_db` singleton avoids re-initializing per request.
 
 ```python
 # backend/app/services/firestore_service.py
 from __future__ import annotations
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
+from google.cloud import firestore
+from google.cloud.firestore_v1 import AsyncClient
+from app.core.config import settings
 
-if TYPE_CHECKING:
-    from google.cloud import firestore
+_db: Optional[AsyncClient] = None
 
-class FirestoreService:
-    _client: Optional[firestore.Client] = None
-    
-    def _get_client(self) -> firestore.Client:
-        """Lazy-initialize Firestore client."""
-        if self._client is None:
-            from google.cloud import firestore
-            self._client = firestore.Client()
-        return self._client
-    
-    async def create_document(
-        self, collection: str, doc_id: str, data: dict
-    ) -> None:
-        db = self._get_client()
-        db.collection(collection).document(doc_id).set(data)
+def get_firestore_client() -> AsyncClient:
+    global _db
+    if _db is None:
+        _db = firestore.AsyncClient(
+            project=settings.gcs_project_id,
+            database="tablerocktools",  # Named database, not default
+        )
+    return _db
 ```
 
-**DO:** Import inside functions, use TYPE_CHECKING for type hints  
-**DON'T:** Import at module level (`from google.cloud import firestore` at top of file)
+**DO:** Import `google.cloud.firestore` at the top of the service file (it's the library, not a side-effectful init). The actual client object is what must be created lazily.
 
----
-
-## Token Verification with Allowlist
-
-**Why:** Backend must verify Firebase ID tokens AND check email against allowlist.
-
-### Backend Auth Module
-
+**DON'T:**
 ```python
-# backend/app/core/auth.py
-import firebase_admin
-from firebase_admin import auth, credentials
-from fastapi import HTTPException, Depends
-from fastapi.security import HTTPBearer
-import json
-import os
-
-# Lazy initialization
-_app = None
-
-def _init_firebase():
-    global _app
-    if _app is None:
-        cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-        if cred_path and os.path.exists(cred_path):
-            cred = credentials.Certificate(cred_path)
-            _app = firebase_admin.initialize_app(cred)
-        else:
-            _app = firebase_admin.initialize_app()
-    return _app
-
-def load_allowed_users() -> set[str]:
-    """Load allowed emails from JSON file."""
-    path = "backend/data/allowed_users.json"
-    if not os.path.exists(path):
-        return {"james@tablerocktx.com"}  # Default admin
-    with open(path) as f:
-        data = json.load(f)
-        return set(data.get("allowed_emails", []))
-
-async def verify_firebase_token(token: str) -> dict:
-    """Verify Firebase ID token and check allowlist."""
-    try:
-        _init_firebase()
-        decoded_token = auth.verify_id_token(token)
-        email = decoded_token.get("email")
-        
-        allowed = load_allowed_users()
-        if email not in allowed:
-            raise HTTPException(
-                status_code=403,
-                detail=f"User {email} not authorized"
-            )
-        
-        return {
-            "uid": decoded_token["uid"],
-            "email": email,
-            "name": decoded_token.get("name", ""),
-        }
-    except firebase_admin.auth.InvalidIdTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-```
-
-**DO:** Check both token validity AND allowlist membership  
-**DON'T:** Trust tokens without verifying email authorization
-
-### Route Handler Example
-
-```python
-# backend/app/api/extract.py
-from fastapi import APIRouter, Depends, HTTPException
-from app.core.auth import verify_firebase_token
-
-router = APIRouter(prefix="/api/extract")
-oauth2_scheme = HTTPBearer()
-
-@router.post("/upload")
-async def upload_extract(
-    file: UploadFile,
-    token: str = Depends(oauth2_scheme)
-):
-    user = await verify_firebase_token(token.credentials)
-    # user["email"] is now verified and authorized
-    # ... process upload
+# BAD - creates client at import time, crashes without credentials
+from google.cloud import firestore
+db = firestore.AsyncClient()  # Module-level client
 ```
 
 ---
 
-## Firestore Service Layer
+## Batch Writes with 500-Doc Limit
 
-**Why:** Centralize Firestore operations, handle errors gracefully, support optional Firestore.
-
-### Full Service Implementation
+**Why:** Firestore enforces a hard limit of 500 operations per batch. Exceeding it raises a `google.api_core.exceptions.InvalidArgument` error. The remainder check (`count % 500 != 0`) is critical — without it, the last partial batch is silently dropped.
 
 ```python
-# backend/app/services/firestore_service.py
-from __future__ import annotations
-from typing import TYPE_CHECKING, Optional, Any
-import logging
-
-if TYPE_CHECKING:
-    from google.cloud import firestore
-
-logger = logging.getLogger(__name__)
-
-class FirestoreService:
-    """Centralized Firestore operations with lazy initialization."""
-    
-    _client: Optional[firestore.Client] = None
-    
-    def _get_client(self) -> Optional[firestore.Client]:
-        """Lazy-initialize Firestore client. Returns None if unavailable."""
-        if self._client is None:
-            try:
-                from google.cloud import firestore
-                self._client = firestore.Client()
-                logger.info("Firestore client initialized")
-            except Exception as e:
-                logger.warning(f"Firestore unavailable: {e}")
-                return None
-        return self._client
-    
-    async def create_document(
-        self, collection: str, doc_id: str, data: dict
-    ) -> bool:
-        """Create document. Returns False if Firestore unavailable."""
-        db = self._get_client()
-        if not db:
-            return False
-        try:
-            db.collection(collection).document(doc_id).set(data)
-            return True
-        except Exception as e:
-            logger.error(f"Failed to create document: {e}")
-            return False
-    
-    async def get_document(
-        self, collection: str, doc_id: str
-    ) -> Optional[dict]:
-        """Get document. Returns None if not found or Firestore unavailable."""
-        db = self._get_client()
-        if not db:
-            return None
-        try:
-            doc = db.collection(collection).document(doc_id).get()
-            return doc.to_dict() if doc.exists else None
-        except Exception as e:
-            logger.error(f"Failed to get document: {e}")
-            return None
-    
-    async def update_document(
-        self, collection: str, doc_id: str, data: dict
-    ) -> bool:
-        """Update document. Returns False if Firestore unavailable."""
-        db = self._get_client()
-        if not db:
-            return False
-        try:
-            db.collection(collection).document(doc_id).update(data)
-            return True
-        except Exception as e:
-            logger.error(f"Failed to update document: {e}")
-            return False
-    
-    async def query_documents(
-        self, collection: str, filters: dict[str, Any]
-    ) -> list[dict]:
-        """Query documents. Returns empty list if Firestore unavailable."""
-        db = self._get_client()
-        if not db:
-            return []
-        try:
-            query = db.collection(collection)
-            for field, value in filters.items():
-                query = query.where(field, "==", value)
-            return [doc.to_dict() for doc in query.stream()]
-        except Exception as e:
-            logger.error(f"Failed to query documents: {e}")
-            return []
-```
-
-**DO:** Return False/None on errors, log warnings, support optional Firestore  
-**DON'T:** Crash the app if Firestore is unavailable
-
----
-
-## Batch Document Syncing
-
-**Why:** Syncing thousands of RRC records requires batching (Firestore limit: 500 ops/batch).
-
-### RRC Data Sync Pattern
-
-```python
-# backend/app/services/proration/rrc_data_service.py
-from typing import TYPE_CHECKING
-import logging
-
-if TYPE_CHECKING:
-    from google.cloud import firestore
-
-logger = logging.getLogger(__name__)
-
-def sync_to_database(records: list[dict], well_type: str) -> int:
-    """
-    Sync RRC records to Firestore.
-    
-    Args:
-        records: List of RRC records (up to 10,000+)
-        well_type: "oil" or "gas"
-    
-    Returns:
-        Number of records synced
-    """
-    try:
-        from google.cloud import firestore
-        db = firestore.Client()
-    except Exception as e:
-        logger.warning(f"Firestore unavailable: {e}")
-        return 0
-    
-    collection_name = f"rrc_data_{well_type}"
+async def save_proration_rows(job_id: str, rows: list[dict]) -> int:
+    db = get_firestore_client()
     batch = db.batch()
-    batch_count = 0
-    total_synced = 0
-    
-    for i, record in enumerate(records):
-        doc_id = f"{record['lease_number']}_{record['operator_number']}"
-        ref = db.collection(collection_name).document(doc_id)
-        batch.set(ref, record)
-        batch_count += 1
-        
-        # Commit every 500 documents (Firestore limit)
-        if batch_count >= 500:
-            batch.commit()
-            total_synced += batch_count
-            logger.info(f"Synced {total_synced} {well_type} records")
-            batch = db.batch()
-            batch_count = 0
-    
-    # Commit remaining documents
-    if batch_count > 0:
-        batch.commit()
-        total_synced += batch_count
-        logger.info(f"Final sync: {total_synced} {well_type} records")
-    
-    return total_synced
+    count = 0
+
+    for row_data in rows:
+        doc_ref = db.collection(PRORATION_ROWS_COLLECTION).document()
+        row_data["job_id"] = job_id
+        row_data["created_at"] = datetime.utcnow()
+        batch.set(doc_ref, row_data)
+        count += 1
+
+        if count % 500 == 0:
+            await batch.commit()
+            batch = db.batch()  # MUST create a new batch after commit
+
+    if count % 500 != 0:  # Commit the remainder
+        await batch.commit()
+
+    return count
 ```
 
-**DO:** Track batch count, commit at 500, handle remainder  
-**DON'T:** Assume all records fit in one batch
+**DO:** Reset the batch with `batch = db.batch()` after each commit.
 
----
-
-## Frontend Auth Context
-
-**Why:** Centralize Firebase Auth state, provide user data to all components.
-
-### AuthContext Implementation
-
-```typescript
-// frontend/src/contexts/AuthContext.tsx
-import { 
-  createContext, 
-  useContext, 
-  useEffect, 
-  useState, 
-  type ReactNode 
-} from 'react';
-import { 
-  User, 
-  onAuthStateChanged, 
-  signInWithPopup, 
-  signOut as firebaseSignOut,
-  GoogleAuthProvider 
-} from 'firebase/auth';
-import { auth } from '../lib/firebase';
-
-interface AuthContextType {
-  user: User | null;
-  loading: boolean;
-  signInWithGoogle: () => Promise<void>;
-  signOut: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      setLoading(false);
-    });
-    return unsubscribe;
-  }, []);
-
-  const signInWithGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
-  };
-
-  const signOut = async () => {
-    await firebaseSignOut(auth);
-  };
-
-  return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signOut }}>
-      {children}
-    </AuthContext.Provider>
-  );
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be inside AuthProvider');
-  return context;
-}
+**DON'T:**
+```python
+# BAD - no batching, crashes on >500 items
+batch = db.batch()
+for item in ten_thousand_items:
+    batch.set(ref, item)
+await batch.commit()  # Raises InvalidArgument
 ```
 
-**DO:** Use onAuthStateChanged for real-time auth state  
-**DON'T:** Poll for user state or manage manually
+### Batch Delete Pattern
 
-### Usage in Components
+Same 500-limit applies to deletes. Used in `delete_job()`:
 
-```typescript
-// frontend/src/pages/Dashboard.tsx
-import { useAuth } from '../contexts/AuthContext';
-
-export default function Dashboard() {
-  const { user, loading } = useAuth();
-  
-  if (loading) return <div>Loading...</div>;
-  if (!user) return <Navigate to="/login" />;
-  
-  return <div>Welcome, {user.displayName}</div>;
-}
+```python
+batch = db.batch()
+count = 0
+for doc in docs:
+    batch.delete(doc.reference)
+    count += 1
+    if count % 500 == 0:
+        await batch.commit()
+        batch = db.batch()
+if count % 500 != 0:
+    await batch.commit()
 ```
 
 ---
 
-## Protected Routes
+## Deterministic Document IDs for Idempotent Upserts
 
-**Why:** Prevent unauthorized access to authenticated pages.
+**Why:** Auto-generated IDs cause duplicates when the same PDF is re-uploaded. Deterministic IDs derived from natural keys make re-uploads idempotent — the second write overwrites the first.
 
-### ProtectedRoute Component
+```python
+# backend/app/services/firestore_service.py - save_revenue_statement()
+import hashlib
 
-```typescript
-// frontend/src/components/ProtectedRoute.tsx
-import { Navigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { LoadingSpinner } from './LoadingSpinner';
-import type { ReactNode } from 'react';
+key_parts = [
+    statement_data.get("check_number") or "",
+    statement_data.get("owner_number") or "",
+    statement_data.get("owner_name") or "",
+    statement_data.get("filename") or "",
+]
+composite = "|".join(str(p).lower() for p in key_parts)
+statement_id = hashlib.sha256(composite.encode()).hexdigest()[:20]
 
-interface ProtectedRouteProps {
-  children: ReactNode;
-}
-
-export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { user, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <LoadingSpinner />
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return <>{children}</>;
-}
+# Preserve created_at if overwriting an existing doc
+existing = await db.collection(REVENUE_STATEMENTS_COLLECTION).document(statement_id).get()
+created_at = existing.to_dict().get("created_at", datetime.utcnow()) if existing.exists else datetime.utcnow()
 ```
 
-### Router Setup
+**For simpler cases** (RRC records), use a composite key directly:
 
-```typescript
-// frontend/src/App.tsx
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { AuthProvider } from './contexts/AuthContext';
-import { ProtectedRoute } from './components/ProtectedRoute';
-import { MainLayout } from './layouts/MainLayout';
-import { Login, Dashboard, Extract } from './pages';
-
-export default function App() {
-  return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/extract" element={<Extract />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
-  );
-}
+```python
+# district + lease_number makes a globally unique RRC identifier
+doc_id = f"{district}-{lease_number}"
+doc_ref = db.collection(RRC_OIL_COLLECTION).document(doc_id)
 ```
 
-**DO:** Show loading state while checking auth  
-**DON'T:** Flash login page before auth state resolves
+**DO:** Preserve `created_at` when overwriting — only update `updated_at`.
+
+**DON'T:**
+```python
+# BAD - generates new ID on every call, creates duplicates
+doc_ref = db.collection("revenue_statements").document()  # Auto-ID
+await doc_ref.set(statement_doc)
+```
+
+---
+
+## Batch Reads with `get_all`
+
+**Why:** Fetching N documents one-by-one is N round trips. `get_all()` fetches up to 100 refs in a single RPC. Used for county status lookups.
+
+```python
+# backend/app/services/firestore_service.py - get_counties_status()
+async def get_counties_status(keys: list[str]) -> dict[str, dict]:
+    db = get_firestore_client()
+    result: dict[str, dict] = {}
+
+    # Firestore get_all supports up to 100 refs at a time
+    for i in range(0, len(keys), 100):
+        batch_keys = keys[i:i + 100]
+        refs = [
+            db.collection(RRC_COUNTY_STATUS_COLLECTION).document(k)
+            for k in batch_keys
+        ]
+        docs = db.get_all(refs)
+        async for doc in docs:
+            if doc.exists:
+                result[doc.id] = doc.to_dict()
+
+    return result
+```
+
+**Note:** `db.get_all()` returns an async generator — use `async for`, not `await`.
+
+---
+
+## Count Aggregation Queries
+
+**Why:** `len(await collection.get())` downloads all documents to count them. The `.count()` aggregation runs server-side and returns only the number.
+
+```python
+# backend/app/services/firestore_service.py - get_rrc_data_status()
+oil_count_query = db.collection(RRC_OIL_COLLECTION).count()
+oil_count_result = await oil_count_query.get()
+oil_rows = oil_count_result[0][0].value if oil_count_result else 0
+```
+
+**DO:** Use `.count()` for status/health checks.
+
+**DON'T:**
+```python
+# BAD - downloads every document just to count
+all_docs = await db.collection(RRC_OIL_COLLECTION).get()
+count = len(all_docs)  # Wastes bandwidth, slow on large collections
+```
+
+---
+
+## Composite Index Fallback
+
+**Why:** Firestore requires composite indexes for queries that filter on one field and order by another. Indexes don't exist until explicitly created in the GCP console. Missing indexes throw an exception with a URL to create the index.
+
+```python
+async def get_recent_jobs(tool: str | None = None, limit: int = 20) -> list[dict]:
+    db = get_firestore_client()
+    query = db.collection(JOBS_COLLECTION)
+    if tool:
+        query = query.where("tool", "==", tool)
+
+    try:
+        query = query.order_by("created_at", direction=firestore.Query.DESCENDING).limit(limit)
+        docs = await query.get()
+    except Exception:
+        # Composite index missing — fall back to client-side sort
+        logger.warning("Firestore composite index missing for get_recent_jobs")
+        base_query = db.collection(JOBS_COLLECTION)
+        if tool:
+            base_query = base_query.where("tool", "==", tool)
+        docs = await base_query.limit(limit).get()
+        docs = sorted(docs, key=lambda d: d.to_dict().get("created_at", ""), reverse=True)
+
+    return [doc.to_dict() for doc in docs]
+```
+
+**When to create the index:** The exception message includes a direct URL to create the missing index in the GCP console. Do that for production; the fallback is a safety net.
+
+---
+
+## Background Thread: Sync Client Only
+
+**Why:** Background threads (used in `rrc_background.py` for APScheduler jobs) run outside the asyncio event loop. `AsyncClient` requires an active event loop — calling it from a background thread raises `RuntimeError: no running event loop`.
+
+```python
+# backend/app/services/rrc_background.py
+# CORRECT: synchronous client for background thread
+from google.cloud import firestore as sync_firestore
+
+def _get_sync_client():
+    return sync_firestore.Client(
+        project=settings.gcs_project_id,
+        database="tablerocktools",
+    )
+
+def run_rrc_sync_job(job_id: str):
+    """Called from APScheduler background thread — must use sync client."""
+    db = _get_sync_client()
+    # Use db.collection(...).document(...).set(...) — no await
+    db.collection("rrc_sync_jobs").document(job_id).update({"status": "running"})
+```
+
+**DO:** Use `firestore.Client()` (sync) in background threads, `firestore.AsyncClient()` in async route handlers.
+
+**DON'T:**
+```python
+# BAD - AsyncClient in a background thread
+async def background_task():  # NOT called with await from a thread
+    db = firestore.AsyncClient()  # RuntimeError in APScheduler job
+    await db.collection("jobs").document(job_id).update(...)
+```
+
+See the **apscheduler** skill for the full background task pattern.

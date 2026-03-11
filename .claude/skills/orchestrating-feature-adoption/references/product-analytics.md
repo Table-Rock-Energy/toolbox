@@ -24,7 +24,7 @@ from typing import Literal
 class UsageEvent(BaseModel):
     """Usage event for product analytics."""
     user_email: str = Field(..., description="User who performed action")
-    tool: Literal["extract", "title", "proration", "revenue"] = Field(..., description="Tool name")
+    tool: Literal["extract", "title", "proration", "revenue", "ghl_prep"] = Field(..., description="Tool name")
     action: Literal["upload", "export", "view", "calculate", "delete"] = Field(..., description="Action type")
     metadata: dict = Field(default_factory=dict, description="Additional context (file size, record count, etc.)")
     timestamp: datetime = Field(default_factory=datetime.utcnow)

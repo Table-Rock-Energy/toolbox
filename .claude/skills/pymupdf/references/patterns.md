@@ -1,345 +1,268 @@
 # PyMuPDF Patterns Reference
 
 ## Contents
-- Extract Tool Integration
-- Revenue Tool Integration
-- Error Handling & Fallback
+- Opening PDFs: Bytes vs File Paths
+- Extraction Modes
+- Garbled Text Detection
+- Column-Aware Extraction (Extract Tool)
+- Span-Level Extraction (Revenue Tool)
 - Memory Management
-- Common Pitfalls
+- Anti-Patterns
 
 ---
 
-## Extract Tool Integration
+## Opening PDFs: Bytes vs File Paths
 
-PyMuPDF is the **primary** extraction method in `backend/app/services/extract/pdf_extractor.py`.
+**ALWAYS open from bytes.** FastAPI routes receive `UploadFile` — read bytes immediately, pass bytes throughout the service layer. Never assume a local file path exists.
 
-### DO: Primary Extraction with Graceful Fallback
+```python
+# GOOD — from bytes (actual pattern in this codebase)
+async def upload(file: UploadFile):
+    pdf_bytes = await file.read()
+    text = extract_text_pymupdf(pdf_bytes)
+
+def extract_text_pymupdf(pdf_bytes: bytes) -> str:
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    # ...
+    doc.close()
+```
+
+### WARNING: Opening by File Path
+
+**The Problem:**
+```python
+# BAD — assumes local file system
+doc = fitz.open(pdf_path)  # Path may not exist in GCS + Cloud Run
+```
+
+**Why This Breaks:**
+1. GCS storage doesn't guarantee local paths — files live in Cloud Run's ephemeral filesystem
+2. `StorageService` may use GCS blobs, not local paths
+3. Breaks silently in production while working fine in local dev (where fallback uses `backend/data/`)
+
+**The Fix:** Read bytes from `UploadFile` and pass `bytes` to all extraction functions.
+
+---
+
+## Extraction Modes
+
+### `"text"` Mode — Revenue Tool
+
+Simple string extraction. Use when you need full-page text for regex-based parsing.
+
+```python
+# backend/app/services/revenue/pdf_extractor.py
+def extract_text_pymupdf(pdf_bytes: bytes) -> str:
+    text_parts = []
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    for page_num in range(len(doc)):
+        page = doc.load_page(page_num)
+        text = page.get_text("text")
+        text_parts.append(text)
+    doc.close()
+    return "\n\n".join(text_parts)
+```
+
+### `"dict"` Mode — Extract Tool
+
+Returns structured blocks/lines/spans with bounding boxes. Required for column-aware layouts.
 
 ```python
 # backend/app/services/extract/pdf_extractor.py
-import fitz
-import logging
+doc = fitz.open(stream=file_bytes, filetype="pdf")
+page = doc[0]
+blocks = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]
 
-logger = logging.getLogger(__name__)
-
-def extract_text_from_pdf(pdf_path: str) -> str:
-    """Extract text using PyMuPDF, fallback to pdfplumber."""
-    try:
-        doc = fitz.open(pdf_path)
-        pages = []
-        
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            text = page.get_text()
-            if text.strip():  # Only add non-empty pages
-                pages.append(text)
-        
-        doc.close()
-        
-        full_text = "\n\n".join(pages)
-        if not full_text.strip():
-            logger.warning(f"PyMuPDF extracted empty text from {pdf_path}")
-            raise ValueError("Empty extraction")
-        
-        return full_text
-        
-    except Exception as e:
-        logger.warning(f"PyMuPDF failed for {pdf_path}: {e}, trying pdfplumber")
-        return extract_with_pdfplumber(pdf_path)
+# Block structure:
+# {
+#   "type": 0,        # 0=text, 1=image
+#   "bbox": (x0, y0, x1, y1),
+#   "lines": [
+#     {"spans": [{"text": "...", "bbox": (...)}]}
+#   ]
+# }
+text_blocks = [b for b in blocks if b.get("type") == 0]  # Skip images
 ```
 
-**Why this works:**
-1. Always validates extracted text is non-empty before returning
-2. Explicit logging helps debugging which extractor was used
-3. Graceful fallback prevents total failure
-4. Page-by-page extraction allows filtering empty pages
-
-### DON'T: Ignore Empty Extraction Results
+### `"dict"` Mode — Span Extraction (Revenue Enverus Parser)
 
 ```python
-# BAD - Returns empty string silently
-def extract_text_bad(pdf_path: str) -> str:
-    doc = fitz.open(pdf_path)
-    text = "".join(page.get_text() for page in doc)
+# backend/app/services/revenue/pdf_extractor.py — extract_spans_by_page()
+from dataclasses import dataclass
+
+@dataclass
+class TextSpan:
+    text: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    page_num: int
+
+def extract_spans_by_page(pdf_bytes: bytes) -> dict[int, list[TextSpan]]:
+    pages: dict[int, list[TextSpan]] = {}
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    for page_num in range(len(doc)):
+        page = doc.load_page(page_num)
+        blocks = page.get_text("dict")["blocks"]
+        spans: list[TextSpan] = []
+        for block in blocks:
+            if "lines" not in block:
+                continue
+            for line in block["lines"]:
+                for span in line["spans"]:
+                    text = span["text"].strip()
+                    if not text:
+                        continue
+                    bbox = span["bbox"]
+                    spans.append(TextSpan(text=text, x0=bbox[0], y0=bbox[1],
+                                         x1=bbox[2], y1=bbox[3], page_num=page_num))
+        pages[page_num] = spans
     doc.close()
-    return text  # Might be empty!
+    return pages
 ```
 
-**Why this breaks:**
-1. Downstream parsers receive empty input and fail cryptically
-2. No fallback attempt, wasted extraction opportunity
-3. No logging of the failure
-4. User sees "no parties found" instead of actual parsing
+Use span extraction when you need to reconstruct multi-column revenue statements by x/y position.
 
 ---
 
-## Revenue Tool Integration
+## Garbled Text Detection
 
-The Revenue tool processes multiple PDFs in a single upload. PyMuPDF must handle batch operations efficiently.
-
-### DO: Process Multiple PDFs with Per-File Fallback
+Revenue PDFs with custom font encoding produce garbage characters. The `detect_garbled_text()` function in `backend/app/services/revenue/pdf_extractor.py` scores both PyMuPDF and pdfplumber output and returns whichever is cleaner.
 
 ```python
-# backend/app/services/revenue/pdf_processor.py
-from typing import List
-import fitz
+# Garbled indicators checked:
+# 1. Characters in _GARBLED_CHARS set (¢£¤¥ etc.)
+# 2. Doubled letter codes: Oo, oO, Gg, gG (font encoding artifacts)
+# 3. Large integers where decimals expected (7+ digit numbers)
+# 4. >2% non-ASCII character ratio in financial documents
 
-def process_multiple_pdfs(pdf_paths: List[str]) -> List[dict]:
-    """Process multiple revenue statement PDFs."""
-    results = []
-    
-    for pdf_path in pdf_paths:
-        try:
-            text = extract_single_pdf(pdf_path)
-            parsed = parse_revenue_statement(text)
-            results.append({
-                "file": pdf_path,
-                "status": "success",
-                "data": parsed
-            })
-        except Exception as e:
-            logger.error(f"Failed to process {pdf_path}: {e}")
-            results.append({
-                "file": pdf_path,
-                "status": "error",
-                "error": str(e)
-            })
-    
-    return results
-
-def extract_single_pdf(pdf_path: str) -> str:
-    """Extract with PyMuPDF, fallback to pdfplumber."""
-    try:
-        with fitz.open(pdf_path) as doc:
-            text = "\n\n".join(page.get_text() for page in doc)
-            if text.strip():
-                return text
-            raise ValueError("Empty PyMuPDF extraction")
-    except Exception:
-        return extract_with_pdfplumber(pdf_path)
+def detect_garbled_text(text: str) -> dict:
+    """Returns {"garbled": bool, "score": int, "indicators": list[str]}"""
+    # score >= 3 → garbled = True
 ```
-
-**Why this works:**
-1. One file failure doesn't crash entire batch
-2. Per-file error tracking for user feedback
-3. Fallback per file, not for entire batch
-4. Clean separation of extraction vs. parsing logic
-
-### DON'T: Use Single Try-Catch for Batch Operations
 
 ```python
-# BAD - One failure kills entire batch
-def process_multiple_pdfs_bad(pdf_paths: List[str]) -> List[dict]:
-    results = []
-    for pdf_path in pdf_paths:
-        doc = fitz.open(pdf_path)  # No error handling!
-        text = "".join(page.get_text() for page in doc)
-        doc.close()
-        results.append(parse_revenue_statement(text))
-    return results
+# Comparison logic in extract_text()
+if pymupdf_text and pdfplumber_text:
+    pymupdf_garbled = detect_garbled_text(pymupdf_text)
+    plumber_garbled = detect_garbled_text(pdfplumber_text)
+    if plumber_garbled["score"] < pymupdf_garbled["score"]:
+        return pdfplumber_text
+    return pymupdf_text
 ```
 
-**Why this breaks:**
-1. First corrupted PDF crashes entire upload
-2. No per-file status tracking
-3. No fallback for problematic files
-4. Users lose all work if one file is bad
+**Do NOT assume PyMuPDF always wins.** Energy Transfer PDFs often have better pdfplumber output.
 
 ---
 
-## Error Handling & Fallback
+## Column-Aware Extraction (Extract Tool)
 
-### DO: Structured Fallback Chain
-
-```python
-import fitz
-import pdfplumber
-
-def extract_with_fallback_chain(pdf_path: str) -> str:
-    """Multi-stage extraction with detailed logging."""
-    errors = []
-    
-    # Stage 1: PyMuPDF (primary)
-    try:
-        with fitz.open(pdf_path) as doc:
-            text = "\n\n".join(page.get_text() for page in doc)
-            if text.strip():
-                logger.info(f"PyMuPDF success: {pdf_path}")
-                return text
-            errors.append("PyMuPDF: empty extraction")
-    except Exception as e:
-        errors.append(f"PyMuPDF: {e}")
-    
-    # Stage 2: pdfplumber (fallback)
-    try:
-        with pdfplumber.open(pdf_path) as pdf:
-            text = "\n\n".join(page.extract_text() or "" for page in pdf.pages)
-            if text.strip():
-                logger.warning(f"Fallback to pdfplumber: {pdf_path}")
-                return text
-            errors.append("pdfplumber: empty extraction")
-    except Exception as e:
-        errors.append(f"pdfplumber: {e}")
-    
-    # Stage 3: Total failure
-    error_msg = " | ".join(errors)
-    logger.error(f"All extractors failed for {pdf_path}: {error_msg}")
-    raise ValueError(f"Cannot extract text: {error_msg}")
-```
-
-**Why this works:**
-1. Each extractor gets a fair attempt
-2. Detailed logging shows exactly what failed
-3. Empty extraction treated as failure (triggers fallback)
-4. User gets informative error message if all fail
-
-### DON'T: Silent Fallback Without Logging
+OCC Exhibit A PDFs use 2-3 column layouts. `_sort_blocks_by_columns()` in `backend/app/services/extract/pdf_extractor.py` assigns blocks to columns by x-position then reads left-to-right, top-to-bottom.
 
 ```python
-# BAD - No visibility into which extractor worked
-def extract_silent_fallback(pdf_path: str) -> str:
-    try:
-        doc = fitz.open(pdf_path)
-        text = "".join(page.get_text() for page in doc)
-        doc.close()
-        return text
-    except:
-        with pdfplumber.open(pdf_path) as pdf:
-            return "".join(page.extract_text() or "" for page in pdf.pages)
+# backend/app/services/extract/pdf_extractor.py
+def detect_column_count(file_bytes: bytes) -> int:
+    """Auto-detects 2 or 3 columns from first page block positions. Default: 3."""
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
+    page = doc[0]
+    blocks = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]
+    doc.close()
+
+    x_positions = [(b["bbox"][0] + b["bbox"][2]) / 2
+                   for b in blocks if b.get("type") == 0]
+    # Clusters x-positions into thirds vs halves to detect 2 vs 3 columns
 ```
 
-**Why this breaks:**
-1. No way to know if PyMuPDF is failing frequently
-2. Can't detect degraded performance
-3. Empty extractions from PyMuPDF don't trigger fallback
-4. Debugging is impossible without logs
+```python
+def _sort_blocks_by_columns(blocks, page_width, num_columns=3):
+    column_width = page_width / num_columns
+    def get_column(block):
+        x_center = (block["bbox"][0] + block["bbox"][2]) / 2
+        return min(int(x_center / column_width), num_columns - 1)
+    # Assigns to columns, sorts by y within each, then interleaves row-by-row
+```
 
 ---
 
 ## Memory Management
 
-### DO: Close Documents Explicitly or Use Context Managers
+### DO: Always Close Documents
 
 ```python
-# Pattern 1: Explicit close
-def extract_explicit_close(pdf_path: str) -> str:
-    doc = fitz.open(pdf_path)
-    try:
-        text = "\n\n".join(page.get_text() for page in doc)
-        return text
-    finally:
-        doc.close()  # Always closes, even on error
+# Pattern 1: Explicit close in try/finally
+doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+try:
+    pages = [doc.load_page(i).get_text("text") for i in range(len(doc))]
+finally:
+    doc.close()
 
-# Pattern 2: Context manager (preferred)
-def extract_context_manager(pdf_path: str) -> str:
-    with fitz.open(pdf_path) as doc:
-        return "\n\n".join(page.get_text() for page in doc)
+# Pattern 2: Context manager (preferred for simple cases)
+with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+    pages = [page.get_text("text") for page in doc]
 ```
 
-**Why this works:**
-1. Prevents file descriptor leaks
-2. Context manager is more concise
-3. Memory released immediately after extraction
-4. Safe for batch operations processing hundreds of PDFs
+Note: The actual codebase uses explicit `doc.close()` (not context manager). Both are correct — choose one and be consistent within a file.
 
-### DON'T: Forget to Close Documents
+### WARNING: Unclosed Documents in Batch Loops
 
 ```python
-# BAD - Memory leak, file descriptor leak
-def extract_leak(pdf_path: str) -> str:
-    doc = fitz.open(pdf_path)
+# BAD — document leaks if exception occurs mid-loop
+for pdf_bytes in batch:
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     text = "".join(page.get_text() for page in doc)
-    # Oops, forgot doc.close()!
-    return text
+    doc.close()  # Never reached if get_text() raises
 ```
 
-**Why this breaks:**
-1. File descriptors remain open until GC runs
-2. Processing 100+ PDFs can exhaust system resources
-3. In long-running FastAPI workers, memory usage grows unbounded
-4. Cloud Run may OOM and restart the container
-
-**When you'll be tempted:** Quick scripts, testing, or "it's just one file" scenarios. ALWAYS close documents.
-
----
-
-## Common Pitfalls
-
-### WARNING: Assuming Text Extraction Always Succeeds
-
-**The Problem:**
-
 ```python
-# BAD - No validation of extracted content
-def extract_assume_success(pdf_path: str) -> str:
-    with fitz.open(pdf_path) as doc:
-        return "".join(page.get_text() for page in doc)
-```
-
-**Why this breaks:**
-1. Scanned PDFs (images) return empty string
-2. Password-protected PDFs return empty string
-3. Corrupted PDFs might return garbage characters
-4. Downstream parsers choke on empty/invalid input
-
-**The fix:**
-
-```python
-# GOOD - Validate and fallback
-def extract_with_validation(pdf_path: str) -> str:
-    with fitz.open(pdf_path) as doc:
+# GOOD — guaranteed close
+for pdf_bytes in batch:
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
         text = "".join(page.get_text() for page in doc)
-    
-    if not text.strip():
-        logger.warning(f"Empty PyMuPDF extraction: {pdf_path}")
-        raise ValueError("No extractable text")
-    
-    if len(text.strip()) < 50:  # Suspiciously short
-        logger.warning(f"Short extraction ({len(text)} chars): {pdf_path}")
-    
-    return text
+    finally:
+        doc.close()
 ```
 
-**When you might be tempted:** Testing with known-good PDFs, assuming users upload clean files, tight deadlines.
+In Cloud Run with 1Gi memory, 50+ unclosed documents will OOM-kill the container.
 
 ---
 
-### WARNING: Not Handling Page Iteration Errors
+## Anti-Patterns
 
-**The Problem:**
-
-```python
-# BAD - One bad page crashes entire extraction
-def extract_fragile(pdf_path: str) -> str:
-    with fitz.open(pdf_path) as doc:
-        return "".join(page.get_text() for page in doc)  # Fails on first bad page
-```
-
-**Why this breaks:**
-1. Corrupted page in 50-page PDF loses all 50 pages
-2. No visibility into which page failed
-3. Partial extraction is often better than total failure
-
-**The fix:**
+### WARNING: Ignoring Empty Extraction
 
 ```python
-# GOOD - Per-page error handling
-def extract_robust(pdf_path: str) -> str:
-    pages = []
-    with fitz.open(pdf_path) as doc:
-        for i, page in enumerate(doc):
-            try:
-                text = page.get_text()
-                if text.strip():
-                    pages.append(text)
-            except Exception as e:
-                logger.warning(f"Failed to extract page {i} from {pdf_path}: {e}")
-                pages.append(f"[PAGE {i} EXTRACTION FAILED]")
-    
-    if not pages:
-        raise ValueError("No pages extracted successfully")
-    
-    return "\n\n".join(pages)
+# BAD — scanned PDFs return "" which downstream parsers choke on
+def extract(pdf_bytes: bytes) -> str:
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    text = "".join(page.get_text() for page in doc)
+    doc.close()
+    return text  # "" for image-based PDFs
 ```
 
-**When you might be tempted:** Simple PDFs, trusted sources, "good enough" extraction quality.
+```python
+# GOOD — validate before returning
+def extract(pdf_bytes: bytes) -> str:
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        text = "\n\n".join(page.get_text("text") for page in doc)
+    finally:
+        doc.close()
+    if not text.strip():
+        raise RuntimeError("pymupdf extraction failed: empty text")
+    return text
+```
+
+### WARNING: Bare `except` Hiding fitz Errors
+
+```python
+# BAD — swallows password-protected PDF errors silently
+try:
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    text = doc[0].get_text()
+except:
+    return ""
+```
+
+Catch `Exception` specifically and re-raise with context so the fallback chain can respond properly.

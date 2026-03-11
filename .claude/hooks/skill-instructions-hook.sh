@@ -16,14 +16,14 @@ Before writing any code, complete these steps in order:
    - vite
    - firebase
    - pydantic
-   - google-cloud-storage
-   - firestore
    - pandas
+   - firestore
+   - google-cloud-storage
    - sqlalchemy
-   - apscheduler
-   - reportlab
-   - pdfplumber
    - pymupdf
+   - pdfplumber
+   - reportlab
+   - apscheduler
    - pytest
    - node
    - docker

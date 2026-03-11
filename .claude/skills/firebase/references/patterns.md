@@ -1,298 +1,256 @@
 # Firebase Patterns Reference
 
 ## Contents
-- Lazy Initialization (Backend)
-- Token Verification with Allowlist
-- ID Token Refresh (Frontend)
-- Firestore Client Initialization
-- Environment Variables
+- Allowlist Format and Management
+- Backend Auth Dependencies
+- Firebase Admin SDK Lazy Init
+- Frontend Auth Flow (onAuthStateChanged)
+- Error Code Handling
+- Anti-Patterns
 
 ---
 
-## Lazy Initialization (Backend)
+## Allowlist Format and Management
 
-**Problem:** Importing Firebase Admin SDK at module level causes initialization errors when credentials are missing (local dev without GCS).
+The allowlist is a **list of dicts** stored in `backend/data/allowed_users.json`. Firestore is the source of truth; the JSON file is a local cache synced on startup.
 
-**Solution:** Lazy initialization — import and initialize only when first needed.
-
-```python
-# toolbox/backend/app/core/auth.py
-from __future__ import annotations
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from firebase_admin import auth
-
-_firebase_initialized = False
-
-def _init_firebase():
-    """Initialize Firebase Admin SDK with Application Default Credentials."""
-    global _firebase_initialized
-    if not _firebase_initialized:
-        from firebase_admin import credentials, initialize_app
-        try:
-            initialize_app(credentials.ApplicationDefault())
-            _firebase_initialized = True
-        except Exception as e:
-            raise RuntimeError(f"Failed to initialize Firebase Admin: {e}")
-
-def verify_firebase_token(id_token: str) -> dict:
-    """Verify Firebase ID token and return decoded claims."""
-    _init_firebase()
-    from firebase_admin import auth
-    return auth.verify_id_token(id_token)
+```json
+[
+  {
+    "email": "james@tablerocktx.com",
+    "first_name": "James",
+    "last_name": "Smith",
+    "role": "admin",
+    "scope": "all",
+    "tools": ["extract", "title", "proration", "revenue"]
+  },
+  {
+    "email": "user@tablerocktx.com",
+    "role": "user",
+    "scope": "land",
+    "tools": ["extract", "title"]
+  }
+]
 ```
 
-**Why:** Allows the app to start without Firebase credentials (useful for local dev with Firestore disabled). Initialization happens only when auth is actually used.
-
----
-
-## Token Verification with Allowlist
-
-**Problem:** Firebase Auth verifies the token signature, but doesn't check if the user is authorized for your app.
-
-**Solution:** After token verification, check the email against a JSON allowlist.
+Available roles: `admin`, `user`, `viewer`
+Available scopes: `all`, `land`, `revenue`, `operations`
+Available tools: `extract`, `title`, `proration`, `revenue`
 
 ```python
-# toolbox/backend/app/core/auth.py
-import json
-from pathlib import Path
-from fastapi import HTTPException, Header, Depends
-
-ALLOWED_USERS_FILE = Path(__file__).parent.parent / "data" / "allowed_users.json"
-
-def load_allowed_users() -> set[str]:
-    """Load allowed user emails from JSON file."""
-    if not ALLOWED_USERS_FILE.exists():
-        return {"james@tablerocktx.com"}  # Default admin
-    
-    with open(ALLOWED_USERS_FILE) as f:
-        data = json.load(f)
-        return set(data.get("allowed_users", []))
+# backend/app/core/auth.py — load/check pattern
+def load_allowlist() -> list[str]:
+    """Returns list of allowed email strings (lowercased)."""
+    if ALLOWLIST_FILE.exists():
+        with open(ALLOWLIST_FILE) as f:
+            data = json.load(f)  # list of dicts
+            return [u.get("email", u) if isinstance(u, dict) else u for u in data]
+    return DEFAULT_ALLOWED_USERS.copy()
 
 def is_user_allowed(email: str) -> bool:
-    """Check if user email is in allowlist."""
-    allowed = load_allowed_users()
-    return email.lower() in {u.lower() for u in allowed}
-
-async def get_current_user(authorization: str = Header(None)) -> dict:
-    """FastAPI dependency for protected routes."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing authorization header")
-    
-    token = authorization.split("Bearer ")[1]
-    
-    try:
-        decoded = verify_firebase_token(token)
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
-    
-    if not is_user_allowed(decoded.get("email", "")):
-        raise HTTPException(status_code=403, detail="User not authorized")
-    
-    return decoded
+    allowed = load_allowlist()
+    return email.lower() in [e.lower() for e in allowed]
 ```
 
-**Usage in routes:**
+### WARNING: Wrong Allowlist JSON Format
 
-```python
-from fastapi import APIRouter, Depends
-from app.core.auth import get_current_user
+**The Problem:**
 
-router = APIRouter(prefix="/api/extract")
-
-@router.post("/upload")
-async def upload_pdf(
-    user: dict = Depends(get_current_user)
-):
-    # user["email"] is guaranteed to be in allowlist
-    return {"message": f"Authenticated as {user['email']}"}
+```json
+// BAD — this is NOT the actual format
+{ "allowed_users": ["james@tablerocktx.com"] }
 ```
 
-**Why:** Prevents unauthorized Firebase users from accessing the app. The allowlist is managed separately from Firebase Auth.
+**Why This Breaks:** `load_allowlist()` calls `json.load()` and expects a top-level list. A dict format will cause a `TypeError` on the list comprehension.
+
+**The Fix:** Always write a top-level JSON array of user dicts.
 
 ---
 
-## WARNING: Synchronous Token Verification in Async Routes
+## Backend Auth Dependencies
+
+Three dependency levels in `backend/app/core/auth.py`:
+
+```python
+# get_current_user — soft auth, user may be None
+# Use for endpoints that work for both authenticated and unauthenticated users
+@router.get("/public-data")
+async def get_data(user: Optional[dict] = Depends(get_current_user)):
+    if user:
+        return full_response
+    return limited_response
+
+# require_auth — hard auth, 401 if missing/invalid token
+# Use for all tool endpoints (upload, export, etc.)
+@router.post("/upload")
+async def upload(user: dict = Depends(require_auth)):
+    email = user.get("email")  # guaranteed present and in allowlist
+    ...
+
+# require_admin — admin only, 403 if not admin role
+# Use for /api/admin/* endpoints
+@router.post("/admin/users")
+async def add_user(user: dict = Depends(require_admin)):
+    ...
+```
+
+The dependency chain is: `require_admin` → `require_auth` → `get_current_user`. Don't use `get_current_user` directly when you need guaranteed auth.
+
+```python
+# get_current_user uses HTTPBearer, not Header(None)
+security = HTTPBearer(auto_error=False)
+
+async def get_current_user(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+) -> Optional[dict]:
+    if credentials is None:
+        return None
+    token = credentials.credentials
+    decoded = await verify_firebase_token(token)
+    ...
+```
+
+---
+
+## Firebase Admin SDK Lazy Init
+
+```python
+# backend/app/core/auth.py
+_firebase_app = None
+
+def get_firebase_app():
+    """Get or initialize Firebase Admin SDK (lazy)."""
+    global _firebase_app
+    if _firebase_app is None:
+        try:
+            import firebase_admin
+            try:
+                _firebase_app = firebase_admin.get_app()  # Already initialized?
+            except ValueError:
+                # Not yet initialized — use Application Default Credentials
+                _firebase_app = firebase_admin.initialize_app()
+        except ImportError:
+            logger.warning("firebase-admin not installed")
+            return None
+    return _firebase_app
+```
+
+When `get_firebase_app()` returns `None`, `verify_firebase_token()` returns `None` (not an error), and `get_current_user()` returns `None`. Routes using `require_auth` will then 401. This is intentional — the backend degrades gracefully when Firebase Admin isn't configured.
+
+### WARNING: Initializing Firebase Admin at Module Level
 
 **The Problem:**
 
 ```python
-# BAD - Blocking the event loop
-@router.post("/upload")
-async def upload_pdf(user: dict = Depends(get_current_user)):
-    # get_current_user calls auth.verify_id_token() synchronously
-    # This BLOCKS the FastAPI event loop
-    pass
+# BAD — top-level import causes crash if credentials not present
+import firebase_admin
+firebase_admin.initialize_app()  # Crashes on import in local dev
 ```
 
-**Why This Breaks:**
-1. `auth.verify_id_token()` is a synchronous network call (verifies signature with Google's public keys)
-2. Blocking the event loop degrades throughput for all requests
-3. Under load, this causes request timeouts
+**Why This Breaks:** When `GOOGLE_APPLICATION_CREDENTIALS` isn't set and gcloud ADC isn't configured, this raises `DefaultCredentialsError` at startup, preventing the entire FastAPI app from starting.
 
-**The Fix:**
-
-```python
-# GOOD - Run in thread pool
-import asyncio
-from functools import partial
-
-async def get_current_user(authorization: str = Header(None)) -> dict:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing authorization header")
-    
-    token = authorization.split("Bearer ")[1]
-    
-    # Run synchronous Firebase call in thread pool
-    loop = asyncio.get_event_loop()
-    try:
-        decoded = await loop.run_in_executor(
-            None, 
-            partial(verify_firebase_token, token)
-        )
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
-    
-    if not is_user_allowed(decoded.get("email", "")):
-        raise HTTPException(status_code=403, detail="User not authorized")
-    
-    return decoded
-```
-
-**When You Might Be Tempted:**
-When the Firebase Admin SDK doesn't provide async alternatives. Always wrap synchronous calls in `run_in_executor` for async routes.
+**The Fix:** Use `get_firebase_app()` pattern — lazy init inside a function, never at module level.
 
 ---
 
-## ID Token Refresh (Frontend)
+## Frontend Auth Flow (onAuthStateChanged)
 
-**Problem:** Firebase ID tokens expire after 1 hour. API calls with expired tokens return 401.
-
-**Solution:** Refresh the token before each API call.
+Token is injected into `ApiClient` **once** when auth state changes, not refreshed per request:
 
 ```typescript
-// toolbox/frontend/src/utils/api.ts
-import { auth } from '../lib/firebase';
-
-export class ApiClient {
-  private baseUrl: string;
-
-  constructor(baseUrl: string = '/api') {
-    this.baseUrl = baseUrl;
-  }
-
-  private async getAuthHeaders(): Promise<Record<string, string>> {
-    const user = auth.currentUser;
-    if (!user) {
-      throw new Error('Not authenticated');
+// AuthContext.tsx — the actual pattern
+useEffect(() => {
+  const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    setUser(user);
+    if (user?.email) {
+      try {
+        const token = await user.getIdToken();
+        api.setAuthToken(token);  // Sets Authorization header on ApiClient
+      } catch {
+        // Token not available yet, retry on next state change
+      }
+      const authData = await checkAuthorization(user.email);
+      // ... set isAuthorized, isAdmin, userTools
+    } else {
+      api.clearAuthToken();  // Remove header on sign-out
     }
+  });
+  return () => unsubscribe();
+}, []);
+```
 
-    // getIdToken() automatically refreshes if expired
-    const token = await user.getIdToken();
-    return {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    };
-  }
+Firebase ID tokens expire after 1 hour. The token set in `ApiClient` can go stale. For long-running sessions, call `getIdToken()` directly when you need a fresh token:
 
-  async post<T>(endpoint: string, data: any): Promise<T> {
-    const headers = await this.getAuthHeaders();
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(data),
-    });
+```typescript
+const { getIdToken } = useAuth();
 
-    if (!response.ok) {
-      throw new Error(`API error: ${response.statusText}`);
-    }
-
-    return response.json();
-  }
+// For sensitive operations or when you need a guaranteed-fresh token
+const freshToken = await getIdToken();
+if (freshToken) {
+  api.setAuthToken(freshToken);
 }
 ```
 
-**Why:** `getIdToken()` handles token refresh automatically. Never cache the token yourself — always call `getIdToken()` before API requests.
+---
+
+## Error Code Handling
+
+```typescript
+// AuthContext.tsx — signInWithEmail maps Firebase codes to user messages
+const firebaseError = error as { code?: string };
+switch (firebaseError.code) {
+  case 'auth/user-not-found':
+    throw new Error('No account found with this email address.');
+  case 'auth/wrong-password':
+  case 'auth/invalid-credential':
+    throw new Error('Invalid email or password.');
+  case 'auth/invalid-email':
+    throw new Error('Invalid email address.');
+  case 'auth/too-many-requests':
+    throw new Error('Too many failed attempts. Please try again later.');
+  default:
+    throw new Error('Login failed. Please try again.');
+}
+```
+
+NEVER surface raw Firebase error codes to users — they expose implementation details and are confusing. Always map to user-friendly messages.
 
 ---
 
-## Firestore Client Initialization
+## Anti-Patterns
 
-**Problem:** Firestore and Firebase Admin share the same initialization, but Firestore operations need the Firestore client.
+### WARNING: Calling getIdToken() Per Request
 
-**Solution:** Lazy initialization for Firestore client, separate from Auth.
+**The Problem:**
 
-```python
-# toolbox/backend/app/services/firestore_service.py
-from __future__ import annotations
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from google.cloud import firestore
-
-_firestore_client: firestore.Client | None = None
-
-def get_firestore_client() -> firestore.Client:
-    """Get or create Firestore client with lazy initialization."""
-    global _firestore_client
-    if _firestore_client is None:
-        from google.cloud import firestore
-        _firestore_client = firestore.Client()
-    return _firestore_client
-
-async def save_job(collection: str, job_data: dict) -> str:
-    """Save job document to Firestore."""
-    client = get_firestore_client()
-    doc_ref = client.collection(collection).document()
-    doc_ref.set(job_data)
-    return doc_ref.id
+```typescript
+// BAD — unnecessary async overhead on every fetch
+async function fetchData() {
+  const user = auth.currentUser;
+  const token = await user.getIdToken();  // Network call each time
+  return fetch('/api/data', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+}
 ```
 
-**Why:** Firestore client initialization is separate from Firebase Admin Auth. Both can fail independently in local dev, so lazy init allows graceful degradation.
+**Why This Breaks:** `getIdToken()` makes a network request when the token is expired. Calling it per request adds latency on every API call.
 
----
+**The Fix:** Use `api.setAuthToken()` once in `onAuthStateChanged`. For genuinely sensitive operations where staleness matters, call `user.getIdToken(true)` to force-refresh explicitly.
 
-## Environment Variables
+### WARNING: Allowlist Check Only on Frontend
 
-**Frontend (.env):**
+**The Problem:**
 
-```bash
-VITE_FIREBASE_API_KEY=AIza...
-VITE_FIREBASE_AUTH_DOMAIN=tablerockenergy.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=tablerockenergy
-VITE_FIREBASE_STORAGE_BUCKET=tablerockenergy.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
-VITE_FIREBASE_APP_ID=1:123456789:web:abc123
+```typescript
+// BAD — frontend-only RBAC is not security
+if (userTools.includes('proration')) {
+  // Show proration UI
+  // But backend still serves the data to anyone!
+}
 ```
 
-**Backend (config.py):**
+**Why This Breaks:** Frontend RBAC is UI-only. Nothing stops a user from hitting `/api/proration/upload` directly. Backend `require_auth` verifies the allowlist, but doesn't check tool scope.
 
-```python
-# toolbox/backend/app/core/config.py
-from pydantic_settings import BaseSettings
-
-class Settings(BaseSettings):
-    # Firebase uses Application Default Credentials
-    # Set GOOGLE_APPLICATION_CREDENTIALS env var or use gcloud auth
-    firestore_enabled: bool = True
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-
-settings = Settings()
-```
-
-**Local Development:**
-
-```bash
-# Backend authenticates with gcloud
-gcloud auth application-default login
-
-# Or set service account key path
-export GOOGLE_APPLICATION_CREDENTIALS="/path/to/serviceAccountKey.json"
-```
-
-**Production (Cloud Run):**
-Uses the service's default service account — no explicit credentials needed.
+**The Fix:** Frontend checks control UI visibility. Backend checks (`require_auth`) enforce authentication. For strict tool-level authorization, add scope checking in the route handler using the decoded token's email + `get_user_by_email()`.

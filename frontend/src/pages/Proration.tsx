@@ -696,7 +696,6 @@ export default function Proration() {
 
   const hasDBData = (rrcStatus?.db_oil_rows || 0) + (rrcStatus?.db_gas_rows || 0) > 0
   const hasCSVData = rrcStatus?.oil_available || rrcStatus?.gas_available
-  const hasRRCData = hasDBData || hasCSVData
 
   // Use DB counts when available, fall back to CSV counts
   const totalRecords = hasDBData
@@ -732,7 +731,7 @@ export default function Proration() {
       </div>
 
       {/* RRC Data Status - informational only */}
-      {!rrcLoading && hasRRCData && (
+      {!rrcLoading && (
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-green-50 border border-green-200">
           <Database className="w-4 h-4 text-green-600 flex-shrink-0" />
           <span className="text-sm text-green-800">
@@ -864,14 +863,6 @@ export default function Proration() {
                   <div className="mt-4 flex items-center gap-2 text-tre-teal">
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
                     <span className="text-sm">Processing...</span>
-                  </div>
-                )}
-                {!hasRRCData && !isProcessing && (
-                  <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <p className="text-xs text-yellow-700">
-                      <AlertTriangle className="w-3 h-3 inline mr-1" />
-                      Download RRC data first for accurate NRA calculations
-                    </p>
                   </div>
                 )}
               </>

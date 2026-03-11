@@ -70,26 +70,39 @@ def test_party_entry_validation_fails_invalid_state():
 
 ```python
 # tests/utils/test_helpers.py
+from datetime import date
 from app.utils.helpers import parse_date, parse_decimal, generate_uid
 
-def test_parse_date_valid_formats():
-    """Test date parser handles multiple formats."""
-    assert parse_date("2025-01-15") == "2025-01-15"
-    assert parse_date("01/15/2025") == "2025-01-15"
-    assert parse_date("January 15, 2025") == "2025-01-15"
+def test_parse_date_month_year_format():
+    """Test date parser handles 'Dec 2024' format."""
+    result = parse_date("Dec 2024")
+    assert result == date(2024, 12, 1)
 
-def test_parse_decimal_handles_percentages():
-    """Test decimal parser converts percentages."""
-    assert parse_decimal("12.5%") == 0.125
-    assert parse_decimal("0.125") == 0.125
-    assert parse_decimal("invalid") is None
+def test_parse_date_mdy_format():
+    """Test date parser handles M/D/YYYY format."""
+    result = parse_date("01/15/2025")
+    assert result == date(2025, 1, 15)
 
-def test_generate_uid_unique():
-    """Test UID generator creates unique IDs."""
-    uid1 = generate_uid()
-    uid2 = generate_uid()
-    assert uid1 != uid2
-    assert len(uid1) == 12  # Assuming 12-char UIDs
+def test_parse_date_invalid_returns_none():
+    """Test date parser returns None for unparseable input."""
+    assert parse_date("not a date") is None
+    assert parse_date("") is None
+
+def test_parse_decimal_percentage():
+    """Test decimal parser converts percentage strings."""
+    from decimal import Decimal
+    assert parse_decimal("12.5") == Decimal("12.5")
+
+def test_generate_uid_format():
+    """Test UID generator creates deterministic IDs from inputs."""
+    uid = generate_uid("CHECK001", "PROP001", 1)
+    assert uid == "CHECK001-PROP001-0001"
+
+def test_generate_uid_handles_missing_values():
+    """Test UID generator uses fallbacks for empty inputs."""
+    uid = generate_uid("", "", 0)
+    assert "NOCHECK" in uid
+    assert "NOPROP" in uid
 ```
 
 ---
@@ -119,18 +132,17 @@ async def test_upload_file():
 
 ```python
 # GOOD - Mock GCS by disabling it via env var
-@pytest.mark.asyncio
-async def test_upload_file(monkeypatch, tmp_path):
+def test_upload_file(monkeypatch, tmp_path):
     """Test file upload uses local fallback."""
     monkeypatch.setenv("GCS_BUCKET_NAME", "")  # Disables GCS
-    monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    
+
     from app.services.storage_service import StorageService
     service = StorageService()
-    
-    result = await service.upload_file("test.pdf", b"data")
-    assert result.startswith("file://")
-    assert (tmp_path / "test.pdf").exists()
+
+    # upload_file(content, path, content_type) — sync, not async
+    result = service.upload_file(b"data", "test.pdf")
+    assert result == "test.pdf"  # Returns storage path
+    assert service.is_gcs_enabled is False  # Verify GCS disabled
 ```
 
 **When You Might Be Tempted:**

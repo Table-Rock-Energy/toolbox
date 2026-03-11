@@ -67,25 +67,19 @@ class RRCQueryResult(BaseModel):
 
 ```python
 # GOOD - Computed from bucket name, always in sync
-from pydantic_settings import BaseSettings
 from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env")
+
     gcs_bucket_name: str = Field(default="table-rock-tools-storage", description="GCS bucket")
     gcs_project_id: str = Field(default="tablerockenergy", description="GCP project")
-    
+
     @property
     def use_gcs(self) -> bool:
         """GCS enabled when bucket name is set."""
         return bool(self.gcs_bucket_name)
-    
-    @property
-    def is_production(self) -> bool:
-        """Check if running in production environment."""
-        return self.environment == "production"
-    
-    class Config:
-        env_file = ".env"
 ```
 
 ```python
@@ -99,23 +93,31 @@ class Settings(BaseSettings):
 
 ### Environment Variable Mapping
 
-**Use `class Config` with `env_file` for automatic environment loading.**
+**Use `model_config = SettingsConfigDict(...)` for automatic environment loading.** Never use `class Config` — that's the Pydantic v1 compat style.
 
 ```python
-# GOOD - Auto-loads from .env, case-insensitive
+# GOOD - Auto-loads from .env, case-insensitive by default
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env")
+
     database_url: str = Field(
         default="postgresql+asyncpg://postgres:postgres@localhost:5432/toolbox",
         description="PostgreSQL connection string"
     )
     max_upload_size_mb: int = Field(default=50, description="Max file upload size")
-    
+```
+
+```python
+# BAD - Pydantic v1 compat syntax, avoid in v2 codebases
+class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
 ```
 
-Environment variables `DATABASE_URL` or `database_url` both map to `database_url` field.
+Environment variables `DATABASE_URL` or `database_url` both map to `database_url` field (case-insensitive by default in pydantic-settings).
 
 ---
 

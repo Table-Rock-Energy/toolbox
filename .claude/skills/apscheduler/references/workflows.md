@@ -1,348 +1,269 @@
 # APScheduler Workflows Reference
 
 ## Contents
-- Adding a New Scheduled Job
+- Adding a New Background Job (Current Pattern)
 - Debugging Failed Jobs
-- Testing Scheduled Jobs Locally
-- Monitoring in Production
-- Handling Job Failures
+- Testing Background Jobs Locally
+- Adding a New APScheduler Job (Non-Cloud-Run)
+- Job State Machine
 
 ---
 
-## Adding a New Scheduled Job
+## Adding a New Background Job (Current Pattern)
+
+The existing `rrc_background.py` pattern is the template for all background work in this project. Follow these steps to add a new long-running job.
 
 ### Workflow Checklist
 
 Copy this checklist and track progress:
-- [ ] 1. Create async job function in appropriate service file
-- [ ] 2. Add logging (start, success, failure)
-- [ ] 3. Ensure idempotency (safe to re-run)
-- [ ] 4. Add job to scheduler in `main.py` startup
-- [ ] 5. Test job manually via API endpoint
-- [ ] 6. Verify logs in local dev
-- [ ] 7. Deploy and monitor first production run
+- [ ] Step 1: Create background worker function in a `*_background.py` service file
+- [ ] Step 2: Create Firestore job tracking functions (create, update, add_step)
+- [ ] Step 3: Add API endpoint to trigger the job
+- [ ] Step 4: Add API endpoint to poll job status
+- [ ] Step 5: Test by calling the trigger endpoint locally
+- [ ] Step 6: Verify Firestore job document is created and updated
+- [ ] Step 7: Test error case (confirm `status: "failed"` is written)
 
-### Step 1: Create Job Function
+### Step 1: Background Worker
 
 ```python
-# toolbox/backend/app/services/export_cleanup_service.py
+# backend/app/services/my_background.py
+import asyncio
 import logging
-from datetime import datetime, timedelta
+import threading
+from datetime import datetime
+from typing import Optional
+from google.cloud import firestore
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+JOBS_COLLECTION = "my_jobs"
 
-async def cleanup_old_exports_job():
-    """Delete export files older than 30 days."""
-    logger.info("Starting export cleanup job")
-    
+_sync_client: Optional[firestore.Client] = None
+
+def _get_sync_client() -> firestore.Client:
+    global _sync_client
+    if _sync_client is None:
+        _sync_client = firestore.Client(
+            project=settings.gcs_project_id,
+            database="tablerocktools",
+        )
+    return _sync_client
+
+def create_job() -> str:
+    db = _get_sync_client()
+    job_id = f"job-{datetime.utcnow().strftime('%Y-%m-%dT%H-%M-%S')}"
+    db.collection(JOBS_COLLECTION).document(job_id).set({
+        "id": job_id,
+        "status": "running",
+        "started_at": datetime.utcnow(),
+        "completed_at": None,
+        "error": None,
+    })
+    return job_id
+
+def _run_job(job_id: str) -> None:
+    """The actual work. Runs in a background thread."""
+    db = _get_sync_client()
+    ref = db.collection(JOBS_COLLECTION).document(job_id)
     try:
-        cutoff_date = datetime.utcnow() - timedelta(days=30)
-        deleted_count = await delete_exports_before(cutoff_date)
-        
-        logger.info(f"Export cleanup completed: {deleted_count} files deleted")
-        return {"deleted_count": deleted_count, "cutoff_date": cutoff_date.isoformat()}
-        
+        # Sync operations work directly
+        do_sync_work()
+
+        # Async operations: bridge with asyncio.run()
+        result = asyncio.run(do_async_work())
+
+        ref.update({"status": "complete", "completed_at": datetime.utcnow()})
     except Exception as e:
-        logger.error(f"Export cleanup failed: {e}", exc_info=True)
-        raise
+        logger.exception(f"Job {job_id} failed: {e}")
+        try:
+            ref.update({
+                "status": "failed",
+                "error": str(e),
+                "completed_at": datetime.utcnow(),
+            })
+        except Exception:
+            pass  # Best-effort status update
+
+def start_background_job() -> str:
+    job_id = create_job()
+    thread = threading.Thread(
+        target=_run_job, args=(job_id,), daemon=True, name=f"job-{job_id}"
+    )
+    thread.start()
+    return job_id
 ```
 
-**Requirements:**
-1. **Async function** (`async def`)
-2. **Logger** with module name
-3. **Try/except** with logging
-4. **Return value** (for monitoring/debugging)
-
-### Step 2: Register Job in Scheduler
+### Step 2: API Endpoints
 
 ```python
-# toolbox/backend/app/main.py
-from apscheduler.triggers.cron import CronTrigger
-from app.services.export_cleanup_service import cleanup_old_exports_job
+# backend/app/api/my_tool.py
+from app.services.my_background import start_background_job, get_job_status
 
-@app.on_event("startup")
-async def startup_event():
-    # Existing RRC job
-    scheduler.add_job(
-        download_rrc_data_job,
-        trigger=CronTrigger(day=1, hour=2, minute=0),
-        id="rrc_data_download",
-        replace_existing=True,
-    )
-    
-    # NEW: Daily cleanup at 3 AM
-    scheduler.add_job(
-        cleanup_old_exports_job,
-        trigger=CronTrigger(hour=3, minute=0),
-        id="export_cleanup",
-        replace_existing=True,
-    )
-    
-    scheduler.start()
-    logger.info("APScheduler started with 2 jobs")
+@router.post("/run")
+async def trigger_job():
+    """Start background job. Returns job_id for polling."""
+    job_id = start_background_job()
+    return {"job_id": job_id, "status": "started"}
+
+@router.get("/run/{job_id}/status")
+async def poll_job_status(job_id: str):
+    """Poll job status. Frontend polls until status is 'complete' or 'failed'."""
+    from app.services.firestore_service import get_firestore_client
+    db = get_firestore_client()
+    doc = await db.collection("my_jobs").document(job_id).get()
+    if not doc.exists:
+        raise HTTPException(404, "Job not found")
+    return doc.to_dict()
 ```
-
-### Step 3: Add Manual Trigger Endpoint (Optional)
-
-```python
-# toolbox/backend/app/api/admin.py
-from app.services.export_cleanup_service import cleanup_old_exports_job
-
-@router.post("/cleanup/trigger")
-async def trigger_cleanup():
-    """Manually trigger export cleanup (also runs daily at 3 AM)."""
-    result = await cleanup_old_exports_job()
-    return {"status": "success", "result": result}
-```
-
-**Why This Helps:**
-1. Test job logic without waiting for schedule
-2. Manually trigger cleanup after incidents
-3. Validate job works before deploying schedule
 
 ---
 
 ## Debugging Failed Jobs
 
-### Check Logs for Job Execution
+### Check Firestore Job Document First
 
-```bash
-# Local dev - check console output
-# Look for:
-# - "Starting scheduled RRC data download"
-# - "RRC data download completed" or "RRC data download failed"
+When a job fails, the `status: "failed"` and `error` fields in Firestore are the first place to look:
 
-# Production (Cloud Run) - check logs
-gcloud logging read "resource.type=cloud_run_revision AND \
-  resource.labels.service_name=table-rock-tools AND \
-  textPayload=~'RRC data download'" \
-  --limit 50 --format json
+```python
+# In a Python shell or test:
+from google.cloud import firestore
+db = firestore.Client(project="tablerockenergy", database="tablerocktools")
+doc = db.collection("rrc_sync_jobs").document("rrc-sync-2026-03-01T02-00-00").get()
+print(doc.to_dict())
+# {"status": "failed", "error": "SSL error: ...", "steps": [...]}
 ```
 
 ### Common Failure Modes
 
 | Symptom | Likely Cause | Fix |
 |---------|--------------|-----|
-| Job not running | Scheduler not started | Check `startup_event()` logs |
-| Job runs twice | Missing `replace_existing=True` | Add flag to `add_job()` |
-| Job times out | Cloud Run 600s limit | Optimize job or increase timeout |
-| RRC SSL error | Outdated RRC website SSL | Verify `RRCSSLAdapter` is used |
-| Database error | Firestore/GCS unavailable | Add retry logic with exponential backoff |
+| `status` stuck at `"downloading_oil"` | Thread crashed before updating Firestore | Check Cloud Run logs for the thread exception |
+| `"RuntimeError: no running event loop"` | Used async Firestore client in thread | Use `_get_sync_firestore_client()` |
+| `"RuntimeError: This event loop is already running"` | Called `asyncio.run()` from within an async context | Only call `asyncio.run()` from sync thread functions |
+| Job never starts | Thread creation failed | Check available memory in Cloud Run instance |
+| RRC SSL error | RRC website SSL config | Verify `RRCSSLAdapter` is configured in `rrc_data_service.py` |
 
-### Manual Job Invocation for Testing
+### Cloud Run Logs
 
-```python
-# In a python3 REPL or test script
-import asyncio
-from app.services.proration.rrc_data_service import download_rrc_data_job
-
-# Run job directly
-asyncio.run(download_rrc_data_job())
+```bash
+# Filter for background job output
+gcloud logging read \
+  "resource.type=cloud_run_revision AND \
+   resource.labels.service_name=table-rock-tools AND \
+   textPayload=~'rrc-sync'" \
+  --limit 50 --format="value(textPayload)"
 ```
 
-### Iterate-Until-Pass Pattern
+### Iterate-Until-Pass
 
-1. Identify failure from logs
-2. Fix issue in job function
+1. Check Firestore `rrc_sync_jobs` for `error` field
+2. Fix root cause in code
 3. Restart backend: `make dev-backend`
-4. Manually trigger job via API: `POST /api/admin/cleanup/trigger`
-5. If job fails, check logs and repeat step 1
-6. Only proceed when job succeeds
+4. Manually trigger: `POST /api/proration/rrc/download`
+5. Poll status: `GET /api/proration/rrc/download/{job_id}/status`
+6. If still failing, go to step 1
 
 ---
 
-## Testing Scheduled Jobs Locally
+## Testing Background Jobs Locally
 
-### WARNING: Don't Wait for Schedule
+### Direct Function Call (Fastest)
 
-**The Problem:**
+Bypass the thread entirely — call the worker function directly:
 
 ```python
-# BAD - Waiting for monthly job to test
-scheduler.add_job(
-    download_rrc_data_job,
-    trigger=CronTrigger(day=1, hour=2),  # Must wait until next month
-    id="rrc_data_download",
-)
+# In backend/ directory:
+python3 -c "
+from app.services.rrc_background import _run_rrc_download, create_rrc_sync_job
+job_id = create_rrc_sync_job()
+print(f'Job: {job_id}')
+_run_rrc_download(job_id)  # Runs synchronously in the shell
+print('Done')
+"
 ```
 
-**The Fix:**
+### Via API (With Thread)
 
-```python
-# GOOD - Temporary interval trigger for testing
-from apscheduler.triggers.interval import IntervalTrigger
+```bash
+# Trigger download
+curl -X POST http://localhost:8000/api/proration/rrc/download
 
-scheduler.add_job(
-    download_rrc_data_job,
-    # In production: CronTrigger(day=1, hour=2)
-    trigger=IntervalTrigger(minutes=5),  # Every 5 min for testing
-    id="rrc_data_download",
-    replace_existing=True,
-)
+# Poll status (replace JOB_ID)
+curl http://localhost:8000/api/proration/rrc/download/rrc-sync-2026-03-01T02-00-00/status
 ```
 
-### Environment-Based Scheduling
+### Verify Firestore Job Document
 
-```python
-# GOOD - Different schedules for dev/prod
-from app.core.config import settings
-
-if settings.environment == "production":
-    trigger = CronTrigger(day=1, hour=2, minute=0)
-else:
-    # Dev: every 10 minutes for faster testing
-    trigger = IntervalTrigger(minutes=10)
-
-scheduler.add_job(
-    download_rrc_data_job,
-    trigger=trigger,
-    id="rrc_data_download",
-    replace_existing=True,
-)
+```bash
+# Check job was created and completed in Firestore
+# Use Firebase Console or the Admin SDK
+python3 -c "
+from google.cloud import firestore
+db = firestore.Client(database='tablerocktools')
+jobs = db.collection('rrc_sync_jobs').order_by('started_at', direction=firestore.Query.DESCENDING).limit(3).get()
+for j in jobs:
+    d = j.to_dict()
+    print(d['id'], d['status'], d.get('error'))
+"
 ```
 
 ---
 
-## Monitoring in Production
+## Adding a New APScheduler Job (Non-Cloud-Run)
 
-### Job Status Endpoint
-
-```python
-# toolbox/backend/app/api/admin.py
-@router.get("/scheduler/jobs")
-async def get_scheduled_jobs():
-    """List all scheduled jobs and their next run times."""
-    jobs = scheduler.get_jobs()
-    return {
-        "jobs": [
-            {
-                "id": job.id,
-                "name": job.name,
-                "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
-                "trigger": str(job.trigger),
-            }
-            for job in jobs
-        ]
-    }
-```
-
-**Expected Output:**
-
-```json
-{
-  "jobs": [
-    {
-      "id": "rrc_data_download",
-      "name": "download_rrc_data_job",
-      "next_run": "2026-03-01T02:00:00",
-      "trigger": "cron[day='1', hour='2', minute='0']"
-    }
-  ]
-}
-```
-
-### Store Job Results in Firestore
+Only use APScheduler if deploying to an always-on environment (VM, Kubernetes, Docker with restart policy):
 
 ```python
-# GOOD - Persistent job history
-from app.services.firestore_service import firestore_service
+# backend/app/main.py
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from app.services.my_service import my_async_job
 
-async def download_rrc_data_job():
-    job_id = "rrc_data_download"
-    start_time = datetime.utcnow()
-    
-    try:
-        result = await download_and_sync_rrc_data()
-        
-        await firestore_service.create_document("job_history", {
-            "job_id": job_id,
-            "status": "success",
-            "started_at": start_time,
-            "completed_at": datetime.utcnow(),
-            "result": result,
-        })
-        
-    except Exception as e:
-        await firestore_service.create_document("job_history", {
-            "job_id": job_id,
-            "status": "failed",
-            "started_at": start_time,
-            "completed_at": datetime.utcnow(),
-            "error": str(e),
-        })
-        raise
+scheduler = AsyncIOScheduler(timezone="America/Chicago")
+
+@app.on_event("startup")
+async def startup_event():
+    if settings.environment != "production":  # Avoid on Cloud Run
+        scheduler.add_job(
+            my_async_job,
+            trigger=CronTrigger(day=1, hour=2, minute=0),
+            id="my_job",
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+        scheduler.start()
+        logger.info("APScheduler started")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
 ```
 
 ---
 
-## Handling Job Failures
+## Job State Machine
 
-### Retry Logic with Exponential Backoff
+The RRC job progresses through states. New jobs should follow this same pattern:
 
-```python
-# GOOD - Retry transient failures
-import asyncio
-
-async def download_with_retry(max_retries=3):
-    for attempt in range(max_retries):
-        try:
-            return await download_csv_from_rrc()
-        except (httpx.TimeoutError, ConnectionError) as e:
-            if attempt == max_retries - 1:
-                raise
-            
-            wait_time = 2 ** attempt  # 1s, 2s, 4s
-            logger.warning(f"Download failed (attempt {attempt + 1}/{max_retries}), "
-                          f"retrying in {wait_time}s: {e}")
-            await asyncio.sleep(wait_time)
+```
+created
+    │
+    ▼
+downloading_oil ──→ failed (oil download failed)
+    │
+    ▼
+downloading_gas ──→ failed (gas download failed)
+    │
+    ▼
+syncing_oil ──────→ failed (Firestore oil sync failed)
+    │
+    ▼
+syncing_gas ──────→ failed (Firestore gas sync failed)
+    │
+    ▼
+complete
 ```
 
-### Partial Success Handling
-
-```python
-# GOOD - Download both oil and gas, even if one fails
-async def download_rrc_data_job():
-    results = {"oil": None, "gas": None}
-    errors = []
-    
-    try:
-        results["oil"] = await download_oil_proration()
-    except Exception as e:
-        logger.error(f"Oil download failed: {e}")
-        errors.append(f"oil: {e}")
-    
-    try:
-        results["gas"] = await download_gas_proration()
-    except Exception as e:
-        logger.error(f"Gas download failed: {e}")
-        errors.append(f"gas: {e}")
-    
-    if errors:
-        raise Exception(f"Partial failure: {'; '.join(errors)}")
-    
-    return results
-```
-
-### Dead Letter Queue Pattern (Future Enhancement)
-
-```python
-# GOOD - For production-grade reliability
-async def download_rrc_data_job():
-    try:
-        await download_and_sync_rrc_data()
-    except Exception as e:
-        # Push to dead letter queue for manual review
-        await firestore_service.create_document("failed_jobs", {
-            "job_id": "rrc_data_download",
-            "error": str(e),
-            "traceback": traceback.format_exc(),
-            "timestamp": datetime.utcnow(),
-        })
-        
-        # Optional: Send alert (email, Slack, etc.)
-        await send_alert(f"RRC download failed: {e}")
-        raise
-```
-
-**When You Might Be Tempted:**
-If jobs fail intermittently and you need visibility into failure patterns, implement a dead letter queue to track failures for later investigation.
+**Rule:** Each step updates `status` in Firestore before starting and writes `error` + `completed_at` on failure. Never skip writing terminal state — a job stuck in a non-terminal state will confuse the frontend polling.

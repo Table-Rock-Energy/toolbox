@@ -15,15 +15,14 @@
 ```typescript
 // All events follow this schema
 interface ProductEvent {
-  event_name: string           // snake_case, e.g., "tool_upload_started"
-  user_id: string              // Firebase UID
-  timestamp: Date              // UTC datetime
-  properties: Record<string, any>  // Event-specific data
-  session_id?: string          // Optional session grouping
+  event_name: string               // snake_case: "tool_upload_started"
+  user_id: string                  // Firebase UID
+  timestamp: Date                  // UTC datetime
+  properties: Record<string, unknown>  // Event-specific data
 }
 ```
 
-**CRITICAL:** All timestamps MUST be UTC. Firestore stores `DateTime(timezone=True)` on backend.
+**CRITICAL:** All timestamps MUST be UTC. Use `datetime.now(tz=timezone.utc)` on backend (not `datetime.utcnow()` which is naive).
 
 ### DO/DON'T: Event Naming
 
@@ -34,14 +33,12 @@ track('processing-complete', { tool: 'title' })   // kebab-case
 track('Export', { format: 'csv' })                // Too vague
 ```
 
-**GOOD - Consistent snake_case with object_action pattern:**
+**GOOD - Consistent `{object}_{action}` in snake_case:**
 ```typescript
 track('tool_upload_started', { tool: 'extract' })
 track('tool_processing_complete', { tool: 'title' })
 track('export_downloaded', { tool: 'revenue', format: 'csv' })
 ```
-
-**Standard:** `{object}_{action}_{context?}` in snake_case.
 
 ---
 
@@ -50,10 +47,10 @@ track('export_downloaded', { tool: 'revenue', format: 'csv' })
 ### Events Collection
 
 ```python
-# backend/app/services/firestore_service.py
+# Add to backend/app/services/firestore_service.py
 EVENTS_COLLECTION = "events"
 
-# Document structure
+# Document structure (written by analytics_service.py)
 {
   "event_name": "tool_upload_started",
   "user_id": "firebase_uid_123",
@@ -63,16 +60,10 @@ EVENTS_COLLECTION = "events"
     "file_name": "exhibit_a.pdf",
     "file_size_mb": 2.3,
   },
-  "session_id": "uuid-session-123",
 }
 ```
 
-**Indexes Required:**
-- Composite: `user_id ASC, timestamp DESC` (for user timelines)
-- Composite: `event_name ASC, timestamp DESC` (for funnel queries)
-- Single: `timestamp DESC` (for DAU/WAU calculations)
-
-Create via Firestore console or `firestore.indexes.json`:
+**Indexes required** (add to Firestore console or `firestore.indexes.json`):
 
 ```json
 {
@@ -84,6 +75,14 @@ Create via Firestore console or `firestore.indexes.json`:
         { "fieldPath": "user_id", "order": "ASCENDING" },
         { "fieldPath": "timestamp", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "event_name", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
     }
   ]
 }
@@ -93,14 +92,11 @@ Create via Firestore console or `firestore.indexes.json`:
 
 ## Event Properties Standards
 
-### Tool Events
-
-All tool-related events MUST include:
+### All Tool Events Must Include
 
 ```typescript
 {
-  tool: 'extract' | 'title' | 'proration' | 'revenue',
-  session_id: string,  // UUID generated at tool page mount
+  tool: 'extract' | 'title' | 'proration' | 'revenue' | 'ghl_prep',
 }
 ```
 
@@ -116,8 +112,8 @@ track('tool_upload_started', {
 ```
 
 **WARNING:** NEVER include PII in event properties:
-- ❌ `file_content`, `user_email`, `party_names`
-- ✅ `file_name` (safe), `file_size_mb`, `entry_count`
+- `file_content`, `user_email`, `party_names` → NEVER include
+- `file_name`, `file_size_mb`, `entry_count` → safe to include
 
 ### Processing Events
 
@@ -128,7 +124,6 @@ track('tool_processing_complete', {
   total_entries: 45,
   flagged_entries: 3,
   processing_time_seconds: 12.5,
-  error_message: null,
 })
 ```
 
@@ -139,7 +134,6 @@ track('export_downloaded', {
   tool: 'proration',
   format: 'excel' | 'pdf' | 'csv',
   row_count: 120,
-  file_size_kb: 45.2,
 })
 ```
 
@@ -150,95 +144,70 @@ track('export_downloaded', {
 ### Conversion Funnel Query
 
 ```python
+# backend/app/api/analytics.py
+from datetime import datetime, date, timedelta, timezone
+from app.services.firestore_service import get_firestore_client, EVENTS_COLLECTION
+
 async def get_funnel_conversion(
     funnel_steps: list[str],
     start_date: date,
-    end_date: date
-) -> dict:
-    """
-    Calculate conversion rates between funnel steps.
-    
-    Args:
-        funnel_steps: Ordered list of event names
-        start_date: Cohort start date
-        end_date: Cohort end date
-    
-    Returns:
-        { step: count, step_2: count, conversion_rate: 0.75 }
-    """
+    end_date: date,
+) -> dict[str, int]:
+    """Calculate how many unique users completed each funnel step."""
     db = get_firestore_client()
-    
-    # Get users who completed FIRST step in date range
-    first_step_events = db.collection(EVENTS_COLLECTION).where(
+
+    start_dt = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+    end_dt = datetime.combine(end_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+
+    # Collect all users for first step in date range
+    first_events = db.collection(EVENTS_COLLECTION).where(
         "event_name", "==", funnel_steps[0]
-    ).where(
-        "timestamp", ">=", datetime.combine(start_date, datetime.min.time())
-    ).where(
-        "timestamp", "<", datetime.combine(end_date, datetime.min.time())
-    ).stream()
-    
-    first_step_users = set()
-    async for event in first_step_events:
-        first_step_users.add(event.to_dict()["user_id"])
-    
-    # For each subsequent step, count users who completed it
-    funnel_counts = {funnel_steps[0]: len(first_step_users)}
-    
+    ).where("timestamp", ">=", start_dt).where("timestamp", "<", end_dt).stream()
+
+    cohort: set[str] = set()
+    async for doc in first_events:
+        cohort.add(doc.to_dict()["user_id"])
+
+    funnel_counts = {funnel_steps[0]: len(cohort)}
+
+    # WARNING: Firestore `in` operator limited to 10 values.
+    # For cohorts >10, batch into chunks of 10.
     for step in funnel_steps[1:]:
-        step_events = db.collection(EVENTS_COLLECTION).where(
-            "event_name", "==", step
-        ).where(
-            "user_id", "in", list(first_step_users)  # Only cohort users
-        ).stream()
-        
-        step_users = set()
-        async for event in step_events:
-            step_users.add(event.to_dict()["user_id"])
-        
+        step_users: set[str] = set()
+        cohort_list = list(cohort)
+        for i in range(0, len(cohort_list), 10):
+            chunk = cohort_list[i:i + 10]
+            step_events = db.collection(EVENTS_COLLECTION).where(
+                "event_name", "==", step
+            ).where("user_id", "in", chunk).stream()
+            async for doc in step_events:
+                step_users.add(doc.to_dict()["user_id"])
         funnel_counts[step] = len(step_users)
-    
+
     return funnel_counts
 ```
 
-**WARNING:** Firestore `in` operator limited to 10 values. For cohorts >10 users, batch queries in chunks of 10.
-
-### Average Time Between Events
+### DAU/WAU Calculation
 
 ```python
-async def get_avg_time_to_event(
-    from_event: str,
-    to_event: str,
-    max_hours: int = 24
-) -> float:
-    """Calculate average time from event A to event B."""
+async def get_dau(target_date: date | None = None) -> int:
+    """Count unique users who fired any event on target_date."""
+    d = target_date or datetime.now(tz=timezone.utc).date()
     db = get_firestore_client()
-    
-    # Get all users who completed both events
-    from_events = db.collection(EVENTS_COLLECTION).where(
-        "event_name", "==", from_event
-    ).stream()
-    
-    time_deltas = []
-    
-    async for from_event_doc in from_events:
-        from_data = from_event_doc.to_dict()
-        user_id = from_data["user_id"]
-        from_timestamp = from_data["timestamp"]
-        
-        # Find FIRST occurrence of to_event AFTER from_event
-        to_event_doc = db.collection(EVENTS_COLLECTION).where(
-            "user_id", "==", user_id
-        ).where(
-            "event_name", "==", to_event
-        ).where(
-            "timestamp", ">", from_timestamp
-        ).where(
-            "timestamp", "<", from_timestamp + timedelta(hours=max_hours)
-        ).order_by("timestamp").limit(1).get()
-        
-        if to_event_doc:
-            to_timestamp = to_event_doc[0].to_dict()["timestamp"]
-            delta_seconds = (to_timestamp - from_timestamp).total_seconds()
-            time_deltas.append(delta_seconds)
-    
-    return sum(time_deltas) / len(time_deltas) if time_deltas else 0
+
+    start = datetime.combine(d, datetime.min.time()).replace(tzinfo=timezone.utc)
+    end = start + timedelta(days=1)
+
+    events = db.collection(EVENTS_COLLECTION).where(
+        "timestamp", ">=", start
+    ).where("timestamp", "<", end).stream()
+
+    unique_users: set[str] = set()
+    async for doc in events:
+        unique_users.add(doc.to_dict()["user_id"])
+    return len(unique_users)
+```
+
+**WARNING:** Firestore has no `COUNT(DISTINCT)`. Must fetch all events and deduplicate in memory. For >10k events/day, export to BigQuery instead.
+
+See the **firestore** skill for Firestore client patterns and batch operation limits.

@@ -11,26 +11,28 @@
 
 ## Usage Stats Display
 
-Table Rock Tools currently shows **static usage counts** (hardcoded to 0) on Dashboard tool cards. Integrate real job history from Firestore.
+Dashboard tool cards already show **dynamic usage counts** — fetched from `/api/history/jobs?limit=50` and aggregated per-tool on the frontend (`Dashboard.tsx:104-123`). The `toolCounts` state holds counts keyed by tool name, displayed as `{toolCounts[tool.tool] || 0}` on each card.
 
-### Current Static Pattern (Needs Fix)
+### Current Pattern (Already Working)
 
 ```tsx
-// toolbox/frontend/src/pages/Dashboard.tsx:11-44
-const tools = [
-  {
-    name: 'Extract',
-    description: 'Extract party and stakeholder data from OCC Exhibit A PDFs',
-    icon: FileSearch,
-    path: '/extract',
-    color: 'bg-blue-500',
-    usageCount: 0, // HARDCODED
-  },
-  // ... other tools
-]
+// frontend/src/pages/Dashboard.tsx:104-123 — already implemented
+useEffect(() => {
+  const fetchJobs = async () => {
+    const response = await fetch(`${API_BASE}/history/jobs?limit=50`)
+    const data = await response.json()
+    const jobs: RecentJob[] = data.jobs || []
+    const counts: Record<string, number> = {}
+    for (const job of jobs) {
+      counts[job.tool] = (counts[job.tool] || 0) + 1
+    }
+    setToolCounts(counts)
+  }
+  fetchJobs()
+}, [])
 ```
 
-### GOOD - Dynamic Usage Counts from Firestore
+### Enhancement - Separate Personal vs Team Stats
 
 ```tsx
 // Fetch tool usage stats on mount

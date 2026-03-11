@@ -20,47 +20,46 @@ The `StorageService` has built-in local fallback. Mock by disabling GCS via envi
 import pytest
 
 @pytest.fixture
-def mock_storage(monkeypatch, tmp_path):
+def mock_storage(monkeypatch):
     """Mock StorageService to use local filesystem only."""
     monkeypatch.setenv("GCS_BUCKET_NAME", "")  # Disables GCS
-    monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    
+
     from app.services.storage_service import StorageService
     service = StorageService()
-    assert not service.use_gcs  # Verify GCS is disabled
+    assert not service.is_gcs_enabled  # Verify GCS is disabled
     return service
 ```
 
 ### Testing File Upload/Download
 
 ```python
-@pytest.mark.asyncio
-async def test_storage_upload_download(mock_storage, tmp_path):
-    """Test file upload and download with mocked storage."""
+def test_storage_upload_download(mock_storage):
+    """Test file upload and download with mocked storage.
+
+    StorageService.upload_file is sync — no await needed.
+    Signature: upload_file(content: bytes|BinaryIO, path: str, content_type: str)
+    """
     file_content = b"test pdf content"
     file_path = "uploads/test.pdf"
-    
-    # Upload
-    result_url = await mock_storage.upload_file(file_path, file_content)
-    assert result_url.startswith("file://")
-    assert (tmp_path / file_path).exists()
-    
+
+    # Upload — sync call, content is first arg
+    result_path = mock_storage.upload_file(file_content, file_path)
+    assert result_path == file_path
+
     # Download
-    downloaded = await mock_storage.download_file(file_path)
+    downloaded = mock_storage.download_file(file_path)
     assert downloaded == file_content
 ```
 
 ### Mocking Signed URLs
 
 ```python
-@pytest.mark.asyncio
-async def test_get_signed_url_local_fallback(mock_storage):
-    """Test get_signed_url returns local URL when GCS disabled."""
-    file_path = "test.pdf"
-    await mock_storage.upload_file(file_path, b"data")
-    
-    url = mock_storage.get_signed_url(file_path)
-    # GCS disabled, returns None (caller provides local fallback)
+def test_get_signed_url_local_fallback(mock_storage):
+    """Test get_signed_url returns None when GCS disabled."""
+    mock_storage.upload_file(b"data", "test.pdf")
+
+    url = mock_storage.get_signed_url("test.pdf")
+    # GCS disabled → returns None; callers must provide local fallback URL
     assert url is None
 ```
 
@@ -100,8 +99,8 @@ def mock_firestore(monkeypatch):
     }
     mock_collection.document.return_value.get = AsyncMock(return_value=mock_doc)
     
-    # Patch firestore client initialization
-    monkeypatch.setattr("app.services.firestore_service._get_client", lambda: mock_client)
+    # Patch firestore client initialization — function is get_firestore_client()
+    monkeypatch.setattr("app.services.firestore_service.get_firestore_client", lambda: mock_client)
     return mock_client
 ```
 
@@ -115,8 +114,8 @@ def mock_firestore_batch(monkeypatch):
     mock_batch = MagicMock()
     mock_client.batch.return_value = mock_batch
     mock_batch.commit = AsyncMock()
-    
-    monkeypatch.setattr("app.services.firestore_service._get_client", lambda: mock_client)
+
+    monkeypatch.setattr("app.services.firestore_service.get_firestore_client", lambda: mock_client)
     return mock_batch
 
 @pytest.mark.asyncio
@@ -142,27 +141,29 @@ Mock token verification to bypass authentication in tests.
 
 ### Auth Mock Fixture
 
+The auth system uses `get_current_user` as a FastAPI dependency — there's no standalone `verify_token` function to patch. Mock via `app.dependency_overrides`.
+
 ```python
 # conftest.py
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from app.main import app
+from app.core.auth import get_current_user
 
 @pytest.fixture
-def mock_firebase_auth(monkeypatch):
-    """Mock Firebase Auth token verification."""
-    mock_decoded_token = {
+def mock_auth_user():
+    """Override get_current_user dependency with a test user."""
+    test_user = {
         "uid": "test-user-uid",
         "email": "test@tablerocktx.com",
         "email_verified": True
     }
-    
-    mock_verify = AsyncMock(return_value=mock_decoded_token)
-    monkeypatch.setattr("app.core.auth.verify_token", mock_verify)
-    
-    # Mock allowlist check
-    monkeypatch.setattr("app.core.auth.is_user_allowed", lambda email: True)
-    
-    return mock_decoded_token
+
+    async def override_get_current_user():
+        return test_user
+
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    yield test_user
+    app.dependency_overrides.clear()
 ```
 
 ### Testing Protected Endpoints
@@ -170,22 +171,19 @@ def mock_firebase_auth(monkeypatch):
 ```python
 @pytest.mark.asyncio
 async def test_protected_endpoint_requires_auth():
-    """Test protected endpoint rejects requests without auth header."""
+    """Test protected endpoint rejects requests without credentials."""
+    # No dependency override — get_current_user returns None → require_auth raises 401
     async with AsyncClient(app=app, base_url="http://test") as client:
         response = await client.get("/api/admin/users")
-    
+
     assert response.status_code == 401
-    assert "Authorization" in response.json()["detail"]
 
 @pytest.mark.asyncio
-async def test_protected_endpoint_with_valid_token(mock_firebase_auth):
-    """Test protected endpoint allows valid Firebase token."""
+async def test_protected_endpoint_with_mock_auth(mock_auth_user):
+    """Test protected endpoint allows access with mocked user."""
     async with AsyncClient(app=app, base_url="http://test") as client:
-        response = await client.get(
-            "/api/admin/users",
-            headers={"Authorization": "Bearer valid-token"}
-        )
-    
+        response = await client.get("/api/admin/users")
+
     assert response.status_code == 200
 ```
 
@@ -252,14 +250,13 @@ def partial_mock_storage(monkeypatch):
 **The Fix:**
 
 ```python
-# GOOD - Mock entire service or use local fallback
+# GOOD - Mock entire service via env var — all methods use local fallback
 @pytest.fixture
-def mock_storage(monkeypatch, tmp_path):
+def mock_storage(monkeypatch):
     """Disable GCS entirely for consistent local-only behavior."""
     monkeypatch.setenv("GCS_BUCKET_NAME", "")
-    monkeypatch.setenv("DATA_DIR", str(tmp_path))
     from app.services.storage_service import StorageService
-    return StorageService()  # All methods use local fallback
+    return StorageService()  # is_gcs_enabled returns False, all ops are local
 ```
 
 **When You Might Be Tempted:**

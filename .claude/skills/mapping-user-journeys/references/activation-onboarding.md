@@ -1,301 +1,188 @@
 # Activation & Onboarding Reference
 
 ## Contents
-- Initial Landing Experience
-- Tool Discovery Flow
+- Auth Gate → Dashboard Transition
+- Tool Discovery on Dashboard
 - First Upload Guidance
 - Empty State Patterns
-- Common Friction Points
+- Critical Friction Points
 
 ---
 
-## Initial Landing Experience
+## Auth Gate → Dashboard Transition
 
-### Auth Gate → Dashboard Transition
-
-The first impression starts at login and continues through the Dashboard. This transition must be seamless.
-
-**Current Flow:**
-1. User visits root `/` → redirects to `/login` (see `frontend/src/App.tsx`)
-2. Firebase auth completes → `AuthContext` updates state
-3. `ProtectedRoute` wrapper allows access to `/dashboard`
-4. Dashboard renders tool cards with usage stats
-
-**GOOD - Clear post-auth redirect:**
+**Route definition** (`frontend/src/App.tsx`):
 ```typescript
-// frontend/src/contexts/AuthContext.tsx
-useEffect(() => {
-  const unsubscribe = onAuthStateChanged(auth, (user) => {
-    setUser(user);
-    setLoading(false);
-    if (user && window.location.pathname === '/login') {
-      navigate('/dashboard'); // Explicit redirect after auth
-    }
-  });
-  return unsubscribe;
-}, [navigate]);
+// Public: /login
+// Protected: everything under "/" wrapped in ProtectedRoute
+<Route path="/login" element={<Login />} />
+<Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
+  <Route index element={<Dashboard />} />
+  ...
+</Route>
 ```
 
-**BAD - User stuck on login screen after auth:**
+`ProtectedRoute` checks `useAuth()` for `user` + `isAuthorized`. New users who sign in but aren't on the allowlist (`data/allowed_users.json`) hit `isAuthorized = false` → redirected back to `/login` with no explanation.
+
+**GOOD - Show "access pending" instead of silent redirect:**
 ```typescript
-// Missing redirect logic - user must manually navigate
-setUser(user);
-setLoading(false);
-// No navigation happens here
+// frontend/src/App.tsx — ProtectedRoute
+if (!user) return <Navigate to="/login" replace />;
+if (!isAuthorized) return <UnauthorizedScreen email={user.email} />;
 ```
 
-**Why This Breaks:** Users see the login screen briefly flash to "authenticated" state but don't know where to go next. Creates confusion about whether login succeeded.
+**BAD - Current behavior silently redirects:**
+```typescript
+if (!user || !isAuthorized) return <Navigate to="/login" replace />;
+// User sees login form again with no indication why
+```
+
+**Why this breaks:** Authorized users who get provisioned mid-session never know their request was received. Support burden increases.
 
 ---
 
-## Tool Discovery Flow
+## Tool Discovery on Dashboard
 
-### Dashboard as Navigation Hub
+Dashboard (`frontend/src/pages/Dashboard.tsx`) renders 5 tool cards with usage counts pulled from `/api/history/jobs`. This is the **primary navigation surface** — every session starts here.
 
-Dashboard must clearly communicate what each tool does and when to use it.
+**Current state:** Tool cards show description + "times used" count. No indication of which tool to start with or what prerequisites exist.
 
-**Current Implementation:**
-- `frontend/src/pages/Dashboard.tsx` renders 4 tool cards
-- Each card has icon, title, description, and "Open Tool" button
-- No usage stats or "suggested next tool" guidance
-
-**GOOD - Add first-time user hints:**
+**GOOD - Add workflow ordering hint:**
 ```typescript
-// Dashboard.tsx - Add helpful context for new users
-const tools = [
+// Dashboard.tsx — toolConfigs
+const toolConfigs = [
   {
     name: 'Extract',
     description: 'Extract party names from OCC Exhibit A PDFs',
-    hint: 'Start here if you have Oklahoma Corporation Commission documents',
-    route: '/extract',
+    workflowHint: 'Typically first step for OCC document processing',
+    ...
   },
-  // ...
-];
-
-{tool.hint && !hasUsedTool(tool.name) && (
-  <p className="text-sm text-tre-teal mt-2">💡 {tool.hint}</p>
-)}
+  {
+    name: 'Proration',
+    description: 'NRA calculations using RRC lease data',
+    workflowHint: 'Requires RRC data — download from Settings first',
+    ...
+  },
+]
 ```
 
-**BAD - Generic descriptions with no context:**
+**BAD - Generic descriptions that don't guide task selection:**
 ```typescript
-description: 'Process documents' // Too vague
+description: 'Process documents'  // No context about when to use this tool
 ```
-
-**Why This Breaks:** New users don't know which tool matches their task. They either guess wrong (frustration) or ask for help (support burden).
-
-**WARNING: Missing Onboarding Checklist**
-
-The current app has NO first-run checklist or progressive disclosure. Consider adding:
-- "Complete your first extraction" badge
-- "Download RRC data" setup step for Proration users
-- In-app tooltip system (e.g., `react-joyride`) for guided tours
 
 ---
 
 ## First Upload Guidance
 
-### File Upload Validation Feedback
+Every tool page uses `FileUpload` component. The accepted file types differ per tool:
+- Extract: `.pdf`
+- Title: `.xlsx`, `.csv`
+- Proration: `.csv`
+- Revenue: `.pdf` (multiple)
+- GHL Prep: `.csv`
 
-Users need immediate, actionable feedback when uploads fail validation.
+**WARNING: Missing Validation Feedback**
 
-**Current Pattern (FileUpload.tsx):**
+The `FileUpload` component silently drops invalid files with no user-visible error. Users drag wrong file types and see no response.
+
+**GOOD - Show validation error inline:**
 ```typescript
 // frontend/src/components/FileUpload.tsx
-const handleDrop = (e: React.DragEvent) => {
-  const files = Array.from(e.dataTransfer.files);
-  const validFiles = files.filter(f => 
-    accept.split(',').some(type => f.name.endsWith(type.trim()))
-  );
-  
-  if (validFiles.length === 0) {
-    // ERROR: No user-visible feedback here
-    return;
-  }
-  onFileSelect(validFiles);
-};
-```
-
-**GOOD - Show specific validation errors:**
-```typescript
-const [validationError, setValidationError] = useState<string | null>(null);
+const [dropError, setDropError] = useState<string | null>(null);
 
 const handleDrop = (e: React.DragEvent) => {
-  setValidationError(null);
+  setDropError(null);
   const files = Array.from(e.dataTransfer.files);
-  const invalidFiles = files.filter(f => 
-    !accept.split(',').some(type => f.name.endsWith(type.trim()))
+  const valid = files.filter(f =>
+    accept.split(',').some(ext => f.name.toLowerCase().endsWith(ext.trim()))
   );
-  
-  if (invalidFiles.length > 0) {
-    setValidationError(
-      `Invalid file type: ${invalidFiles[0].name}. Expected: ${accept}`
-    );
+  if (valid.length === 0) {
+    setDropError(`Expected ${accept} — got ${files[0]?.name}`);
     return;
   }
-  onFileSelect(files);
+  onFileSelect(valid);
 };
 
-// Render error below upload area
-{validationError && (
-  <p className="text-red-500 text-sm mt-2">{validationError}</p>
-)}
+// Render below upload zone
+{dropError && <p className="text-red-500 text-sm mt-2">{dropError}</p>}
 ```
-
-**Why This Breaks:** Silent validation failures leave users wondering if their drag-and-drop worked. They retry multiple times before giving up.
 
 ---
 
 ## Empty State Patterns
 
-### Zero-Data Screens
+Each tool page has two empty states: before first upload (onboarding) and after processing with zero results (data quality issue). Both need distinct messaging.
 
-Every tool should have a helpful empty state before first use.
-
-**GOOD - Extract page empty state:**
+**GOOD - Differentiate pre-upload vs zero-results:**
 ```typescript
 // pages/Extract.tsx
-{!results || results.length === 0 ? (
-  <div className="text-center py-12">
-    <FileText className="w-16 h-16 mx-auto text-tre-teal mb-4" />
-    <h3 className="text-xl mb-2">No parties extracted yet</h3>
-    <p className="text-gray-600 mb-4">
-      Upload an OCC Exhibit A PDF to get started
-    </p>
-    <FileUpload 
-      accept=".pdf"
-      onFileSelect={handleUpload}
-      label="Drop your PDF here or click to browse"
-    />
-  </div>
-) : (
-  <DataTable data={results} columns={columns} />
-)}
-```
-
-**BAD - Blank screen or generic "No data":**
-```typescript
-{results.length === 0 && <p>No results</p>}
-```
-
-**Why This Breaks:** New users see an empty table and don't know what to do next. No call-to-action or guidance.
-
----
-
-## Common Friction Points
-
-### 1. RRC Data Prerequisite for Proration
-
-**The Problem:** Users upload mineral holders CSV to Proration tool, but RRC data hasn't been downloaded yet. Backend returns cryptic error.
-
-**Current Error Response:**
-```python
-# backend/app/api/proration.py
-if not rrc_service.has_data():
-    raise HTTPException(status_code=400, detail="RRC data not available")
-```
-
-**GOOD - Proactive empty state check:**
-```typescript
-// pages/Proration.tsx
-const [rrcStatus, setRrcStatus] = useState<{oil: number, gas: number} | null>(null);
-
-useEffect(() => {
-  fetch('/api/proration/rrc/status')
-    .then(r => r.json())
-    .then(setRrcStatus);
-}, []);
-
-if (rrcStatus && rrcStatus.oil === 0 && rrcStatus.gas === 0) {
+if (!hasEverUploaded) {
   return (
-    <div className="bg-yellow-50 border border-yellow-200 p-4 rounded">
-      <h3>⚠️ RRC Data Required</h3>
-      <p>Download RRC lease data before using the Proration tool.</p>
-      <button onClick={() => navigate('/settings')}>Download Now</button>
+    <div className="text-center py-16">
+      <FileSearch className="w-16 h-16 mx-auto text-tre-teal mb-4" />
+      <h3 className="text-xl font-semibold mb-2">Upload an OCC Exhibit A PDF</h3>
+      <p className="text-gray-500 mb-6">
+        Drag a PDF here or click to browse. Supports single and multi-exhibit files.
+      </p>
+    </div>
+  );
+}
+
+if (results.length === 0) {
+  return (
+    <div className="text-center py-12 text-amber-700 bg-amber-50 rounded-xl">
+      <AlertCircle className="w-12 h-12 mx-auto mb-3" />
+      <p>No parties found. The PDF may be scanned — try a text-based PDF.</p>
     </div>
   );
 }
 ```
 
-**Why This Breaks:** Users waste time uploading CSV, processing fails, then they have to figure out what "RRC data" means and where to get it.
-
-### 2. No Progress Indicator for Long Operations
-
-**The Problem:** RRC download takes 30-60 seconds. User sees frozen UI and thinks it crashed.
-
-**Current Implementation (backend):**
-```python
-# backend/app/api/proration.py
-@router.post("/rrc/download")
-async def download_rrc_data():
-    result = await rrc_service.download_and_sync()  # Takes 30-60s
-    return result
+**BAD - Single generic empty state:**
+```typescript
+{results.length === 0 && <p className="text-gray-500">No results</p>}
 ```
 
-**GOOD - Streaming status updates or polling:**
+---
+
+## Critical Friction Points
+
+### 1. Proration Requires RRC Data — No Prereq Check
+
+Users upload a mineral holders CSV to `/proration` only to get a backend error because RRC data hasn't been downloaded.
+
+**Fix:** Check RRC status on page mount and show a blocking banner:
 ```typescript
-// Frontend polling pattern
-const [downloadStatus, setDownloadStatus] = useState<string>('idle');
+// pages/Proration.tsx
+const [rrcMissing, setRrcMissing] = useState(false);
 
-const handleDownload = async () => {
-  setDownloadStatus('downloading');
-  fetch('/api/proration/rrc/download', {method: 'POST'});
-  
-  // Poll for completion
-  const interval = setInterval(async () => {
-    const status = await fetch('/api/proration/rrc/status').then(r => r.json());
-    if (status.oil > 0 && status.gas > 0) {
-      setDownloadStatus('complete');
-      clearInterval(interval);
-    }
-  }, 2000);
-};
+useEffect(() => {
+  fetch('/api/proration/rrc/status')
+    .then(r => r.json())
+    .then(s => setRrcMissing(s.oil_count === 0 && s.gas_count === 0));
+}, []);
 
-{downloadStatus === 'downloading' && (
-  <div>
-    <LoadingSpinner />
-    <p>Downloading RRC data... This may take up to 1 minute.</p>
+{rrcMissing && (
+  <div className="bg-yellow-50 border border-yellow-300 rounded-xl p-4 mb-4">
+    <p className="font-semibold text-yellow-800">RRC Data Required</p>
+    <p className="text-sm text-yellow-700 mt-1">
+      Download RRC lease data before processing mineral holders.
+    </p>
+    <button
+      onClick={() => navigate('/settings')}
+      className="mt-3 text-sm text-yellow-800 underline"
+    >
+      Go to Settings → Download RRC Data
+    </button>
   </div>
 )}
 ```
 
-**Why This Breaks:** Users close the browser tab thinking the app froze, interrupting the download. Support requests spike.
+### 2. GHL Connection Required Before Send
 
-### 3. Missing "What Happens Next?" After Export
+The GHL send flow fails if no sub-account is connected. No pre-flight check exists.
 
-**The Problem:** User clicks "Export to CSV" → file downloads → then what? No guidance on using the exported data.
+**Fix:** Verify GHL connection state before showing the Send button in `GhlPrep.tsx`.
 
-**GOOD - Post-export guidance:**
-```typescript
-const [exportComplete, setExportComplete] = useState(false);
-
-const handleExport = async () => {
-  const blob = await fetch('/api/extract/export/csv', {
-    method: 'POST',
-    body: JSON.stringify({entries: results}),
-  }).then(r => r.blob());
-  
-  // Trigger download
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'parties.csv';
-  a.click();
-  
-  setExportComplete(true);
-};
-
-{exportComplete && (
-  <div className="bg-green-50 border border-green-200 p-4 rounded mt-4">
-    <h3>✅ Export Complete</h3>
-    <p>Your CSV has been downloaded. Next steps:</p>
-    <ul className="list-disc ml-6">
-      <li>Open in Excel or Google Sheets</li>
-      <li>Review party names for accuracy</li>
-      <li>Upload to your internal CRM</li>
-    </ul>
-  </div>
-)}
-```
-
-**Why This Breaks:** Export feels like a dead-end. Users don't know if they should stay on the page, start a new extraction, or close the browser.
+See the **designing-onboarding-paths** skill for full empty state implementation patterns.

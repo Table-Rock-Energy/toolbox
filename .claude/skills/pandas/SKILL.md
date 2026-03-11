@@ -1,159 +1,102 @@
 ---
 name: pandas
 description: |
-  Processes CSV/Excel data with in-memory caching and lookups for FastAPI backend document processing tools
-  Use when: reading/writing CSV/Excel files, transforming tabular data, caching RRC data for lookups, aggregating/filtering datasets
+  Processes CSV/Excel data with in-memory caching and lookups for FastAPI backend document processing tools.
+  Use when: reading/writing CSV/Excel files, transforming tabular data, caching RRC data for lookups, aggregating/filtering datasets, or building in-memory lookup tables from downloaded files.
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, mcp__plugin_context7_context7__resolve-library-id, mcp__plugin_context7_context7__query-docs
 ---
 
 # Pandas Skill
 
-Use pandas for all CSV/Excel processing in the FastAPI backend. The codebase caches large RRC datasets (100k+ rows) in-memory as DataFrames for fast lookups during document processing. All tabular exports (Extract, Title, Proration, Revenue tools) go through pandas for data transformation and validation.
+Pandas 2.x is used exclusively in the backend for tabular data processing. The primary use case is loading RRC proration CSVs into memory for fast lease lookups — a pattern where a large CSV is downloaded once, parsed into a DataFrame, and cached as a module-level variable for the lifetime of the process. Export operations produce `.xlsx` (via `openpyxl`) and `.csv` outputs sent to GCS or local storage.
 
 ## Quick Start
 
-### In-Memory CSV Caching (RRC Data)
+### In-memory cache pattern (RRC data)
 
 ```python
-# toolbox/backend/app/services/proration/csv_processor.py
 import pandas as pd
+from typing import Optional
 
-class CSVProcessor:
-    def __init__(self):
-        self._oil_df: pd.DataFrame | None = None
-        self._gas_df: pd.DataFrame | None = None
-    
-    def load_csv(self, file_path: str, well_type: str) -> pd.DataFrame:
-        """Load CSV into memory, cache for fast lookups"""
-        df = pd.read_csv(
-            file_path,
-            dtype=str,  # Force all columns to string to preserve leading zeros
-            na_values=[''],
-            keep_default_na=False
-        )
-        # Cache in memory
-        if well_type == "OIL":
-            self._oil_df = df
-        else:
-            self._gas_df = df
-        return df
-    
-    def query_lease(self, lease_number: str, district: str) -> pd.DataFrame:
-        """Fast in-memory lookup by lease number + district"""
-        df = self._oil_df if self._oil_df is not None else self._gas_df
-        return df[
-            (df['LEASE_NO'] == lease_number) & 
-            (df['DISTRICT'] == district)
-        ]
+_df_cache: Optional[pd.DataFrame] = None
+
+def get_dataframe() -> Optional[pd.DataFrame]:
+    return _df_cache
+
+def load_csv(path: str) -> pd.DataFrame:
+    global _df_cache
+    _df_cache = pd.read_csv(path, dtype=str, keep_default_na=False)
+    _df_cache.columns = _df_cache.columns.str.strip().str.lower()
+    return _df_cache
 ```
 
-### Excel Export with Multiple Sheets
+### Lookup by key columns
 
 ```python
-# toolbox/backend/app/services/proration/export_service.py
-import pandas as pd
-from io import BytesIO
+def lookup_lease(df: pd.DataFrame, operator: str, lease_name: str) -> list[dict]:
+    mask = (
+        df["operator_name"].str.upper() == operator.upper()
+    ) & (
+        df["lease_name"].str.upper() == lease_name.upper()
+    )
+    return df[mask].to_dict(orient="records")
+```
 
-def export_to_excel(results: list[dict]) -> BytesIO:
-    """Export to Excel with summary + detail sheets"""
-    df = pd.DataFrame(results)
-    
-    # Create summary with aggregations
-    summary = df.groupby('operator').agg({
-        'net_revenue_acres': 'sum',
-        'gross_acres': 'sum'
-    }).reset_index()
-    
-    buffer = BytesIO()
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        df.to_excel(writer, sheet_name='Detail', index=False)
-        summary.to_excel(writer, sheet_name='Summary', index=False)
-    
-    buffer.seek(0)
-    return buffer
+### Export to Excel with openpyxl
+
+```python
+import io
+import pandas as pd
+
+def to_excel_bytes(records: list[dict]) -> bytes:
+    df = pd.DataFrame(records)
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Results")
+    buf.seek(0)
+    return buf.read()
 ```
 
 ## Key Concepts
 
 | Concept | Usage | Example |
 |---------|-------|---------|
-| `dtype=str` | Preserve leading zeros in lease numbers | `pd.read_csv(path, dtype=str)` |
-| `keep_default_na=False` | Treat empty strings as empty, not NaN | `pd.read_csv(path, keep_default_na=False)` |
-| In-memory cache | Store DataFrame in class attribute for fast queries | `self._df = pd.read_csv(path)` |
-| `ExcelWriter` | Multi-sheet Excel exports | `with pd.ExcelWriter(buffer) as writer:` |
-| `groupby().agg()` | Aggregations for summary sheets | `df.groupby('col').agg({'val': 'sum'})` |
+| `dtype=str` on read | Prevents unwanted type coercion (lease numbers becoming floats) | `pd.read_csv(f, dtype=str)` |
+| `keep_default_na=False` | Prevents empty strings → NaN, which breaks string comparisons | `pd.read_csv(f, keep_default_na=False)` |
+| `str.strip()` on columns | RRC CSVs have trailing whitespace in headers | `df.columns.str.strip()` |
+| `orient="records"` | Convert rows to list of dicts for JSON serialization | `df.to_dict(orient="records")` |
+| `io.BytesIO` | Export to bytes for GCS upload or HTTP response | `buf = io.BytesIO()` |
 
 ## Common Patterns
 
-### CSV Upload Processing
-
-**When:** User uploads CSV via FastAPI endpoint
+### Normalize text before comparison
 
 ```python
-# toolbox/backend/app/api/proration.py
-from fastapi import UploadFile
-import pandas as pd
+def normalize(val: str) -> str:
+    return val.strip().upper()
 
-async def process_upload(file: UploadFile):
-    """Read uploaded CSV into DataFrame"""
-    contents = await file.read()
-    df = pd.read_csv(
-        BytesIO(contents),
-        dtype=str,
-        encoding='utf-8-sig'  # Handle Excel BOM
-    )
-    
-    # Validate required columns
-    required = ['Mineral Holder', 'NRI', 'Gross Acres']
-    missing = [col for col in required if col not in df.columns]
-    if missing:
-        raise HTTPException(400, f"Missing columns: {missing}")
-    
-    return df.to_dict('records')
+matches = df[df["lease_name"].apply(normalize) == normalize(query)]
 ```
 
-### Boolean Masking for Filtering
-
-**When:** Filter DataFrame by multiple conditions (RRC lease lookups)
+### Read uploaded file from bytes
 
 ```python
-# GOOD - Use boolean masks for readable multi-condition filters
-mask = (
-    (df['LEASE_NO'] == lease_number) &
-    (df['DISTRICT'] == district) &
-    (df['WELL_TYPE'] == 'OIL')
-)
-filtered = df[mask]
-
-# BAD - Chaining .loc[] calls is slower and harder to read
-filtered = df.loc[df['LEASE_NO'] == lease_number]
-filtered = filtered.loc[filtered['DISTRICT'] == district]
+async def process_upload(file: UploadFile) -> pd.DataFrame:
+    contents = await file.read()
+    buf = io.BytesIO(contents)
+    if file.filename.endswith(".xlsx"):
+        return pd.read_excel(buf, dtype=str)
+    return pd.read_csv(buf, dtype=str, keep_default_na=False)
 ```
 
 ## See Also
 
-- [patterns](references/patterns.md) - CSV/Excel processing patterns, dtype handling, export formatting
-- [workflows](references/workflows.md) - End-to-end document processing flows, RRC data sync workflow
+- [patterns](references/patterns.md)
+- [workflows](references/workflows.md)
 
 ## Related Skills
 
-- **python** - Base language patterns, snake_case naming, type hints
-- **pydantic** - Validate DataFrames before converting to Pydantic models
-- **fastapi** - Process uploaded CSV/Excel files in route handlers
-
-## Documentation Resources
-
-> Fetch latest pandas documentation with Context7.
-
-**How to use Context7:**
-1. Use `mcp__plugin_context7_context7__resolve-library-id` to search for "pandas"
-2. **Prefer website documentation** (IDs starting with `/websites/`) over source code repositories when available
-3. Query with `mcp__plugin_context7_context7__query-docs` using the resolved library ID
-
-**Library ID:** Resolve using `mcp__plugin_context7_context7__resolve-library-id`, prefer `/websites/` when available
-
-**Recommended Queries:**
-- "pandas read_csv dtype parameter"
-- "pandas ExcelWriter multiple sheets"
-- "pandas groupby aggregation"
-- "pandas boolean masking multiple conditions"
+- See the **python** skill for async patterns and FastAPI integration
+- See the **fastapi** skill for upload endpoint patterns
+- See the **google-cloud-storage** skill for saving export bytes to GCS
+- See the **reportlab** skill for PDF exports (complement to Excel exports)

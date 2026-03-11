@@ -7,10 +7,10 @@
       "proration",
       "revenue"
     ],
-    "last_name": "Bullis",
     "email": "james@tablerocktx.com",
-    "scope": "all",
+    "last_name": "Bullis",
     "role": "admin",
+    "scope": "all",
     "first_name": "James"
   },
   {
@@ -21,10 +21,10 @@
       "proration",
       "revenue"
     ],
-    "last_name": "Bowles",
     "email": "travis@tablerocktx.com",
-    "scope": "all",
+    "last_name": "Bowles",
     "role": "admin",
+    "scope": "all",
     "first_name": "Travis"
   },
   {
@@ -35,10 +35,10 @@
       "proration",
       "revenue"
     ],
-    "last_name": "Wilson",
     "email": "cory@tablerocktx.com",
-    "scope": "all",
+    "last_name": "Wilson",
     "role": "admin",
+    "scope": "all",
     "first_name": "Cory"
   },
   {
@@ -49,10 +49,10 @@
       "proration",
       "revenue"
     ],
-    "last_name": "Oliver",
     "email": "jack@tablerocktx.com",
-    "scope": "all",
+    "last_name": "Oliver",
     "role": "user",
+    "scope": "all",
     "first_name": "Jack"
   }
 ]

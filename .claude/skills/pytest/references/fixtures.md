@@ -47,15 +47,18 @@ def mock_env_development(monkeypatch):
 
 ```python
 @pytest.fixture
-def mock_storage(monkeypatch, tmp_path):
-    """Mock StorageService to use local filesystem only."""
+def mock_storage(monkeypatch):
+    """Mock StorageService to use local filesystem only.
+
+    StorageService checks settings.use_gcs at init time.
+    Setting GCS_BUCKET_NAME="" disables it; is_gcs_enabled returns False.
+    """
     monkeypatch.setenv("GCS_BUCKET_NAME", "")
     monkeypatch.setenv("GCS_PROJECT_ID", "")
-    monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    
+
     from app.services.storage_service import StorageService
     service = StorageService()
-    assert not service.use_gcs
+    assert not service.is_gcs_enabled
     return service
 ```
 
@@ -64,30 +67,33 @@ def mock_storage(monkeypatch, tmp_path):
 ```python
 @pytest.fixture
 def mock_firestore(monkeypatch):
-    """Mock Firestore client to prevent real database writes."""
+    """Mock Firestore client to prevent real database writes.
+
+    firestore_service uses get_firestore_client() — patch that function.
+    """
     from unittest.mock import MagicMock, AsyncMock
-    
+
     mock_client = MagicMock()
     mock_collection = MagicMock()
     mock_client.collection.return_value = mock_collection
-    
+
     # Mock document add
     mock_doc_ref = MagicMock()
     mock_doc_ref.id = "test-job-12345"
     mock_collection.add = AsyncMock(return_value=(None, mock_doc_ref))
-    
+
     # Mock document get
     mock_doc = MagicMock()
     mock_doc.exists = True
     mock_doc.to_dict.return_value = {"job_id": "test-job-12345", "status": "completed"}
     mock_collection.document.return_value.get = AsyncMock(return_value=mock_doc)
-    
+
     # Mock batch operations
     mock_batch = MagicMock()
     mock_batch.commit = AsyncMock()
     mock_client.batch.return_value = mock_batch
-    
-    monkeypatch.setattr("app.services.firestore_service._get_client", lambda: mock_client)
+
+    monkeypatch.setattr("app.services.firestore_service.get_firestore_client", lambda: mock_client)
     return mock_client
 ```
 

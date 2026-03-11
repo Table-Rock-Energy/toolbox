@@ -100,73 +100,57 @@ export async function trackEvent(
 
 ## Tool Usage Stats
 
-**Pattern: Populate real usage counts on Dashboard**
-
-Currently hardcoded:
-```tsx
-// Dashboard.tsx - BAD: Static counts
-const tools = [
-  {
-    name: 'Extract',
-    // ...
-    usageCount: 0, // ❌ Hardcoded
-  },
-  // ...
-];
-```
-
-**The Fix:**
+**Dashboard.tsx already fetches real usage counts** from `/api/history/jobs` and aggregates by tool:
 
 ```tsx
-// Dashboard.tsx - GOOD: Fetch real usage from backend
-const [tools, setTools] = useState([
-  { name: 'Extract', path: '/extract', icon: FileSearch, color: 'bg-blue-500', usageCount: 0 },
-  { name: 'Title', path: '/title', icon: FileText, color: 'bg-green-500', usageCount: 0 },
-  { name: 'Proration', path: '/proration', icon: Calculator, color: 'bg-purple-500', usageCount: 0 },
-  { name: 'Revenue', path: '/revenue', icon: DollarSign, color: 'bg-amber-500', usageCount: 0 },
-]);
-
+// Dashboard.tsx - How toolCounts is computed today
 useEffect(() => {
-  const fetchUsageStats = async () => {
-    const response = await fetch('/api/analytics/tool-usage?days=30');
+  const fetchJobs = async () => {
+    const response = await fetch(`${API_BASE}/history/jobs?limit=50`);
+    if (!response.ok) return;
     const data = await response.json();
-    
-    // Map counts to tools
-    setTools(prev => prev.map(tool => ({
-      ...tool,
-      usageCount: data.by_tool[tool.name.toLowerCase()] || 0,
-    })));
+    const jobs: RecentJob[] = data.jobs || [];
+
+    // Count jobs per tool
+    const counts: Record<string, number> = {};
+    for (const job of jobs) {
+      counts[job.tool] = (counts[job.tool] || 0) + 1;
+    }
+    setToolCounts(counts);
   };
-  
-  fetchUsageStats();
+  fetchJobs();
 }, []);
+
+// Displayed on each tool card:
+<p className="text-2xl font-oswald font-semibold text-tre-navy">
+  {toolCounts[tool.tool] || 0}
+</p>
+<p className="text-xs text-gray-400">times used</p>
 ```
 
-**Backend endpoint:**
+**Limitation:** This only counts the last 50 jobs and includes all time, not a rolling window. If you need per-period or per-user breakdowns, add a dedicated analytics endpoint:
 
 ```python
-# api/analytics.py - New file
-from fastapi import APIRouter, Query
-from datetime import datetime, timedelta
-from app.services import firestore_service as db
+# api/admin.py - Add analytics endpoint alongside existing admin routes
+@router.get("/analytics/tool-usage")
+async def get_tool_usage_stats(days: int = Query(30, ge=1, le=90)):
+    """Get tool usage breakdown for the last N days."""
+    from datetime import datetime, timedelta
+    from app.services import firestore_service as db
 
-router = APIRouter()
-
-@router.get("/tool-usage")
-async def get_tool_usage(days: int = Query(30, ge=1, le=90)):
-    """Get usage counts by tool for dashboard."""
     cutoff = datetime.utcnow() - timedelta(days=days)
     events = await db.get_usage_events_since(cutoff)
-    
-    counts = {}
+
+    counts: dict[str, int] = {}
     for event in events:
         tool = event["tool"]
         counts[tool] = counts.get(tool, 0) + 1
-    
+
     return {
-        "by_tool": counts,
         "period_days": days,
-        "total": sum(counts.values()),
+        "total_events": len(events),
+        "by_tool": counts,
+        "unique_users": len({e["user_email"] for e in events}),
     }
 ```
 
@@ -320,6 +304,6 @@ async def get_retention_stats():
         "dau": dau,
         "mau": mau,
         "dau_mau_ratio": round(dau / mau, 2) if mau > 0 else 0,
-        "users_using_all_tools": sum(1 for tools in user_tools.values() if len(tools) == 4),
+        "users_using_all_tools": sum(1 for tools in user_tools.values() if len(tools) == 5),
         "total_users": mau,
     }

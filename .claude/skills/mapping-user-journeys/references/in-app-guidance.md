@@ -1,328 +1,192 @@
 # In-App Guidance Reference
 
 ## Contents
-- Contextual Help Text
 - Error Message Clarity
-- Tooltip Patterns
-- Field Validation Feedback
-- Help Page Discoverability
-
----
-
-## Contextual Help Text
-
-### Inline Guidance Without Clutter
-
-Help text should be visible when needed, invisible when not.
-
-**GOOD - Expandable help sections:**
-```typescript
-// pages/Proration.tsx
-const [showHelp, setShowHelp] = useState(false);
-
-<div className="bg-gray-50 border border-gray-200 p-4 rounded mb-4">
-  <button 
-    onClick={() => setShowHelp(!showHelp)}
-    className="flex items-center gap-2 text-tre-teal hover:underline"
-  >
-    <HelpCircle className="w-4 h-4" />
-    <span>What is Net Revenue Acreage (NRA)?</span>
-    {showHelp ? <ChevronUp /> : <ChevronDown />}
-  </button>
-  
-  {showHelp && (
-    <div className="mt-3 text-sm text-gray-700">
-      <p>NRA = Gross Acres × Royalty Interest × Ownership %</p>
-      <p className="mt-2">
-        This calculation determines your proportional share of revenue 
-        from oil and gas production based on RRC proration data.
-      </p>
-    </div>
-  )}
-</div>
-```
-
-**BAD - Always-visible walls of text:**
-```typescript
-<div className="mb-4">
-  <p>Net Revenue Acreage (NRA) is calculated by multiplying gross acres...</p>
-  <p>This is important because...</p>
-  <p>You should use this when...</p>
-  {/* 200 more lines of explanation */}
-</div>
-```
-
-**Why This Breaks:** Expert users who run calculations daily must scroll past help text every time. They disable guides or work around them.
+- Prerequisite Banners
+- Long-Operation Feedback
+- Contextual Help Text
+- Post-Action Guidance
 
 ---
 
 ## Error Message Clarity
 
-### Backend Validation Errors
+Backend `HTTPException` detail strings are the primary error surface. Vague details become unusable UI copy.
 
-FastAPI returns detailed validation errors, but they're often too technical for end users.
-
-**Current Pattern:**
+**GOOD - Actionable error with recovery path:**
 ```python
 # backend/app/api/proration.py
-if not csv_file.filename.endswith('.csv'):
-    raise HTTPException(
-        status_code=400,
-        detail="Invalid file type: application/octet-stream. Expected text/csv"
-    )
+raise HTTPException(
+    status_code=400,
+    detail="RRC data not downloaded. Go to Settings → RRC Data to download it first."
+)
 ```
 
-**GOOD - User-friendly error mapping:**
+**BAD - Opaque error that dead-ends the user:**
 ```python
-# backend/app/api/proration.py
-if not csv_file.filename.endswith('.csv'):
-    raise HTTPException(
-        status_code=400,
-        detail={
-            "message": "Wrong file type",
-            "explanation": "Please upload a CSV file. Excel files (.xlsx) are not supported for this tool.",
-            "action": "Convert your Excel file to CSV and try again.",
-        }
-    )
+raise HTTPException(status_code=400, detail="RRC data not available")
 ```
 
-**Frontend display:**
+**Why this breaks:** "Not available" gives no action. Users file support tickets or abandon the tool. Every error detail should answer: *what happened and where do I go to fix it?*
+
+Frontend pattern for surfacing errors with a recovery button:
 ```typescript
-// pages/Proration.tsx
-if (error) {
-  const errorData = typeof error === 'string' ? {message: error} : error;
-  
-  return (
-    <div className="bg-red-50 border border-red-200 p-4 rounded">
-      <h4 className="font-bold text-red-800">{errorData.message}</h4>
-      {errorData.explanation && <p className="mt-2">{errorData.explanation}</p>}
-      {errorData.action && (
-        <p className="mt-2 font-semibold text-red-800">→ {errorData.action}</p>
+// Any tool page — error banner with optional action
+{error && (
+  <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+    <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
+    <div>
+      <p className="text-sm text-red-700">{error}</p>
+      {errorAction && (
+        <button
+          onClick={errorAction.handler}
+          className="mt-2 text-sm text-red-600 underline"
+        >
+          {errorAction.label}
+        </button>
       )}
     </div>
-  );
-}
+  </div>
+)}
 ```
-
-**Why This Breaks:** Technical errors like "422 Unprocessable Entity: field required" confuse non-technical users. They screenshot and email support instead of self-correcting.
 
 ---
 
-## Tooltip Patterns
+## Prerequisite Banners
 
-### Field-Level Tooltips
+Two tools require setup before first use:
 
-Complex fields (especially in Title and Proration tools) need inline definitions.
+**Proration** — requires RRC data (`/api/proration/rrc/status`)
+**GHL Prep → Send** — requires GHL sub-account connection
 
-**WARNING: No Tooltip Library Installed**
-
-The project currently has no tooltip component. Consider adding `@radix-ui/react-tooltip` or building a simple custom tooltip:
+Both should show a blocking banner at page top, not a post-upload error.
 
 ```typescript
-// components/Tooltip.tsx
-import { useState } from 'react';
+// pages/Proration.tsx — check prereq on mount
+const [prereqStatus, setPrereqStatus] = useState<'checking' | 'ok' | 'missing'>('checking');
 
-interface TooltipProps {
-  content: string;
-  children: React.ReactNode;
-}
+useEffect(() => {
+  fetch('/api/proration/rrc/status')
+    .then(r => r.json())
+    .then(s => setPrereqStatus(
+      s.oil_count > 0 || s.gas_count > 0 ? 'ok' : 'missing'
+    ))
+    .catch(() => setPrereqStatus('ok'));  // Don't block on check failure
+}, []);
 
-export function Tooltip({ content, children }: TooltipProps) {
-  const [visible, setVisible] = useState(false);
-  
-  return (
-    <div 
-      className="relative inline-block"
-      onMouseEnter={() => setVisible(true)}
-      onMouseLeave={() => setVisible(false)}
+{prereqStatus === 'missing' && (
+  <div className="mb-4 p-4 bg-amber-50 border border-amber-300 rounded-xl">
+    <p className="font-semibold text-amber-800">Setup Required</p>
+    <p className="text-sm text-amber-700 mt-1">
+      RRC lease data must be downloaded before processing mineral holders.
+    </p>
+    <button
+      onClick={() => navigate('/settings')}
+      className="mt-2 text-sm text-amber-700 underline"
     >
-      {children}
-      {visible && (
-        <div className="absolute z-10 bg-gray-800 text-white text-sm rounded px-3 py-2 -top-10 left-0 whitespace-nowrap">
-          {content}
-          <div className="absolute -bottom-1 left-4 w-2 h-2 bg-gray-800 transform rotate-45" />
-        </div>
-      )}
-    </div>
-  );
-}
+      Go to Settings → Download RRC Data
+    </button>
+  </div>
+)}
 ```
-
-**Usage in forms:**
-```typescript
-// pages/Title.tsx
-<label className="flex items-center gap-2">
-  <span>Ownership %</span>
-  <Tooltip content="Percentage of mineral rights owned (0-100)">
-    <HelpCircle className="w-4 h-4 text-gray-400" />
-  </Tooltip>
-</label>
-<input type="number" step="0.01" min="0" max="100" />
-```
-
-**Why This Breaks:** Users guess at field meanings, enter invalid data, and get validation errors. Frustration compounds.
 
 ---
 
-## Field Validation Feedback
+## Long-Operation Feedback
 
-### Real-Time Validation
+Three operations take more than a few seconds:
+- RRC bulk download (30-60s)
+- Revenue PDF batch processing (scales with file count)
+- GHL bulk send (SSE-tracked, `useSSEProgress.ts`)
 
-Validate inputs as users type, not just on submit.
+GHL send already uses SSE via `useSSEProgress.ts`. RRC download and revenue batch use polling.
 
-**GOOD - Immediate feedback for CSV column headers:**
+**GOOD - Progress message with time estimate:**
 ```typescript
-// pages/Proration.tsx
-const [csvPreview, setCsvPreview] = useState<string[]>([]);
-const [missingColumns, setMissingColumns] = useState<string[]>([]);
+// Polling pattern with user-visible status
+const [downloadStatus, setDownloadStatus] = useState<'idle' | 'running' | 'done'>('idle');
 
-const requiredColumns = ['Owner Name', 'Gross Acres', 'Royalty Interest'];
+const handleDownload = async () => {
+  setDownloadStatus('running');
+  await fetch('/api/proration/rrc/download', { method: 'POST' });
 
-const handleFileSelect = async (files: File[]) => {
-  const text = await files[0].text();
-  const lines = text.split('\n');
-  const headers = lines[0].split(',').map(h => h.trim());
-  
-  setCsvPreview(headers);
-  
-  const missing = requiredColumns.filter(col => !headers.includes(col));
-  setMissingColumns(missing);
+  const poll = setInterval(async () => {
+    const s = await fetch('/api/proration/rrc/status').then(r => r.json());
+    if (s.oil_count > 0) {
+      setDownloadStatus('done');
+      clearInterval(poll);
+    }
+  }, 3000);
 };
 
-{missingColumns.length > 0 && (
-  <div className="bg-yellow-50 border border-yellow-200 p-4 rounded">
-    <h4>⚠️ Missing Required Columns</h4>
-    <ul className="list-disc ml-6">
-      {missingColumns.map(col => (
-        <li key={col}>{col}</li>
-      ))}
-    </ul>
-    <p className="mt-2">Add these columns to your CSV and re-upload.</p>
+{downloadStatus === 'running' && (
+  <div className="flex items-center gap-3 text-gray-600">
+    <LoadingSpinner className="w-5 h-5" />
+    <span className="text-sm">Downloading RRC data — this takes about 1 minute...</span>
   </div>
 )}
 ```
 
-**BAD - Validation only on submit:**
+**BAD - No feedback during long operation:**
 ```typescript
-// User uploads CSV → clicks "Process" → 5 seconds later gets error
-// "Column 'Owner Name' not found"
+const handleDownload = () => fetch('/api/proration/rrc/download', { method: 'POST' });
+// User sees nothing for 60 seconds
 ```
-
-**Why This Breaks:** Users waste time uploading large files only to discover formatting issues. No opportunity to fix before processing.
 
 ---
 
-## Help Page Discoverability
+## Contextual Help Text
 
-### Contextual Links to Help
+Each tool has domain-specific terminology that internal users may not know. Inline help text placed near the relevant input reduces support requests.
 
-Help page exists (`frontend/src/pages/Help.tsx`) but users don't find it when stuck.
-
-**Current Problem:**
-- Help link only in sidebar navigation
-- No in-tool links to relevant Help sections
-- Help page is generic, not tool-specific
-
-**GOOD - Link to relevant help from error states:**
+**GOOD - Inline hint near file upload:**
 ```typescript
-// pages/Extract.tsx
-{error && (
-  <div className="bg-red-50 border border-red-200 p-4 rounded">
-    <h4 className="font-bold">PDF Extraction Failed</h4>
-    <p>{error}</p>
-    <a 
-      href="/help#extract-troubleshooting"
-      className="text-tre-teal hover:underline mt-2 inline-block"
+// pages/Proration.tsx
+<FileUpload
+  accept=".csv"
+  onFileSelect={handleUpload}
+  label="Drop mineral holders CSV or click to browse"
+/>
+<p className="text-xs text-gray-500 mt-1">
+  CSV must include columns: name, legal_description, decimal_interest
+</p>
+```
+
+**GOOD - Tooltip on ambiguous column headers:**
+```typescript
+// DataTable — column header with tooltip
+<th>
+  NRA
+  <span title="Net Revenue Acres — calculated from decimal interest × total acres">
+    <HelpCircle className="w-3.5 h-3.5 inline ml-1 text-gray-400" />
+  </span>
+</th>
+```
+
+---
+
+## Post-Action Guidance
+
+After export, users need to know what to do with the file. Currently export silently downloads with no follow-up.
+
+**GOOD - Post-export panel:**
+```typescript
+{exportComplete && (
+  <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-xl">
+    <div className="flex items-center gap-2 mb-2">
+      <CheckCircle className="w-5 h-5 text-green-600" />
+      <span className="font-semibold text-green-800">Export complete</span>
+    </div>
+    <p className="text-sm text-gray-600">Your CSV is in your Downloads folder.</p>
+    <button
+      onClick={resetForNextUpload}
+      className="mt-3 text-sm text-tre-teal underline"
     >
-      → View troubleshooting guide
-    </a>
+      Process another file
+    </button>
   </div>
 )}
 ```
 
-**Update Help page structure:**
-```typescript
-// pages/Help.tsx
-<div id="extract-troubleshooting" className="mb-8">
-  <h2 className="text-2xl font-bold mb-4">Extract Tool Issues</h2>
-  
-  <h3 className="text-xl font-semibold mt-4">Common Problems</h3>
-  
-  <div className="mt-2">
-    <h4 className="font-bold">❌ "No parties found"</h4>
-    <p>Cause: PDF is scanned image, not searchable text</p>
-    <p>Fix: Run OCR on the PDF before uploading</p>
-  </div>
-  
-  <div className="mt-4">
-    <h4 className="font-bold">❌ "Upload failed"</h4>
-    <p>Cause: File size exceeds 50MB limit</p>
-    <p>Fix: Split multi-document PDF into separate files</p>
-  </div>
-</div>
-```
-
-**Why This Breaks:** Help page becomes a documentation graveyard. Users never visit it because it's not contextually linked from failure points.
-
----
-
-## Common Guidance Gaps
-
-### 1. No Sample Files
-
-**The Problem:** Users don't know what valid input looks like.
-
-**GOOD - Provide downloadable samples:**
-```typescript
-// pages/Proration.tsx
-<div className="bg-blue-50 border border-blue-200 p-4 rounded mb-4">
-  <h4 className="font-bold mb-2">First time using Proration?</h4>
-  <p className="mb-2">Download a sample CSV to see the required format:</p>
-  <a 
-    href="/samples/mineral_holders_sample.csv"
-    download
-    className="btn-secondary inline-flex items-center gap-2"
-  >
-    <Download className="w-4 h-4" />
-    Download Sample CSV
-  </a>
-</div>
-```
-
-**Backend route to serve samples:**
-```python
-# backend/app/api/proration.py
-@router.get("/sample")
-async def get_sample_csv():
-    sample_content = "Owner Name,Gross Acres,Royalty Interest,Ownership %\nJohn Doe,100.5,0.125,50.0\n"
-    return Response(
-        content=sample_content,
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=sample.csv"}
-    )
-```
-
-**Why This Breaks:** Users guess at CSV structure, get validation errors, and iterate blindly until it works (or they give up).
-
-### 2. No Field Examples
-
-**The Problem:** Legal description parser accepts multiple formats, but users don't know which.
-
-**GOOD - Show accepted format examples:**
-```typescript
-// pages/Proration.tsx
-<label>Legal Description</label>
-<input type="text" placeholder="Section 12, Township 5N, Range 3W" />
-<details className="mt-2">
-  <summary className="text-sm text-tre-teal cursor-pointer">
-    See accepted formats
-  </summary>
-  <ul className="text-sm text-gray-600 list-disc ml-6 mt-2">
-    <li>S12-T5N-R3W</li>
-    <li>Section 12, T5N, R3W</li>
-    <li>Sec 12 Twp 5N Rge 3W</li>
-  </ul>
-</details>
-```
-
-**Why This Breaks:** Parser rejects user input silently, no feedback on what went wrong or how to fix it.
+See the **designing-onboarding-paths** skill for full empty state and first-run patterns.
+See the **frontend-design** skill for Tailwind patterns using `tre-*` brand colors.

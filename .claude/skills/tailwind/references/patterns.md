@@ -1,21 +1,22 @@
 # Tailwind Patterns Reference
 
 ## Contents
-- Custom Brand Color System
-- Component Styling Patterns
-- Responsive Design Patterns
-- State and Interaction Patterns
-- Layout Patterns
+- Brand Color System
+- Sidebar Patterns (Dark Background)
+- Modal and Overlay Patterns
+- Status and Badge Patterns
+- Responsive Layout Patterns
+- Typography with Oswald
 - Anti-Patterns
 
 ---
 
-## Custom Brand Color System
+## Brand Color System
 
-Table Rock TX Tools defines custom colors in `toolbox/frontend/tailwind.config.js`:
+Defined in `frontend/tailwind.config.js`. Use `tre-*` tokens — never hardcode hex values.
 
 ```javascript
-// toolbox/frontend/tailwind.config.js
+// frontend/tailwind.config.js
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
@@ -28,322 +29,289 @@ export default {
         'tre-brown-medium': '#775723',
         'tre-brown-light': '#966e35',
       },
+      fontFamily: {
+        'oswald': ['Oswald', 'sans-serif'],
+      },
     },
   },
   plugins: [],
-};
+}
 ```
 
-**Use these colors exclusively for brand consistency.** NEVER use default Tailwind colors for primary UI elements.
+**Opacity modifiers** are the primary tool for dark-on-dark hierarchy:
 
 ```tsx
-// GOOD - Brand-consistent navigation
-<div className="bg-tre-navy text-white">
-  <a className="text-tre-teal hover:text-tre-tan">Dashboard</a>
-</div>
-
-// BAD - Using default Tailwind colors for primary brand elements
-<div className="bg-blue-900 text-white">
-  <a className="text-cyan-400 hover:text-yellow-300">Dashboard</a>
-</div>
-```
-
-**Opacity modifiers** for subtle backgrounds and borders:
-
-```tsx
-// toolbox/frontend/src/components/Sidebar.tsx
-<div className="border-b border-tre-teal/20"> {/* 20% opacity */}
-  <nav className="hover:bg-tre-teal/10"> {/* 10% opacity */}
-    Links
-  </nav>
-</div>
+// Borders, hover backgrounds, subtle tints — all via opacity
+<div className="border-b border-tre-teal/20">     {/* 20% teal border */}
+<div className="hover:bg-tre-navy/50">             {/* 50% navy hover */}
+<div className="bg-tre-teal/20 text-tre-teal">    {/* active state tint */}
 ```
 
 ---
 
-## Component Styling Patterns
+## Sidebar Patterns (Dark Background)
 
-### Card Components
+The sidebar (`Sidebar.tsx`) establishes the core dark-background patterns used throughout.
 
-**Pattern:** Consistent shadow, rounded corners, padding, hover effects
+### Active Nav Link
 
 ```tsx
-// toolbox/frontend/src/pages/Dashboard.tsx
-<div className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
-  <h3 className="text-lg font-semibold text-tre-navy mb-2">Extract Tool</h3>
-  <p className="text-gray-600 text-sm">Process OCC Exhibit A PDFs</p>
-</div>
+// GOOD — actual pattern from Sidebar.tsx
+const isActive = location.pathname.startsWith(path)
+return `flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 group ${
+  isActive
+    ? 'bg-tre-teal/20 text-tre-teal border-l-4 border-tre-teal'
+    : 'text-gray-300 hover:bg-tre-navy/50 hover:text-tre-teal'
+}`
 ```
 
-**Why:** Consistent card styling creates visual hierarchy and professional appearance. The `transition-shadow` provides smooth hover feedback.
+Note: active state uses `border-l-4 border-tre-teal` left accent, not just color change.
 
-### Buttons
+### Collapsed Icon-Only Mode
 
 ```tsx
-// toolbox/frontend/src/components/FileUpload.tsx
-<button className="w-full bg-tre-teal text-white px-4 py-2 rounded-lg hover:bg-tre-teal/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-  Upload File
-</button>
-
-// Secondary button variant
-<button className="px-4 py-2 border border-tre-navy text-tre-navy rounded-lg hover:bg-tre-navy/5 transition-colors">
-  Cancel
-</button>
+// Collapsed: justify-center, no gap, no text
+if (isCollapsed) {
+  return `flex items-center justify-center p-3 rounded-lg transition-all duration-200 group ${
+    isActive ? 'bg-tre-teal/20 text-tre-teal' : 'text-gray-300 hover:bg-tre-navy/50 hover:text-tre-teal'
+  }`
+}
 ```
 
-**Key classes:**
-- `transition-colors` for smooth color changes
-- `disabled:opacity-50 disabled:cursor-not-allowed` for disabled state
-- `hover:bg-tre-teal/90` for subtle hover darkening
-
-### Status Badges
+### Collapsible Section (height transition trick)
 
 ```tsx
-// toolbox/frontend/src/components/StatusBadge.tsx
-const statusColors = {
-  success: 'bg-green-100 text-green-800',
-  error: 'bg-red-100 text-red-800',
-  pending: 'bg-yellow-100 text-yellow-800',
-  info: 'bg-tre-teal/20 text-tre-navy',
-};
-
-<span className={`inline-block px-2 py-1 text-xs rounded ${statusColors[status]}`}>
-  {label}
-</span>
-```
-
-**Note:** Status badges use semantic colors (green/red/yellow) for universal understanding, while info badges use brand colors.
-
----
-
-## Responsive Design Patterns
-
-### Grid Layouts
-
-```tsx
-// toolbox/frontend/src/pages/Dashboard.tsx
-<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-  {/* Mobile: 1 column, Tablet: 2 columns, Desktop: 4 columns */}
-</div>
-```
-
-**Breakpoints:**
-- Default (mobile): `grid-cols-1`
-- `md:` (768px+): `md:grid-cols-2`
-- `lg:` (1024px+): `lg:grid-cols-4`
-
-### Container Widths
-
-```tsx
-// toolbox/frontend/src/pages/Extract.tsx
-<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-  {/* Content */}
-</div>
-```
-
-**Why:** `max-w-7xl` prevents content from stretching too wide on large screens. Responsive padding (`px-4 sm:px-6 lg:px-8`) ensures proper spacing on all devices.
-
-### WARNING: Never Use Fixed Widths for Main Content
-
-```tsx
-// BAD - Fixed width breaks on small screens
-<div className="w-[1200px]">
-  Content
-</div>
-
-// GOOD - Responsive max-width with padding
-<div className="max-w-7xl mx-auto px-4">
-  Content
-</div>
-```
-
-**Why This Breaks:** Fixed widths cause horizontal scrolling on smaller screens. Always use `max-w-*` with `mx-auto` for centered content and `px-*` for edge spacing.
-
----
-
-## State and Interaction Patterns
-
-### Hover States
-
-```tsx
-// toolbox/frontend/src/components/Sidebar.tsx
-<a className="flex items-center gap-3 px-4 py-2 rounded text-white hover:bg-tre-teal/10 transition-colors">
-  Dashboard
-</a>
-```
-
-**Always pair hover effects with `transition-*`** for smooth animations.
-
-### Focus States for Accessibility
-
-```tsx
-// toolbox/frontend/src/components/Modal.tsx
-<input className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal focus:border-transparent" />
-```
-
-**Why:** `focus:ring-2 focus:ring-tre-teal` provides visible focus indication for keyboard navigation. NEVER use `focus:outline-none` without a replacement focus indicator.
-
-### Active Navigation States
-
-```tsx
-// toolbox/frontend/src/components/Sidebar.tsx
-const isActive = location.pathname === '/proration';
-<a className={`flex items-center gap-3 px-4 py-2 rounded transition-colors ${
-  isActive 
-    ? 'bg-tre-teal/20 text-tre-teal font-semibold' 
-    : 'text-white hover:bg-tre-teal/10'
+// No JS height measurement needed — use max-h with opacity
+<div className={`space-y-1 overflow-hidden transition-all duration-200 ${
+  !isCollapsed && !expandedGroups[navGroup.id] ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'
 }`}>
-  Proration
-</a>
+  {navGroup.items.map(item => <NavLink ... />)}
+</div>
 ```
 
-**Pattern:** Active state has background color + text color change + font weight, while inactive has hover state only.
+### Flyout Menu on Dark Sidebar
+
+```tsx
+// Flyout sits on top of dark sidebar — use border + shadow for definition
+<div className="absolute bottom-full left-4 right-4 mb-2 bg-tre-navy border border-tre-teal/30 rounded-lg shadow-xl overflow-hidden z-50">
+  <button className="w-full flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-tre-teal/10 hover:text-tre-teal transition-colors border-t border-tre-teal/20">
+    Sign Out
+  </button>
+</div>
+```
 
 ---
 
-## Layout Patterns
+## Modal and Overlay Patterns
 
-### Flexbox Centering
+### Modal Overlay (actual Modal.tsx pattern)
 
 ```tsx
-// toolbox/frontend/src/components/Modal.tsx
-<div className="fixed inset-0 flex items-center justify-center z-50">
-  <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-    Content
+// GOOD — tre-navy/60 + backdrop-blur, NOT black/50
+<div className="fixed inset-0 z-50 flex items-center justify-center">
+  <div
+    className="absolute inset-0 bg-tre-navy/60 backdrop-blur-sm transition-opacity"
+    onClick={closeOnOverlayClick ? onClose : undefined}
+  />
+  <div className="relative max-w-lg w-full mx-4 bg-white rounded-xl shadow-2xl">
+    <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+      <h2 className="text-xl font-oswald font-semibold text-tre-navy">{title}</h2>
+    </div>
+    <div className="px-6 py-4 max-h-[60vh] overflow-y-auto">{children}</div>
+    <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl">
+      {footer}
+    </div>
   </div>
 </div>
 ```
 
-**Why:** `flex items-center justify-center` centers both vertically and horizontally. `mx-4` prevents modal from touching screen edges on mobile.
-
-### Sticky Headers
+### Modal Size Variants
 
 ```tsx
-<header className="sticky top-0 bg-white border-b border-gray-200 z-10 px-6 py-4">
-  <h1 className="text-2xl font-bold text-tre-navy">Extract Tool</h1>
-</header>
+// Map size prop to max-width — use object, not switch/if chains
+const sizeClasses = {
+  sm: 'max-w-md',
+  md: 'max-w-lg',
+  lg: 'max-w-2xl',
+  xl: 'max-w-4xl',
+  full: 'max-w-[90vw] max-h-[90vh]',
+}
 ```
 
-**Key classes:** `sticky top-0 z-10` keeps header visible on scroll.
+---
 
-### Scrollable Containers
+## Status and Badge Patterns
+
+StatusBadge uses semantic colors (green/red/yellow/blue) — NOT brand colors — for universal readability.
 
 ```tsx
-// toolbox/frontend/src/components/DataTable.tsx
-<div className="overflow-x-auto">
-  <table className="min-w-full divide-y divide-gray-200">
-    {/* Table content */}
-  </table>
+// GOOD — semantic colors for status, not tre-* colors
+const statusConfig = {
+  success:    { bgColor: 'bg-green-50',  textColor: 'text-green-700',  borderColor: 'border-green-200' },
+  error:      { bgColor: 'bg-red-50',    textColor: 'text-red-700',    borderColor: 'border-red-200' },
+  pending:    { bgColor: 'bg-yellow-50', textColor: 'text-yellow-700', borderColor: 'border-yellow-200' },
+  processing: { bgColor: 'bg-blue-50',   textColor: 'text-blue-700',   borderColor: 'border-blue-200' },
+  warning:    { bgColor: 'bg-orange-50', textColor: 'text-orange-700', borderColor: 'border-orange-200' },
+}
+
+<span className={`inline-flex items-center gap-1.5 px-2.5 py-1 border rounded-full font-medium text-sm ${config.bgColor} ${config.textColor} ${config.borderColor}`}>
+  <Icon className={`w-4 h-4 ${status === 'processing' ? 'animate-spin' : ''}`} />
+  {label}
+</span>
+```
+
+**Size variants** via lookup object (same pattern as Modal.tsx):
+
+```tsx
+const sizeConfig = {
+  sm: { padding: 'px-2 py-0.5',   iconSize: 'w-3 h-3', textSize: 'text-xs' },
+  md: { padding: 'px-2.5 py-1',   iconSize: 'w-4 h-4', textSize: 'text-sm' },
+  lg: { padding: 'px-3 py-1.5',   iconSize: 'w-5 h-5', textSize: 'text-base' },
+}
+```
+
+---
+
+## Responsive Layout Patterns
+
+### Desktop Sidebar + Mobile Drawer (MainLayout.tsx)
+
+```tsx
+<div className="flex h-screen bg-gray-100">
+  {/* Desktop: persistent sidebar */}
+  <div className="hidden lg:block">
+    <Sidebar />
+  </div>
+
+  <main className="flex-1 overflow-auto">
+    {/* Mobile: top bar */}
+    <div className="lg:hidden flex items-center gap-3 px-4 py-3 bg-tre-navy">
+      <button onClick={() => setMobileOpen(true)} className="text-white p-1">
+        <Menu className="w-6 h-6" />
+      </button>
+      <span className="text-white font-oswald font-semibold tracking-wide">{currentPage}</span>
+    </div>
+
+    <div className="p-4 lg:p-6">
+      <Outlet />
+    </div>
+  </main>
 </div>
 ```
 
-**Why:** `overflow-x-auto` enables horizontal scrolling for wide tables on mobile. `min-w-full` ensures table doesn't collapse.
+### Mobile Drawer Overlay
+
+```tsx
+{mobileOpen && (
+  <div className="fixed inset-0 z-50 lg:hidden">
+    <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
+    <div className="relative h-full w-64">
+      <Sidebar mobile onClose={() => setMobileOpen(false)} />
+    </div>
+  </div>
+)}
+```
+
+---
+
+## Typography with Oswald
+
+All headings, nav labels, and modal titles use `font-oswald`. Regular body text uses the default sans.
+
+```tsx
+// Headings — font-oswald with weight and tracking
+<h1 className="text-white font-oswald font-semibold text-lg tracking-wide">Table Rock</h1>
+<h2 className="text-xl font-oswald font-semibold text-tre-navy">{title}</h2>
+
+// Nav labels — font-light for elegance
+<span className="font-oswald font-light tracking-wide">{item.name}</span>
+
+// Muted sub-labels — tre-tan at low opacity
+<p className="text-tre-tan/60 text-xs truncate">{user?.email}</p>
+<p className="text-tre-teal text-xs font-light tracking-widest uppercase">Tools</p>
+```
 
 ---
 
 ## Anti-Patterns
 
-### WARNING: Inline Styles
+### WARNING: Hardcoded Hex Values
 
 **The Problem:**
 
 ```tsx
-// BAD - Inline styles bypass Tailwind's design system
-<div style={{ backgroundColor: '#90c5ce', padding: '16px' }}>
-  Content
-</div>
-```
-
-**Why This Breaks:**
-1. **No responsive design:** Can't use breakpoint modifiers
-2. **Inconsistent spacing:** `16px` doesn't align with Tailwind's spacing scale
-3. **No state variants:** Can't use `hover:`, `focus:`, etc.
-
-**The Fix:**
-
-```tsx
-// GOOD - Use Tailwind utilities
-<div className="bg-tre-teal p-4">
-  Content
-</div>
-```
-
-### WARNING: Arbitrary Values Instead of Config
-
-**The Problem:**
-
-```tsx
-// BAD - Hardcoded brand color
+// BAD — hex values bypass the design token system
 <div className="bg-[#90c5ce] text-[#0e2431]">
-  Content
-</div>
 ```
 
-**Why This Breaks:**
-1. **No central configuration:** Color changes require find-and-replace
-2. **No autocomplete:** Editor can't suggest brand colors
-3. **Inconsistent naming:** Team members use different hex values
+**Why This Breaks:** Color changes require grep-and-replace across the entire codebase. No autocomplete. Team members use different hex values for the same color.
 
 **The Fix:**
 
 ```tsx
-// GOOD - Use configured colors
+// GOOD
 <div className="bg-tre-teal text-tre-navy">
-  Content
-</div>
 ```
 
-**When You Might Be Tempted:** Prototyping a new color scheme before committing to config changes. Resist this—add colors to `tailwind.config.js` immediately.
-
-### WARNING: @apply in Separate CSS Files
+### WARNING: Dynamic Class String Interpolation
 
 **The Problem:**
 
-```css
-/* BAD - Separate CSS file defeats utility-first approach */
-.custom-button {
-  @apply bg-tre-teal text-white px-4 py-2 rounded-lg;
+```tsx
+// BAD — Tailwind purges this in production because it can't statically analyze it
+const color = 'tre-teal'
+<div className={`bg-${color}`}>
+```
+
+**Why This Breaks:** Tailwind's content scanner does a regex pass over source files. `bg-tre-teal` never appears as a literal string, so it gets purged from the production CSS bundle. Works in dev (JIT compiles on demand) but breaks in production.
+
+**The Fix:**
+
+```tsx
+// GOOD — full class names visible to the static analyzer
+const colorMap = { teal: 'bg-tre-teal', navy: 'bg-tre-navy' }
+<div className={colorMap[color]}>
+```
+
+### WARNING: Using black/50 Instead of tre-navy/60 for Overlays
+
+```tsx
+// BAD — doesn't match the brand feel
+<div className="fixed inset-0 bg-black/50">
+
+// GOOD — matches the dark navy sidebar aesthetic
+<div className="absolute inset-0 bg-tre-navy/60 backdrop-blur-sm">
+```
+
+### WARNING: focus:outline-none Without Replacement
+
+```tsx
+// BAD — removes focus indicator entirely, breaks keyboard accessibility
+<button className="focus:outline-none">
+
+// GOOD — replace with branded focus ring
+<button className="focus:outline-none focus:ring-2 focus:ring-tre-teal focus:ring-offset-2">
+```
+
+### WARNING: @apply in CSS Files
+
+Extracting component styles to CSS files via `@apply` breaks Tailwind's utility-first model. Create a React component instead:
+
+```tsx
+// BAD
+// button.css: .btn { @apply bg-tre-teal text-white px-4 py-2 rounded-lg; }
+
+// GOOD — React component with variant props
+function Button({ variant = 'primary', children, ...props }) {
+  const variants = {
+    primary:   'bg-tre-teal text-white hover:bg-tre-teal/90',
+    secondary: 'bg-white text-tre-navy border border-gray-300 hover:bg-gray-50',
+    danger:    'bg-red-600 text-white hover:bg-red-700',
+  }
+  return (
+    <button className={`px-4 py-2 rounded-lg transition-colors disabled:opacity-50 ${variants[variant]}`} {...props}>
+      {children}
+    </button>
+  )
 }
 ```
-
-**Why This Breaks:**
-1. **Context switching:** Developers must look in multiple files
-2. **No component co-location:** Styles separated from markup
-3. **Harder to customize:** Can't easily override with props
-
-**The Fix:**
-
-```tsx
-// GOOD - Inline utilities with optional prop-based variants
-<button className={`bg-tre-teal text-white px-4 py-2 rounded-lg ${variant === 'secondary' ? 'bg-white text-tre-navy border border-tre-navy' : ''}`}>
-  Submit
-</button>
-```
-
-**When You Might Be Tempted:** "Reusing" button styles across components. Instead, create a React component with `className` props for variants.
-
-### WARNING: Missing Responsive Breakpoints
-
-**The Problem:**
-
-```tsx
-// BAD - Fixed layout breaks on mobile
-<div className="grid grid-cols-4 gap-6">
-  {tools.map(tool => <Card key={tool.id} {...tool} />)}
-</div>
-```
-
-**Why This Breaks:**
-1. **Poor mobile UX:** 4 columns on a 375px screen are unreadable
-2. **Horizontal overflow:** Content extends beyond viewport
-
-**The Fix:**
-
-```tsx
-// GOOD - Mobile-first responsive grid
-<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-  {tools.map(tool => <Card key={tool.id} {...tool} />)}
-</div>
-```
-
-**When You Might Be Tempted:** Desktop-first development. Always start mobile (`grid-cols-1`) and add breakpoints upward.

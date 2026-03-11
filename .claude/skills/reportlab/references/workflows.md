@@ -2,518 +2,266 @@
 
 ## Contents
 - Full Proration PDF Export Pipeline
-- Testing PDF Generation Locally
+- FastAPI Integration: Response vs StreamingResponse
+- Testing PDF Output
 - Debugging Layout Issues
-- Integrating with FastAPI Endpoints
-- WARNING: BytesIO Seek Position
+- Extending the Export (Adding Columns or Sections)
 
 ---
 
 ## Full Proration PDF Export Pipeline
 
-### End-to-End Workflow
-
-**Context:** User uploads mineral holder CSV → Backend processes → Frontend downloads PDF via `/api/proration/export/pdf`.
+**Flow:** `POST /api/proration/export/pdf` → `proration.py` route → `export_service.to_pdf()` → `bytes` → `Response`
 
 ```python
-# toolbox/backend/app/api/proration.py
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
-from app.services.proration.export_service import generate_pdf
+# backend/app/api/proration.py
+from fastapi import APIRouter
+from fastapi.responses import Response
+from app.services.proration.export_service import to_pdf
+from app.models.proration import MineralHolderRow
 
 router = APIRouter(prefix="/api/proration")
 
 @router.post("/export/pdf")
-async def export_pdf(request: ProrationExportRequest):
-    """Generate PDF export of proration results."""
-    try:
-        # 1. Validate request data (see pydantic skill)
-        if not request.rows:
-            raise HTTPException(status_code=400, detail="No rows to export")
-        
-        # 2. Generate PDF (ReportLab)
-        pdf_buffer = generate_pdf(
-            rows=request.rows,
-            title=request.title or "Proration Report",
-            metadata=request.metadata,
-        )
-        
-        # 3. Return as streaming response
-        return StreamingResponse(
-            pdf_buffer,
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"attachment; filename=proration_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-            }
-        )
-    except Exception as e:
-        logger.error(f"PDF export failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="PDF generation failed")
+async def export_proration_pdf(rows: list[MineralHolderRow]):
+    pdf_bytes = to_pdf(rows)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=proration.pdf"},
+    )
 ```
 
 ```python
-# toolbox/backend/app/services/proration/export_service.py
-from reportlab.pdfgen import canvas
+# backend/app/services/proration/export_service.py
+import io
+from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
-from io import BytesIO
-import logging
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+from app.models.proration import MineralHolderRow
 
-logger = logging.getLogger(__name__)
+def to_pdf(rows: list[MineralHolderRow]) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
 
-def generate_pdf(rows: list[dict], title: str, metadata: dict | None = None) -> BytesIO:
-    """Generate proration PDF with headers, table, and page numbers.
-    
-    Args:
-        rows: List of proration calculation results
-        title: Report title
-        metadata: Optional metadata (date range, lease info)
-    
-    Returns:
-        BytesIO buffer containing PDF data
-    """
-    buffer = BytesIO()
-    pdf = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter
-    
-    # Constants
-    margin = 50
-    row_height = 20
-    bottom_margin = 50
-    top_margin = 100
-    
-    page_num = 1
-    y = height - top_margin
-    
-    # Helper functions
-    def add_header():
-        nonlocal y
-        pdf.setFont("Helvetica-Bold", 16)
-        pdf.drawString(margin, height - 40, title)
-        pdf.setFont("Helvetica", 9)
-        pdf.drawString(margin, height - 60, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-        if metadata:
-            pdf.drawString(margin, height - 75, f"Lease: {metadata.get('lease_number', 'N/A')}")
-        pdf.line(margin, height - 85, width - margin, height - 85)
-        y = height - top_margin
-    
-    def add_footer():
-        pdf.setFont("Helvetica", 9)
-        pdf.drawString(width / 2 - 20, 20, f"Page {page_num}")
-    
-    def check_page_break():
-        nonlocal y, page_num
-        if y < bottom_margin:
-            add_footer()
-            pdf.showPage()
-            page_num += 1
-            add_header()
-    
-    # Draw header on first page
-    add_header()
-    
-    # Column definitions (see patterns.md)
-    columns = [
-        ('owner_name', 'Owner', margin, 180, 'left'),
-        ('nra', 'NRA', margin + 190, 60, 'right'),
-        ('decimal', 'Decimal', margin + 260, 80, 'right'),
-        ('lease_number', 'Lease #', margin + 350, 100, 'left'),
-    ]
-    
-    # Draw table header
-    pdf.setFont("Helvetica-Bold", 10)
-    for key, label, x, width, align in columns:
-        pdf.drawString(x, y, label)
-    y -= row_height
-    pdf.line(margin, y + 5, width - margin, y + 5)  # Underline
-    y -= 10
-    
-    # Draw rows
-    pdf.setFont("Helvetica", 9)
+    # Header row + data rows
+    data = [["Owner", "County", "Interest", "RRC Acres", "Est NRA", "$/NRA", "Appraisal Value"]]
     for row in rows:
-        check_page_break()
-        
-        for key, label, x, col_width, align in columns:
-            value = format_cell_value(row.get(key), key, align)
-            if align == 'right':
-                pdf.drawRightString(x + col_width, y, value)
-            else:
-                pdf.drawString(x, y, value)
-        
-        y -= row_height
-    
-    # Final footer
-    add_footer()
-    pdf.save()
-    
-    buffer.seek(0)  # CRITICAL - reset buffer position
-    return buffer
+        data.append([
+            row.owner or "",
+            row.county or "",
+            f"{row.interest:.4f}" if row.interest else "",
+            f"{row.rrc_acres:.2f}" if row.rrc_acres else "",
+            f"{row.est_nra:.4f}" if row.est_nra else "",
+            f"${row.dollars_per_nra:.2f}" if row.dollars_per_nra else "",
+            f"${row.appraisal_value:.2f}" if row.appraisal_value else "",
+        ])
 
-def format_cell_value(value: any, key: str, align: str) -> str:
-    """Format cell value based on column type."""
-    if value is None:
-        return ''
-    
-    if key == 'nra':
-        return f"{float(value):.4f}"
-    elif key == 'decimal':
-        return f"{float(value):.6f}"
-    else:
-        return str(value)
+    table = Table(data)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 12),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+        ("GRID", (0, 0), (-1, -1), 1, colors.black),
+    ]))
+
+    doc.build([table])
+    buffer.seek(0)
+    return buffer.read()
 ```
 
-**Workflow Checklist:**
+**Implementation Checklist:**
 
-Copy this checklist for implementing PDF exports:
-- [ ] Define Pydantic request model with `rows: list[dict]`
-- [ ] Create FastAPI endpoint with `StreamingResponse`
-- [ ] Implement `generate_pdf()` in service layer
-- [ ] Add header/footer functions with page tracking
-- [ ] Define column layout (see patterns.md)
-- [ ] Implement `check_page_break()` before each row
-- [ ] Format numeric values with consistent precision
-- [ ] Add `buffer.seek(0)` before returning
-- [ ] Test with 1, 10, 100, 1000 rows (pagination)
-- [ ] Verify filename includes timestamp
-- [ ] Add error logging with `exc_info=True`
+- [ ] Header row is first element in `data` list
+- [ ] All numeric fields guarded with `if value else ""`
+- [ ] `buffer.seek(0)` called before `buffer.read()`
+- [ ] Function returns `bytes`, not `BytesIO`
+- [ ] FastAPI uses `Response`, not `StreamingResponse`
+- [ ] `Content-Disposition: attachment` header set
+- [ ] Verify: `pdf_bytes[:4] == b"%PDF"`
 
 ---
 
-## Testing PDF Generation Locally
+## FastAPI Integration: Response vs StreamingResponse
 
-### Unit Test Pattern
+Use `Response` when the full PDF is generated in memory (this codebase's pattern). Use `StreamingResponse` only for chunked generation or very large files.
 
 ```python
-# toolbox/backend/tests/test_proration_export.py
-import pytest
-from io import BytesIO
-from PyPDF2 import PdfReader
-from app.services.proration.export_service import generate_pdf
+# GOOD - to_pdf() returns bytes, use Response
+from fastapi.responses import Response
 
-def test_generate_pdf_basic():
-    """Test basic PDF generation with sample data."""
-    rows = [
-        {'owner_name': 'John Doe', 'nra': 0.1234, 'decimal': 0.123456, 'lease_number': 'L-001'},
-        {'owner_name': 'Jane Smith', 'nra': 0.5678, 'decimal': 0.567890, 'lease_number': 'L-002'},
-    ]
-    
-    buffer = generate_pdf(rows, title="Test Report")
-    
-    # Verify buffer is valid PDF
-    assert isinstance(buffer, BytesIO)
-    assert buffer.tell() == 0  # Seek position reset
-    
-    # Read PDF content
-    pdf = PdfReader(buffer)
-    assert len(pdf.pages) == 1  # Should fit on one page
-    
-    # Extract text and verify content
-    text = pdf.pages[0].extract_text()
-    assert "Test Report" in text
-    assert "John Doe" in text
-    assert "0.1234" in text  # NRA formatted correctly
-
-def test_generate_pdf_pagination():
-    """Test pagination with large dataset."""
-    # Generate 100 rows (should span multiple pages)
-    rows = [
-        {'owner_name': f'Owner {i}', 'nra': i * 0.01, 'decimal': i * 0.001, 'lease_number': f'L-{i:03d}'}
-        for i in range(100)
-    ]
-    
-    buffer = generate_pdf(rows, title="Pagination Test")
-    pdf = PdfReader(buffer)
-    
-    # Verify multiple pages
-    assert len(pdf.pages) > 1
-    
-    # Verify page numbers on each page
-    for page_num, page in enumerate(pdf.pages, start=1):
-        text = page.extract_text()
-        assert f"Page {page_num}" in text
-
-def test_generate_pdf_missing_data():
-    """Test graceful handling of missing/invalid data."""
-    rows = [
-        {'owner_name': 'Valid Row', 'nra': 0.1, 'decimal': 0.01, 'lease_number': 'L-001'},
-        {'owner_name': '', 'nra': None, 'decimal': None, 'lease_number': ''},  # Invalid
-        {'owner_name': 'Another Valid', 'nra': 0.2, 'decimal': 0.02, 'lease_number': 'L-002'},
-    ]
-    
-    # Should not crash, should skip invalid rows or show defaults
-    buffer = generate_pdf(rows, title="Missing Data Test")
-    pdf = PdfReader(buffer)
-    
-    text = pdf.pages[0].extract_text()
-    assert "Valid Row" in text
-    assert "Another Valid" in text
+return Response(
+    content=to_pdf(rows),
+    media_type="application/pdf",
+    headers={"Content-Disposition": "attachment; filename=proration.pdf"},
+)
 ```
 
-### Manual Testing Script
+```python
+# AVOID for this use case - StreamingResponse is for generators/iterators
+from fastapi.responses import StreamingResponse
+
+return StreamingResponse(
+    iter([pdf_bytes]),  # Unnecessary wrapper
+    media_type="application/pdf",
+)
+```
+
+### Frontend Download Pattern
+
+See the **react** skill for the full pattern. The key steps:
+
+```typescript
+// frontend/src/pages/Proration.tsx
+const response = await fetch("/api/proration/export/pdf", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+  body: JSON.stringify({ rows: prorationResults }),
+});
+const blob = await response.blob();
+const url = URL.createObjectURL(blob);
+const a = document.createElement("a");
+a.href = url;
+a.download = "proration.pdf";
+a.click();
+URL.revokeObjectURL(url);
+```
+
+---
+
+## Testing PDF Output
 
 ```python
-# scripts/test_pdf_export.py
-"""
-Manual testing script for PDF generation.
-Usage: python3 scripts/test_pdf_export.py
-"""
-from app.services.proration.export_service import generate_pdf
-import random
+# backend/tests/test_proration_export.py
+import pytest
+from app.services.proration.export_service import to_pdf
+from app.models.proration import MineralHolderRow
 
-def generate_sample_data(count: int) -> list[dict]:
-    """Generate sample proration data."""
-    owners = ['John Doe', 'Jane Smith', 'Acme Corp', 'Smith Family Trust', 'XYZ LLC']
-    return [
-        {
-            'owner_name': random.choice(owners),
-            'nra': random.uniform(0.0001, 1.0),
-            'decimal': random.uniform(0.000001, 0.1),
-            'lease_number': f'L-{i:05d}',
-        }
-        for i in range(count)
-    ]
+def _make_row(**kwargs) -> MineralHolderRow:
+    defaults = {
+        "owner": "John Doe", "county": "Midland", "interest": 0.1250,
+        "rrc_acres": 80.0, "est_nra": 10.0, "dollars_per_nra": 5.0,
+        "appraisal_value": 50000.0,
+    }
+    return MineralHolderRow(**{**defaults, **kwargs})
 
-if __name__ == '__main__':
-    # Test small dataset
-    print("Generating PDF with 10 rows...")
-    data = generate_sample_data(10)
-    buffer = generate_pdf(data, title="Small Test Report")
-    with open('test_small.pdf', 'wb') as f:
-        f.write(buffer.getvalue())
-    print("✓ Saved to test_small.pdf")
-    
-    # Test large dataset (pagination)
-    print("Generating PDF with 500 rows...")
-    data = generate_sample_data(500)
-    buffer = generate_pdf(data, title="Large Test Report")
-    with open('test_large.pdf', 'wb') as f:
-        f.write(buffer.getvalue())
-    print("✓ Saved to test_large.pdf")
-    
-    # Test edge cases
-    print("Generating PDF with missing data...")
-    data = [
-        {'owner_name': 'Valid', 'nra': 0.1, 'decimal': 0.01, 'lease_number': 'L-001'},
-        {'owner_name': '', 'nra': None, 'decimal': None, 'lease_number': ''},
-        {'owner_name': 'Also Valid', 'nra': 0.2, 'decimal': 0.02, 'lease_number': 'L-002'},
-    ]
-    buffer = generate_pdf(data, title="Edge Case Test")
-    with open('test_edge_cases.pdf', 'wb') as f:
-        f.write(buffer.getvalue())
-    print("✓ Saved to test_edge_cases.pdf")
+def test_to_pdf_returns_valid_pdf():
+    rows = [_make_row(), _make_row(owner="Jane Smith")]
+    result = to_pdf(rows)
+    assert isinstance(result, bytes)
+    assert len(result) > 0
+    assert result[:4] == b"%PDF"
+
+def test_to_pdf_handles_none_fields():
+    """Missing optional fields should produce empty string cells, not crash."""
+    rows = [_make_row(interest=None, est_nra=None, appraisal_value=None)]
+    result = to_pdf(rows)
+    assert result[:4] == b"%PDF"
+
+def test_to_pdf_empty_rows():
+    """Empty input produces a valid (header-only) PDF, not an exception."""
+    result = to_pdf([])
+    assert result[:4] == b"%PDF"
+
+def test_to_pdf_large_dataset():
+    """100+ rows should trigger Platypus auto-pagination without error."""
+    rows = [_make_row(owner=f"Owner {i}") for i in range(150)]
+    result = to_pdf(rows)
+    assert result[:4] == b"%PDF"
 ```
 
 **Run tests:**
 ```bash
-cd toolbox/backend
-
-# Unit tests
+cd backend
 pytest tests/test_proration_export.py -v
-
-# Manual script
-python3 scripts/test_pdf_export.py
-open test_small.pdf  # macOS
 ```
+
+**Validate until passing:**
+1. Run tests
+2. If `AssertionError: b'%PDF'` — check `buffer.seek(0)` is present
+3. If `AttributeError` on row fields — verify `MineralHolderRow` model fields match
+4. Only proceed when all 4 tests pass
 
 ---
 
 ## Debugging Layout Issues
 
-### Visual Debugging with Grid Lines
+### Quick Visual Check
+
+Write to disk and open to inspect layout:
 
 ```python
-def draw_debug_grid(pdf: canvas.Canvas, width: float, height: float):
-    """Draw grid lines for debugging layout issues.
-    
-    Remove this before production.
-    """
-    pdf.setStrokeColorRGB(0.9, 0.9, 0.9)  # Light gray
-    pdf.setLineWidth(0.5)
-    
-    # Vertical lines every 50 points
-    for x in range(0, int(width), 50):
-        pdf.line(x, 0, x, height)
-        pdf.setFont("Helvetica", 6)
-        pdf.drawString(x + 2, 5, str(x))
-    
-    # Horizontal lines every 50 points
-    for y in range(0, int(height), 50):
-        pdf.line(0, y, width, y)
-        pdf.setFont("Helvetica", 6)
-        pdf.drawString(5, y + 2, str(y))
-    
-    # Reset stroke color
-    pdf.setStrokeColorRGB(0, 0, 0)
+# scripts/debug_pdf.py
+from app.services.proration.export_service import to_pdf
+from app.models.proration import MineralHolderRow
 
-# Usage during development
-pdf = canvas.Canvas(buffer, pagesize=letter)
-draw_debug_grid(pdf, width, height)  # Add temporarily
-# ... rest of PDF generation
+rows = [MineralHolderRow(owner=f"Owner {i}", county="Test", interest=0.125,
+        rrc_acres=80.0, est_nra=10.0, dollars_per_nra=5.0, appraisal_value=50000.0)
+        for i in range(50)]
+
+with open("/tmp/debug_proration.pdf", "wb") as f:
+    f.write(to_pdf(rows))
+
+# macOS: open /tmp/debug_proration.pdf
 ```
 
-### Logging Layout Calculations
-
-```python
-# Add detailed logging for pagination debugging
-def check_page_break_with_logging(y: float, row_idx: int, total_rows: int):
-    if y < bottom_margin:
-        logger.debug(f"Page break at row {row_idx}/{total_rows}, y={y}")
-        pdf.showPage()
-        page_num += 1
-        y = height - top_margin
-        logger.debug(f"New page {page_num}, reset y={y}")
-    return y, page_num
-```
-
-### Common Layout Issues
+### Common Issues
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Text clipped at page bottom | Page break check after drawing | Check `if y < margin` BEFORE `drawString` |
-| Columns misaligned | Hardcoded x-coordinates | Use calculated positions (see patterns.md) |
-| Numbers not aligned | Using `drawString` instead of `drawRightString` | Use `drawRightString(x + width, y, text)` |
-| Missing page numbers | Forgot `add_footer()` before `showPage()` | Call footer before page break |
-| First page has no header | Header added after first row | Call `add_header()` before loop |
-| Blank PDF | Forgot `buffer.seek(0)` | Add `buffer.seek(0)` before returning |
+| Empty PDF downloaded | `buffer.seek(0)` missing | Add before `buffer.read()` |
+| PDF content is `"<_io.BytesIO object...>"` | Returned `BytesIO` instead of `bytes` | Call `.read()` after `.seek(0)` |
+| Columns clipped on right edge | Total column widths exceed page | Reduce `colWidths`, check against usable width (~468pt) |
+| Header row has wrong background | Row index off-by-one in style commands | Data rows start at index 1, not 0 |
+| Table overflows onto new page unexpectedly | Platypus default row height too large | Set explicit `rowHeights` in `Table(data, rowHeights=...)` |
 
 ---
 
-## Integrating with FastAPI Endpoints
+## Extending the Export (Adding Columns or Sections)
 
-### StreamingResponse Pattern
+### Adding a New Column
 
-```python
-# toolbox/backend/app/api/proration.py
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
-from datetime import datetime
-
-@router.post("/export/pdf")
-async def export_proration_pdf(request: ProrationExportRequest):
-    """Export proration results as PDF.
-    
-    Returns PDF as streaming response with attachment header.
-    """
-    try:
-        # Generate PDF
-        pdf_buffer = generate_pdf(
-            rows=request.rows,
-            title=request.title or "Proration Report",
-            metadata=request.metadata,
-        )
-        
-        # Filename with timestamp
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"proration_{timestamp}.pdf"
-        
-        return StreamingResponse(
-            pdf_buffer,
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"attachment; filename={filename}",
-                "Cache-Control": "no-cache",  # Don't cache PDFs
-            }
-        )
-    except ValueError as e:
-        # Expected errors (validation, missing data)
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        # Unexpected errors
-        logger.error(f"PDF export failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="PDF generation failed")
-```
-
-### Frontend Integration (React)
-
-```typescript
-// toolbox/frontend/src/pages/Proration.tsx
-const handleExportPDF = async () => {
-  try {
-    setIsExporting(true);
-    
-    const response = await fetch('/api/proration/export/pdf', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${idToken}`,
-      },
-      body: JSON.stringify({
-        rows: prorationResults,  // From state
-        title: 'Proration Report',
-        metadata: { lease_number: selectedLease },
-      }),
-    });
-    
-    if (!response.ok) {
-      throw new Error('PDF export failed');
-    }
-    
-    // Download PDF
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `proration_${Date.now()}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-    
-  } catch (error) {
-    console.error('PDF export error:', error);
-    alert('Failed to generate PDF');
-  } finally {
-    setIsExporting(false);
-  }
-};
-```
-
-**See the react and fastapi skills for more integration patterns.**
-
----
-
-## WARNING: BytesIO Seek Position
-
-**The Problem:**
+1. Add header string to `data[0]` list
+2. Add value to each row's list in same position
+3. Add `colWidths` parameter to `Table()` — don't let Platypus auto-size with wide tables
+4. Verify total width ≤ usable page width
 
 ```python
-# BAD - Buffer seek position not reset
-def generate_pdf(rows: list[dict]) -> BytesIO:
-    buffer = BytesIO()
-    pdf = canvas.Canvas(buffer, pagesize=letter)
-    # ... draw content
-    pdf.save()  # Leaves buffer seek position at end
-    return buffer  # FastAPI reads from current position (EOF), returns empty PDF
+# Add "Notes" column
+data = [["Owner", "County", "Interest", "RRC Acres", "Est NRA", "$/NRA", "Appraisal Value", "Notes"]]
+for row in rows:
+    data.append([
+        row.owner or "",
+        row.county or "",
+        # ... existing fields ...
+        row.notes or "",  # new column
+    ])
+
+from reportlab.lib.units import inch
+table = Table(data, colWidths=[
+    1.5*inch, 0.8*inch, 0.8*inch, 0.8*inch, 0.8*inch, 0.8*inch, 1.0*inch, 1.5*inch
+])
 ```
 
-**Why This Breaks:**
-1. `canvas.save()` writes PDF data and advances buffer position to end
-2. FastAPI `StreamingResponse` reads from current position
-3. Current position is EOF, so response body is empty (0 bytes)
-4. User downloads blank PDF, no error logged
-
-**The Fix:**
+### Adding a Summary Section
 
 ```python
-# GOOD - Reset buffer seek position
-def generate_pdf(rows: list[dict]) -> BytesIO:
-    buffer = BytesIO()
-    pdf = canvas.Canvas(buffer, pagesize=letter)
-    # ... draw content
-    pdf.save()
-    buffer.seek(0)  # CRITICAL - reset to beginning
-    return buffer
+from reportlab.platypus import Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+
+styles = getSampleStyleSheet()
+total_nra = sum(r.est_nra for r in rows if r.est_nra)
+
+elements = [
+    Paragraph(f"Total Est. NRA: {total_nra:.4f}", styles["Normal"]),
+    Spacer(1, 12),
+    table,
+]
+doc.build(elements)
 ```
 
-**When You Might Be Tempted:**
-- "The buffer is new, it should start at position 0" - NO. `save()` advances the position.
-- "I'll let the caller handle it" - NO. The function should return a ready-to-use buffer.
-- "It works locally" - Maybe you're debugging with `getvalue()` which doesn't care about position, but production streaming does.
-
-**Validation:**
-
-Iterate until this test passes:
-1. Generate PDF with `generate_pdf()`
-2. Check buffer position: `assert buffer.tell() == 0`
-3. Read buffer: `data = buffer.read()`
-4. Verify non-empty: `assert len(data) > 0`
-5. Only proceed when all assertions pass
+See the **pydantic** skill for `MineralHolderRow` field definitions when adding new columns.

@@ -1,343 +1,240 @@
 # SQLAlchemy Patterns Reference
 
 ## Contents
-- Engine and Session Configuration
-- ORM Model Patterns
-- Relationship Definitions
+- Model Definition (SQLAlchemy 2.x)
+- Enum Columns
+- JSONB and PostgreSQL-Specific Types
+- Relationships
 - Query Patterns
-- Common Anti-Patterns
+- Anti-Patterns
 
 ---
 
-## Engine and Session Configuration
+## Model Definition (SQLAlchemy 2.x)
 
-### Async Engine Setup
-
-```python
-# toolbox/backend/app/core/database.py
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from app.core.config import settings
-
-# GOOD - Connection pooling with health checks
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.debug,
-    pool_size=5,
-    max_overflow=10,
-    pool_pre_ping=True,  # Verify connections before use
-    pool_recycle=3600,   # Recycle connections after 1 hour
-)
-
-AsyncSessionLocal = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,  # Keep objects usable after commit
-)
-```
-
-**Why `pool_pre_ping=True`?** Without this, you'll encounter "connection closed" errors after idle periods. The pre-ping checks connection health before each checkout.
-
-**Why `expire_on_commit=False`?** By default, SQLAlchemy expires all objects after commit, requiring a refresh. In async contexts where you immediately return the object, this causes lazy-load errors.
-
-### WARNING: Synchronous Engine in Async Context
+### WARNING: Never Use Legacy `Column()` Style
 
 **The Problem:**
 
 ```python
-# BAD - Blocks the event loop
-from sqlalchemy import create_engine
-
-engine = create_engine("postgresql://...")  # Synchronous
-session = Session(engine)
-result = session.execute(select(Job))  # Blocks async runtime
-```
-
-**Why This Breaks:**
-1. Synchronous I/O blocks FastAPI's async event loop
-2. All other requests stall while waiting for database
-3. Connection pool deadlocks under concurrent load
-
-**The Fix:**
-
-```python
-# GOOD - Non-blocking async operations
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-
-engine = create_async_engine("postgresql+asyncpg://...")
-async with AsyncSessionLocal() as session:
-    result = await session.execute(select(Job))
-```
-
-**When You Might Be Tempted:** When copying SQLAlchemy 1.x examples or migrating sync code. Always use `asyncpg` driver and async engine.
-
----
-
-## ORM Model Patterns
-
-### Base Model with Common Fields
-
-```python
-# toolbox/backend/app/models/db_models.py
-from sqlalchemy import Column, String, DateTime
+# BAD - SQLAlchemy 1.x legacy style
 from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime
-
 Base = declarative_base()
 
-class TimestampMixin:
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-class Job(TimestampMixin, Base):
-    __tablename__ = "jobs"
-    
-    id = Column(String, primary_key=True)
-    user_email = Column(String, nullable=False, index=True)
-    tool_name = Column(String, nullable=False)
-    status = Column(String, default="pending")
-```
-
-**Index Strategy:** Add indexes on foreign keys and frequently filtered columns (`user_email`, `status`). Missing indexes cause full table scans.
-
-### JSON Columns for Structured Data
-
-```python
-from sqlalchemy import Column, JSON
-
-class ExtractionJob(Base):
-    __tablename__ = "extraction_jobs"
-    
-    id = Column(String, primary_key=True)
-    result_data = Column(JSON)  # PostgreSQL native JSON
-    metadata = Column(JSON, default=dict)
-```
-
-**PostgreSQL JSON vs Text:** Use `JSON` type for queryable fields (supports `->` operators). Use `Text` for opaque blobs.
-
-### WARNING: Mutable Default Arguments
-
-**The Problem:**
-
-```python
-# BAD - Shared mutable default across all instances
 class Job(Base):
     __tablename__ = "jobs"
-    tags = Column(JSON, default={})  # Shared dict instance!
+    id = Column(String, primary_key=True)
+    status = Column(String, default="pending")
+    options = Column(JSON, default={})  # Also has mutable default bug
 ```
 
 **Why This Breaks:**
-1. All new `Job` instances share the same `{}` object
-2. Modifying one instance's tags affects all others
-3. Causes data corruption in production
+1. `Column()` with bare `default={}` creates a shared mutable object across ALL instances
+2. `declarative_base()` is deprecated in SQLAlchemy 2.x — use `DeclarativeBase`
+3. No type annotations means no IDE support or mypy checking
 
 **The Fix:**
 
 ```python
-# GOOD - Factory function creates new dict per instance
+# GOOD - SQLAlchemy 2.x Mapped style (from db_models.py)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+class Base(DeclarativeBase):
+    pass
+
 class Job(Base):
     __tablename__ = "jobs"
-    tags = Column(JSON, default=lambda: {})  # New dict each time
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.PENDING)
+    options: Mapped[Optional[dict]] = mapped_column(JSONB, default=dict)  # factory, not {}
+```
+
+**Key differences:** `Mapped[T]` annotation provides type safety, `default=dict` is a callable (new dict per instance), `DeclarativeBase` is the 2.x base class.
+
+### Optional vs Required Fields
+
+```python
+# Required field — Mapped[str] with no Optional
+email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+
+# Optional field — Mapped[Optional[str]] with nullable=True (default)
+display_name: Mapped[Optional[str]] = mapped_column(String(255))
+
+# Optional with explicit nullable for clarity
+error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 ```
 
 ---
 
-## Relationship Definitions
+## Enum Columns
 
-### One-to-Many with Lazy Loading
+### Python Enum → PostgreSQL Enum
 
 ```python
-from sqlalchemy import Column, String, ForeignKey
-from sqlalchemy.orm import relationship
+# BAD - String column with no enforcement
+class Job(Base):
+    status = Column(String)  # anything goes
 
-class User(Base):
-    __tablename__ = "users"
-    email = Column(String, primary_key=True)
-    jobs = relationship("Job", back_populates="user", lazy="selectin")
+# GOOD - Enum column with Python enum validation (from db_models.py)
+from enum import Enum as PyEnum
+from sqlalchemy import Enum
+
+class JobStatus(str, PyEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 class Job(Base):
     __tablename__ = "jobs"
-    id = Column(String, primary_key=True)
-    user_email = Column(String, ForeignKey("users.email"))
-    user = relationship("User", back_populates="jobs")
+    status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.PENDING)
+    tool: Mapped[ToolType] = mapped_column(Enum(ToolType), index=True)
 ```
 
-**Lazy Loading Options:**
-- `lazy="selectin"` - Eager load with separate SELECT (async-safe)
-- `lazy="joined"` - JOIN at query time (faster for small datasets)
-- `lazy="raise"` - Prevent lazy loads (explicit control)
+Use `str, PyEnum` so values serialize to strings in JSON responses without extra config. See the **pydantic** skill for matching Pydantic models.
 
-### WARNING: N+1 Query Problem
+---
+
+## JSONB and PostgreSQL-Specific Types
+
+### When to Use JSONB
+
+```python
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+
+class Job(Base):
+    __tablename__ = "jobs"
+
+    # UUID as string — consistent with Firestore doc IDs
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+
+    # JSONB for flexible structured data
+    options: Mapped[Optional[dict]] = mapped_column(JSONB, default=dict)   # processing options
+    raw_data: Mapped[Optional[dict]] = mapped_column(JSONB)                # RRC raw CSV row
+    errors: Mapped[Optional[list]] = mapped_column(JSONB, default=list)    # error list
+```
+
+JSONB is queryable (PostgreSQL `->` operators) and indexed. Use it for:
+- Processing options that vary per job
+- Raw external data (RRC CSV rows) where schema is not fixed
+- Arrays of simple values (error messages)
+
+**Do NOT use JSONB** for data you need to filter/sort on — add a proper column instead.
+
+---
+
+## Relationships
+
+### One-to-Many with Cascade Delete
+
+```python
+# Parent (from db_models.py Job model)
+class Job(Base):
+    __tablename__ = "jobs"
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, ...)
+
+    extract_entries: Mapped[list["ExtractEntry"]] = relationship(
+        "ExtractEntry", back_populates="job", cascade="all, delete-orphan"
+    )
+
+# Child
+class ExtractEntry(Base):
+    __tablename__ = "extract_entries"
+    job_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("jobs.id"), index=True)
+    job: Mapped["Job"] = relationship("Job", back_populates="extract_entries")
+```
+
+Always add `index=True` to foreign key columns — every FK is a potential query filter.
+
+### Nested Eager Loading
+
+```python
+# From db_service.get_job_with_entries — load two levels deep
+result = await db.execute(
+    select(Job)
+    .where(Job.id == job_id)
+    .options(
+        selectinload(Job.extract_entries),
+        selectinload(Job.title_entries),
+        selectinload(Job.revenue_statements).selectinload(RevenueStatement.rows),
+    )
+)
+```
+
+### WARNING: Lazy Loading in Async Context
 
 **The Problem:**
 
 ```python
-# BAD - One query per user's jobs
-async with AsyncSessionLocal() as session:
-    users = await session.execute(select(User))
-    for user in users.scalars():
-        print(user.jobs)  # Triggers separate SELECT for EACH user
+# BAD - triggers implicit lazy load
+job = (await db.execute(select(Job).where(Job.id == job_id))).scalar_one()
+entries = job.extract_entries  # MissingGreenlet error in async context!
 ```
 
 **Why This Breaks:**
-1. 1 query for users + N queries for jobs = 1+N total queries
-2. Scales poorly (100 users = 101 queries)
-3. Destroys performance under load
+1. Async SQLAlchemy cannot execute implicit I/O outside an active session
+2. Raises `sqlalchemy.exc.MissingGreenlet` — the relationship access triggers a sync query
+3. No warning at model definition time — fails at runtime
 
 **The Fix:**
 
 ```python
-# GOOD - Eager load relationships
-from sqlalchemy.orm import selectinload
-
-async with AsyncSessionLocal() as session:
-    result = await session.execute(
-        select(User).options(selectinload(User.jobs))
-    )
-    users = result.scalars().all()  # All jobs loaded in 2 queries
+# GOOD - always use selectinload before accessing relationships
+result = await db.execute(
+    select(Job).where(Job.id == job_id).options(selectinload(Job.extract_entries))
+)
+job = result.scalar_one()
+entries = job.extract_entries  # safe — already loaded
 ```
-
-**When You Might Be Tempted:** When iterating over query results without thinking about relationship loading. Always use `selectinload` or `joinedload` for accessed relationships.
 
 ---
 
 ## Query Patterns
 
-### Basic CRUD Operations
+### Paginated listing with ordering
 
 ```python
-from sqlalchemy import select, update, delete
-from app.models.db_models import Job
-
-# Create
-async with AsyncSessionLocal() as session:
-    job = Job(id="123", user_email="user@example.com", tool_name="extract")
-    session.add(job)
-    await session.commit()
-    await session.refresh(job)
-
-# Read
-async with AsyncSessionLocal() as session:
-    result = await session.execute(select(Job).where(Job.id == "123"))
-    job = result.scalar_one_or_none()
-
-# Update
-async with AsyncSessionLocal() as session:
-    await session.execute(
-        update(Job).where(Job.id == "123").values(status="completed")
-    )
-    await session.commit()
-
-# Delete
-async with AsyncSessionLocal() as session:
-    await session.execute(delete(Job).where(Job.id == "123"))
-    await session.commit()
+# From db_service.get_user_jobs
+query = select(Job).where(Job.user_id == user_id)
+if tool:
+    query = query.where(Job.tool == tool)
+query = query.order_by(Job.created_at.desc()).limit(limit).offset(offset)
+result = await db.execute(query)
+return result.scalars().all()
 ```
 
-### Filtering and Ordering
+### Aggregation with func
 
 ```python
-from sqlalchemy import select, and_, or_, desc
+from sqlalchemy import func
 
-# Multiple conditions
-result = await session.execute(
-    select(Job).where(
-        and_(
-            Job.user_email == "user@example.com",
-            Job.status == "completed"
-        )
-    )
-)
+# Scalar count
+count_result = await db.execute(select(func.count(RRCOilProration.id)))
+count = count_result.scalar() or 0
 
-# Ordering and limits
-result = await session.execute(
-    select(Job)
-    .where(Job.tool_name == "extract")
-    .order_by(desc(Job.created_at))
-    .limit(10)
+# Max timestamp
+latest_result = await db.execute(select(func.max(RRCOilProration.updated_at)))
+latest = latest_result.scalar()
+
+# Grouped aggregation
+result = await db.execute(
+    select(Job.tool, func.count(Job.id).label("total_jobs"), func.sum(Job.total_count).label("total_entries"))
+    .group_by(Job.tool)
 )
 ```
 
-### WARNING: Missing `await` on Execute
-
-**The Problem:**
+### `flush()` vs `commit()`
 
 ```python
-# BAD - Returns coroutine, not result
-result = session.execute(select(Job))  # Missing await!
-jobs = result.scalars().all()  # TypeError: coroutine is not iterable
+# flush() — write to DB within transaction, get auto-IDs, don't commit
+db.add(statement)
+await db.flush()        # statement.id is now populated
+for row_data in rows:
+    row = RevenueRow(statement_id=statement.id, ...)  # uses flushed id
+    db.add(row)
+await db.flush()
+# commit() happens automatically in get_db() when response returns
 ```
 
-**Why This Breaks:**
-1. `session.execute()` returns a coroutine in async context
-2. You get a coroutine object instead of query results
-3. Accessing `.scalars()` or `.all()` raises TypeError
-
-**The Fix:**
-
-```python
-# GOOD - Await the query execution
-result = await session.execute(select(Job))
-jobs = result.scalars().all()
-```
-
-**When You Might Be Tempted:** When copying sync SQLAlchemy code. Every database operation must be awaited in async context.
-
----
-
-## Common Anti-Patterns
-
-### WARNING: Session Management Without Context Manager
-
-**The Problem:**
-
-```python
-# BAD - Manual session lifecycle, leak risk
-session = AsyncSessionLocal()
-try:
-    result = await session.execute(select(Job))
-    await session.commit()
-finally:
-    await session.close()  # Easy to forget
-```
-
-**Why This Breaks:**
-1. Exception before `close()` leaks connections
-2. Pool exhaustion under load
-3. Hard to debug connection leaks
-
-**The Fix:**
-
-```python
-# GOOD - Context manager guarantees cleanup
-async with AsyncSessionLocal() as session:
-    result = await session.execute(select(Job))
-    await session.commit()
-# Automatically closed on exit
-```
-
-### WARNING: Mixing Firestore and PostgreSQL for Same Data
-
-**The Problem:**
-
-```python
-# BAD - Dual writes to both databases
-await firestore_service.save_job(job_data)
-await db_service.save_job(job_data)  # Now you have sync issues
-```
-
-**Why This Breaks:**
-1. No transaction across both databases
-2. Data inconsistency if one write fails
-3. Doubles storage costs and maintenance burden
-
-**The Fix:**
-
-```python
-# GOOD - Use one database as source of truth
-if settings.database_enabled:
-    await db_service.save_job(job_data)
-else:
-    await firestore_service.save_job(job_data)
-```
-
-**When You Might Be Tempted:** When "gradually migrating" from Firestore to PostgreSQL. Pick one database per data type and stick with it. This project uses **Firestore as primary** with PostgreSQL as optional local dev DB.
+NEVER call `await db.commit()` inside service functions. Commit is owned by `get_db()`. Only use `flush()` to materialize IDs mid-transaction.

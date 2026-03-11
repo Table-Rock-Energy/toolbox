@@ -1,12 +1,27 @@
 # Tailwind Workflows Reference
 
 ## Contents
+- New Component Checklist
 - Adding Custom Brand Colors
 - Creating Reusable Component Styles
-- Debugging Utility Classes
+- Debugging Utility Classes (Purge Issues)
 - Theme Customization
-- Performance Optimization
-- Migration from Legacy Styles
+- Migration from Inline Styles
+
+---
+
+## New Component Checklist
+
+Copy and track progress when building a new component:
+
+- [ ] Use `tre-*` tokens — no hardcoded hex values
+- [ ] Use `font-oswald` on headings and labels
+- [ ] Mobile-first: start with base classes, add `md:` / `lg:` breakpoints
+- [ ] Pair all hover/active states with `transition-*`
+- [ ] Replace `focus:outline-none` with `focus:ring-2 focus:ring-tre-teal`
+- [ ] Use `disabled:opacity-50 disabled:cursor-not-allowed` on buttons
+- [ ] Verify dark sidebar contrast: text on `bg-tre-navy` uses `text-gray-300` or `text-white`
+- [ ] No dynamic class string interpolation (purge risk)
 
 ---
 

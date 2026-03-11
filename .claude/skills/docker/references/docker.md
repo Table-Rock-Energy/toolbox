@@ -21,17 +21,19 @@ The Dockerfile uses **two stages**: Node 20 for frontend build, Python 3.11 for 
 FROM node:20-slim AS frontend-builder
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm ci  # Use ci for reproducible builds
+RUN npm ci --only=production=false  # Use ci for reproducible builds
 COPY frontend/ ./
 RUN npm run build  # Outputs to dist/
 
 FROM python:3.11-slim
 WORKDIR /app
-COPY backend/requirements.txt ./
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY backend/ ./backend/
-COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
-# Node is NOT in final image - saves ~200MB
+COPY backend/app/ ./app/
+COPY backend/data/ ./data/
+# dist/ copied to /app/static — FastAPI serves from Path(__file__).parent.parent / "static"
+COPY --from=frontend-builder /app/frontend/dist ./static
+# Node toolchain is NOT in final image - saves ~200MB
 ```
 
 **Why:** The final image only contains Python runtime + built static files. Node toolchain (~200MB) is discarded after build stage.
@@ -110,24 +112,23 @@ CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8080"]
 
 ## Health Checks
 
-### Dockerfile Health Check (Commented Out)
+### Dockerfile Health Check (Enabled)
 
 ```dockerfile
-# HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=3 \
-#   CMD curl -f http://localhost:8080/api/health || exit 1
+# Production Dockerfile — health check IS enabled
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/api/health || exit 1
 ```
 
-**Why Commented:** Cloud Run manages health checks via the platform. Dockerfile health checks are redundant and slow down builds.
+**Why:** Cloud Run uses this to determine container health before routing traffic. The `start-period=5s` gives FastAPI time to start up.
 
-### Cloud Run Health Check (Configured in GCP)
-
+**Testing locally:**
 ```bash
-# Configured via gcloud CLI or Cloud Console
-gcloud run services update table-rock-tools \
-  --port 8080 \
-  --timeout 600s \
-  --max-instances 10 \
-  --health-checks-path /api/health
+docker build -t test-image .
+docker run -d -p 8080:8080 test-image
+# After 5 seconds:
+docker inspect --format='{{.State.Health.Status}}' $(docker ps -q)
+# Expected: healthy
 ```
 
 ---
@@ -288,4 +289,4 @@ services:
 
 **Why This Breaks:** Backend crashes on startup with connection refused errors. Requires manual restart or retry logic.
 
-**Current State:** `toolbox/docker-compose.yml` uses basic `depends_on` without health checks. This works ~80% of the time due to FastAPI's startup event retry logic.
+**Current State:** `toolbox/docker-compose.yml` correctly uses `depends_on` with `condition: service_healthy` — waits for `pg_isready` before starting backend.

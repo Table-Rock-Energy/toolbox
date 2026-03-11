@@ -18,39 +18,40 @@ name: Deploy to Cloud Run
 
 on:
   push:
-    branches:
-      - main  # Triggers on every push to main
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: tablerockenergy
+  REGION: us-central1
+  SERVICE_NAME: table-rock-tools
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-      
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v1
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
-      
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v1
-      
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
       - name: Deploy to Cloud Run
         run: |
-          cd toolbox
-          gcloud run deploy table-rock-tools \
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
             --source . \
-            --project tablerockenergy \
-            --region us-central1 \
+            --project ${{ env.PROJECT_ID }} \
+            --region ${{ env.REGION }} \
             --allow-unauthenticated \
-            --port 8080 \
             --memory 1Gi \
             --cpu 1 \
-            --timeout 600s \
-            --max-instances 10 \
-            --min-instances 0
+            --timeout 1200 \
+            --min-instances 0 \
+            --max-instances 10
 ```
 
 **Key Points:**
