@@ -99,6 +99,7 @@ export default function Extract() {
   const [isLoadingEntries, setIsLoadingEntries] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [formatHint, setFormatHint] = useState<string>('')
+  const [csvFile, setCsvFile] = useState<File | null>(null)
 
   // Filter states
   const [showIndividualsOnly, setShowIndividualsOnly] = useState(false)
@@ -202,6 +203,13 @@ export default function Extract() {
       if (res.data?.enabled) setEnrichmentEnabled(true)
     })
   }, [])
+
+  // Clear CSV file when switching away from ECF format
+  useEffect(() => {
+    if (formatHint !== 'ECF') {
+      setCsvFile(null)
+    }
+  }, [formatHint])
 
   const handleApplySuggestions = (accepted: AiSuggestion[]) => {
     if (!activeJob?.result?.entries) return
@@ -318,6 +326,9 @@ export default function Extract() {
     try {
       const formData = new FormData()
       formData.append('file', file)
+      if (formatHint === 'ECF' && csvFile) {
+        formData.append('csv_file', csvFile)
+      }
 
       const uploadUrl = `${API_BASE}/extract/upload${formatHint ? `?format_hint=${formatHint}` : ''}`
       const response = await fetch(uploadUrl, {
@@ -568,8 +579,20 @@ export default function Extract() {
               <option value="TABLE_ATTENTION">Table with Attention Column</option>
               <option value="TABLE_SPLIT_ADDR">Table with Split Address</option>
               <option value="FREE_TEXT_LIST">Two-Column Numbered List</option>
+              <option value="ECF">ECF Filing (Convey 640)</option>
             </select>
           </div>
+          {formatHint === 'ECF' && (
+            <div className="mt-4">
+              <FileUpload
+                onFilesSelected={(files) => setCsvFile(files[0] || null)}
+                accept=".csv,.xlsx,.xls"
+                multiple={false}
+                label="Convey 640 (Optional)"
+                description="Drop CSV or Excel file here, or click to select"
+              />
+            </div>
+          )}
           {isProcessing && (
             <div className="mt-4 flex items-center gap-2 text-tre-teal">
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
@@ -602,8 +625,20 @@ export default function Extract() {
                 <option value="TABLE_ATTENTION">Table with Attention Column</option>
                 <option value="TABLE_SPLIT_ADDR">Table with Split Address</option>
                 <option value="FREE_TEXT_LIST">Two-Column Numbered List</option>
+                <option value="ECF">ECF Filing (Convey 640)</option>
               </select>
             </div>
+            {formatHint === 'ECF' && (
+              <div className="mt-4">
+                <FileUpload
+                  onFilesSelected={(files) => setCsvFile(files[0] || null)}
+                  accept=".csv,.xlsx,.xls"
+                  multiple={false}
+                  label="Convey 640 (Optional)"
+                  description="Drop CSV or Excel file here, or click to select"
+                />
+              </div>
+            )}
             {isProcessing && (
               <div className="mt-4 flex items-center gap-2 text-tre-teal">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
