@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 1: ECF PDF Parsing** - Parse ECF Exhibit A respondent lists from OCC multiunit well application PDFs with entity detection and case metadata
 - [ ] **Phase 2: Convey 640 Processing** - Parse optional Convey 640 CSV/Excel files with name normalization and ZIP code preservation
 - [ ] **Phase 3: Merge and Export** - Combine PDF-authoritative respondent data with CSV metadata and export to mineral format
-- [ ] **Phase 4: Frontend Integration** - Dual-file upload UI in Extract page with metadata display and mineral export
+- [x] **Phase 4: Frontend Integration** - Dual-file upload UI in Extract page with metadata display and mineral export (completed 2026-03-11)
 
 ## Phase Details
 
@@ -90,4 +90,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 | 1. ECF PDF Parsing | 0/2 | Not started | - |
 | 2. Convey 640 Processing | 0/1 | Not started | - |
 | 3. Merge and Export | 0/2 | Not started | - |
-| 4. Frontend Integration | 1/2 | In Progress|  |
+| 4. Frontend Integration | 2/2 | Complete   | 2026-03-11 |
