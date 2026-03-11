@@ -1,16 +1,28 @@
 # Roadmap: Table Rock Tools v1.4 ECF Extraction
 
-## Overview
+## Milestones
+
+- ✅ **v1.3 Security Hardening** — Phases 1-3 (shipped 2026-03-11)
+- 🚧 **v1.4 ECF Extraction** — Phases 1-4 (in progress)
 
 Add ECF/Convey 640 as a new extraction format within the existing Extract tool. The build validates PDF parsing independently (Phase 1), adds CSV processing (Phase 2), integrates merge logic with export (Phase 3), then wires up the frontend (Phase 4). Each phase delivers a testable capability via Swagger before the next begins.
 
 ## Phases
 
+<details>
+<summary>✅ v1.3 Security Hardening (Phases 1-3) — SHIPPED 2026-03-11</summary>
+
+- [x] Phase 1: Auth Enforcement & CORS Lockdown (2/2 plans) — completed 2026-03-11
+- [x] Phase 2: Encryption Hardening (2/2 plans) — completed 2026-03-11
+- [x] Phase 3: Backend Test Suite (2/2 plans) — completed 2026-03-11
+
+See: `.planning/milestones/v1.3-ROADMAP.md` for full details
+
+</details>
+
 **Phase Numbering:**
 - Integer phases (1, 2, 3, 4): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
-
-Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: ECF PDF Parsing** - Parse ECF Exhibit A respondent lists from OCC multiunit well application PDFs with entity detection and case metadata
 - [ ] **Phase 2: Convey 640 Processing** - Parse optional Convey 640 CSV/Excel files with name normalization and ZIP code preservation
@@ -76,8 +88,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 04-01-PLAN.md -- ECF format option, dual-file upload, CaseMetadata types
-- [ ] 04-02-PLAN.md -- Case metadata panel, mineral export modal wiring, visual verification
+- [x] 04-01-PLAN.md -- ECF format option, dual-file upload, CaseMetadata types
+- [x] 04-02-PLAN.md -- Case metadata panel, mineral export modal wiring, visual verification
 
 ## Progress
 

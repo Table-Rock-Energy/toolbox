@@ -1,7 +1,7 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.4
-milestone_name: milestone
+milestone_name: ECF Extraction
 status: executing
 stopped_at: Completed 04-02-PLAN.md
 last_updated: "2026-03-11T19:50:07.006Z"
