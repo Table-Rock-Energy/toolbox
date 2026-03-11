@@ -797,6 +797,46 @@ export default function Extract() {
                 </div>
               </div>
 
+              {/* Case Metadata Panel - ECF results */}
+              {activeJob?.result?.case_metadata && (
+                <div className="px-6 py-4 border-b border-gray-100 bg-blue-50/30">
+                  <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">
+                    Case Information
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {[
+                      { label: 'County', value: activeJob.result.case_metadata.county },
+                      { label: 'Case Number', value: activeJob.result.case_metadata.case_number },
+                      { label: 'Applicant', value: activeJob.result.case_metadata.applicant },
+                      { label: 'Well Name', value: activeJob.result.case_metadata.well_name },
+                    ].map(({ label, value }) => (
+                      <div key={label}>
+                        <p className="text-xs text-gray-500">{label}</p>
+                        <p className="text-sm font-medium text-gray-900">{value || '\u2014'}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {activeJob.result.case_metadata.legal_description && (
+                    <div className="mt-3">
+                      <p className="text-xs text-gray-500">Legal Description</p>
+                      <p className="text-sm font-medium text-gray-900">
+                        {activeJob.result.case_metadata.legal_description}
+                      </p>
+                    </div>
+                  )}
+                  {activeJob.result.merge_warnings && activeJob.result.merge_warnings.length > 0 && (
+                    <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <p className="text-xs font-medium text-yellow-800">Merge Warnings</p>
+                      <ul className="text-xs text-yellow-700 mt-1 space-y-0.5">
+                        {activeJob.result.merge_warnings.map((w, i) => (
+                          <li key={i}>- {w}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Filter Controls */}
               <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
                 <div className="flex flex-wrap items-center gap-4">
