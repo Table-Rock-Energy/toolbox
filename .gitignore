@@ -78,8 +78,7 @@ logs/
 # Test data (local only)
 test-data/
 
-# GSD planning files
-.planning/
+# GSD planning files (tracked in git)
 
 # IDE config
 .cursor/
