@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import uuid4
 
@@ -802,10 +802,20 @@ async def update_county_status(key: str, data: dict) -> None:
         data: Status fields to set/update
     """
     db = get_firestore_client()
-    data["updated_at"] = datetime.utcnow()
+    data["updated_at"] = datetime.now(timezone.utc)
     await db.collection(RRC_COUNTY_STATUS_COLLECTION).document(key).set(
         data, merge=True
     )
+
+
+async def get_all_tracked_county_keys() -> list[str]:
+    """Return all county keys that have ever been downloaded."""
+    db = get_firestore_client()
+    docs = db.collection(RRC_COUNTY_STATUS_COLLECTION).stream()
+    keys = []
+    async for doc in docs:
+        keys.append(doc.id)
+    return keys
 
 
 async def get_stale_counties(keys: list[str]) -> list[str]:
@@ -824,7 +834,7 @@ async def get_stale_counties(keys: list[str]) -> list[str]:
     """
     statuses = await get_counties_status(keys)
 
-    first_of_month = datetime.utcnow().replace(
+    first_of_month = datetime.now(timezone.utc).replace(
         day=1, hour=0, minute=0, second=0, microsecond=0
     )
 
@@ -837,13 +847,20 @@ async def get_stale_counties(keys: list[str]) -> list[str]:
         if status.get("status") == "failed":
             stale.append(key)
             continue
+        # A "success" with 0 records likely means the download didn't capture data
+        if status.get("oil_record_count", 0) == 0 and status.get("status") == "success":
+            stale.append(key)
+            continue
         last_dl = status.get("last_downloaded_at")
         if not last_dl:
             stale.append(key)
             continue
         # Handle both datetime objects and ISO strings
         if isinstance(last_dl, str):
-            last_dl = datetime.fromisoformat(last_dl.replace("Z", "+00:00")).replace(tzinfo=None)
+            last_dl = datetime.fromisoformat(last_dl.replace("Z", "+00:00"))
+        # Ensure timezone-aware for comparison (Firestore returns aware datetimes)
+        if last_dl.tzinfo is None:
+            last_dl = last_dl.replace(tzinfo=timezone.utc)
         if last_dl < first_of_month:
             stale.append(key)
 

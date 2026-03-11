@@ -59,7 +59,7 @@ def _row_values(row: MineralHolderRow) -> list:
         row.interest,
         row.rrc_acres,
         row.est_nra,
-        row.notes,
+        row.notes.split("|")[0] if row.notes and "|" in row.notes else row.notes,
     ]
 
 

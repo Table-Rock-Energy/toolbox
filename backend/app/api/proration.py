@@ -7,11 +7,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Annotated, Optional, Union
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Request, UploadFile
 
 from app.core.ingestion import file_response, persist_job_result, validate_upload
 from app.models.proration import (
-    CountyDownloadInfo,
     ExportRequest,
     FetchMissingRequest,
     FetchMissingResult,
@@ -22,7 +21,10 @@ from app.models.proration import (
 )
 from app.services.proration.csv_processor import extract_needed_counties, process_csv
 from app.services.proration.export_service import to_csv, to_excel, to_pdf
-from app.services.proration.rrc_county_download_service import ensure_counties_fresh
+from app.services.proration.rrc_county_download_service import (
+    ensure_counties_fresh,
+    fetch_individual_leases,
+)
 from app.services.proration.rrc_data_service import rrc_data_service
 from app.services.rrc_background import (
     get_active_rrc_sync_job,
@@ -164,6 +166,63 @@ async def download_gas_data() -> RRCDownloadResponse:
     )
 
 
+@router.post("/rrc/refresh-counties")
+async def refresh_tracked_counties() -> dict:
+    """Re-download RRC data for all previously tracked counties.
+
+    Intended to be called weekly (Friday evenings) via GitHub Actions cron.
+    Only downloads counties that are stale (not refreshed this month).
+    """
+    try:
+        from app.services.firestore_service import get_all_tracked_county_keys, get_stale_counties
+        from app.services.proration.rrc_county_codes import TEXAS_COUNTY_CODES
+
+        all_keys = await get_all_tracked_county_keys()
+        if not all_keys:
+            return {"message": "No tracked counties", "refreshed": 0, "total": 0}
+
+        stale_keys = await get_stale_counties(all_keys)
+        if not stale_keys:
+            return {"message": "All counties are fresh", "refreshed": 0, "total": len(all_keys)}
+
+        # Build reverse lookup: "district-county_code" -> county_name
+        key_to_name = {}
+        for name, (code, district) in TEXAS_COUNTY_CODES.items():
+            key_to_name[f"{district}-{code}"] = name
+
+        # Build county dicts for download
+        counties_to_download = []
+        for key in stale_keys:
+            parts = key.split("-", 1)
+            if len(parts) != 2:
+                continue
+            district, county_code = parts
+            county_name = key_to_name.get(key, f"{district}-{county_code}")
+            counties_to_download.append({
+                "county_name": county_name,
+                "county_code": county_code,
+                "district": district,
+            })
+
+        logger.info("refresh-counties: %d stale of %d tracked, downloading", len(counties_to_download), len(all_keys))
+        dl_results = await ensure_counties_fresh(counties_to_download)
+
+        downloaded = sum(1 for r in dl_results if r["status"] == "downloaded")
+        failed = sum(1 for r in dl_results if r["status"] == "failed")
+        total_records = sum(r.get("records_downloaded", 0) for r in dl_results)
+
+        return {
+            "message": f"Refreshed {downloaded} counties ({total_records} records)",
+            "refreshed": downloaded,
+            "failed": failed,
+            "total": len(all_keys),
+            "details": dl_results,
+        }
+    except Exception as e:
+        logger.exception("County refresh failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"County refresh failed: {e!s}") from e
+
+
 @router.post("/rrc/sync")
 async def sync_rrc_to_database() -> dict:
     """Manually sync existing CSV data to the database."""
@@ -182,6 +241,7 @@ async def sync_rrc_to_database() -> dict:
 async def upload_csv(
     file: Annotated[UploadFile, File(description="CSV file from mineralholders.com")],
     request: Request,
+    background_tasks: BackgroundTasks,
     options_json: Annotated[Optional[str], Form(description="Processing options as JSON")] = None,
 ) -> UploadResponse:
     """Upload a CSV file and process mineral holder data."""
@@ -202,27 +262,19 @@ async def upload_csv(
         else:
             options = ProcessingOptions(query_rrc=False)
 
-        # On-demand county download: extract counties and ensure fresh data
-        county_download_infos: list[CountyDownloadInfo] = []
+        # Schedule county download in background (don't block upload)
         try:
             needed_counties = extract_needed_counties(file_bytes)
             if needed_counties:
-                logger.info("Checking freshness for %d counties", len(needed_counties))
-                dl_results = await ensure_counties_fresh(needed_counties)
-                county_download_infos = [
-                    CountyDownloadInfo(**r) for r in dl_results
-                ]
-                downloaded = sum(1 for r in dl_results if r["status"] == "downloaded")
-                if downloaded > 0:
-                    logger.info("Downloaded fresh RRC data for %d counties", downloaded)
+                logger.info("Scheduling background county download for %d counties", len(needed_counties))
+                background_tasks.add_task(_background_county_download, needed_counties)
         except Exception as e:
-            logger.warning("County download failed (proceeding without): %s", e)
+            logger.warning("County extraction failed: %s", e)
 
         logger.info("Processing CSV: %s", file.filename)
         result = await process_csv(file_bytes, file.filename, options)
 
         if not result.success:
-            result.county_downloads = county_download_infos or None
             return UploadResponse(message="Processing failed", result=result)
 
         logger.info(
@@ -248,10 +300,6 @@ async def upload_csv(
         if job_id:
             result.job_id = job_id
 
-        # Attach county download info to result
-        if county_download_infos:
-            result.county_downloads = county_download_infos
-
         return UploadResponse(
             message=(
                 f"Successfully processed {result.processed_rows} rows "
@@ -271,20 +319,21 @@ async def upload_csv(
 
 
 @router.post("/rrc/fetch-missing", response_model=FetchMissingResult)
-async def fetch_missing_rrc_data(request: FetchMissingRequest) -> FetchMissingResult:
+async def fetch_missing_rrc_data(request: FetchMissingRequest, background_tasks: BackgroundTasks) -> FetchMissingResult:
     """Fetch RRC data for rows that are missing it.
 
-    Groups unmatched rows by county, downloads county data on-demand,
-    then re-looks up each row in Firestore.
+    1. Groups unmatched rows by county
+    2. Downloads county data from RRC on-demand
+    3. Re-looks up each row in Firestore after download
     """
     import re
 
     from app.models.proration import WellType
+    from app.services.proration.rrc_county_codes import lookup_county
 
     if not request.rows:
         raise HTTPException(status_code=400, detail="No rows provided")
 
-    # Go straight to Firestore lookups — county data from February is already there
     try:
         from app.services.firestore_service import (
             lookup_rrc_acres,
@@ -297,11 +346,14 @@ async def fetch_missing_rrc_data(request: FetchMissingRequest) -> FetchMissingRe
             still_missing_count=len(request.rows),
         )
 
+    logger.info("fetch-missing: %d rows received", len(request.rows))
+
+    # Step 1: Parse district/lease from each row and check Firestore first
     updated_rows = []
     matched = 0
+    missing_leases: list[tuple[int, str, str, str]] = []  # (row_index, district, lease_number, county_code)
 
-    for row in request.rows:
-        # Parse district/lease from the row
+    for i, row in enumerate(request.rows):
         district = row.district
         lease_number = row.lease_number
 
@@ -317,42 +369,138 @@ async def fetch_missing_rrc_data(request: FetchMissingRequest) -> FetchMissingRe
                     district = district or numbers[0].zfill(2)
                     lease_number = lease_number or numbers[1]
 
+        # Resolve county code for narrower RRC searches
+        county_code = ""
+        if row.county:
+            county_result = lookup_county(row.county)
+            if county_result:
+                county_code = county_result[0]
+
         rrc_info = None
 
         if district and lease_number:
+            logger.info("fetch-missing: Firestore lookup district=%s lease=%s", district, lease_number)
             rrc_info = await lookup_rrc_acres(district, lease_number)
 
         if rrc_info is None and lease_number:
             rrc_info = await lookup_rrc_by_lease_number(lease_number)
 
         if rrc_info:
-            row.rrc_acres = rrc_info.get("acres")
-            well_type_str = rrc_info.get("type", "")
-            if well_type_str == "oil":
-                row.well_type = WellType.OIL
-            elif well_type_str == "gas":
-                row.well_type = WellType.GAS
-            elif well_type_str == "both":
-                row.well_type = WellType.BOTH
-
-            # Recalculate est_nra if we now have acres
-            if row.rrc_acres and row.interest:
-                row.est_nra = round(row.rrc_acres * row.interest, 6)
-                if row.estimated_monthly_revenue and row.est_nra > 0:
-                    row.dollars_per_nra = round(
-                        row.estimated_monthly_revenue / row.est_nra, 2
-                    )
-
-            row.notes = None  # Clear "Not found" note
+            logger.info("fetch-missing: MATCHED district=%s lease=%s -> acres=%s", district, lease_number, rrc_info.get("acres"))
+            _apply_rrc_info(row, rrc_info, WellType)
             matched += 1
+        elif district and lease_number:
+            missing_leases.append((i, district, lease_number, county_code))
 
         updated_rows.append(row)
+
+    # Step 2: Individual RRC queries for missing leases (fast with county codes)
+    # County downloads happen in background after response is sent
+    MAX_INDIVIDUAL_QUERIES = 25
+    county_download_infos = []
+
+    if missing_leases:
+        unique_leases = list({(d, ln, cc) for _, d, ln, cc in missing_leases})
+        logger.info("fetch-missing: %d rows not in Firestore (%d unique leases)", len(missing_leases), len(unique_leases))
+
+        if len(unique_leases) > MAX_INDIVIDUAL_QUERIES:
+            logger.info(
+                "fetch-missing: capping individual queries from %d to %d",
+                len(unique_leases), MAX_INDIVIDUAL_QUERIES,
+            )
+            unique_leases = unique_leases[:MAX_INDIVIDUAL_QUERIES]
+        logger.info(
+            "fetch-missing: querying RRC for %d individual leases",
+            len(unique_leases),
+        )
+        try:
+            individual_results = await fetch_individual_leases(unique_leases)
+        except Exception as e:
+            logger.warning("Individual lease fetch failed: %s", e)
+            individual_results = {}
+
+        if individual_results:
+            for row_idx, district, lease_number, _cc in missing_leases:
+                row = updated_rows[row_idx]
+                rrc_info = await lookup_rrc_acres(district, lease_number)
+                if rrc_info is None:
+                    rrc_info = await lookup_rrc_by_lease_number(lease_number)
+                if rrc_info:
+                    _apply_rrc_info(row, rrc_info, WellType)
+                    matched += 1
+
+    # Mark rows that are still missing after full fetch attempt
+    RRC_SEARCH_URL = "https://webapps2.rrc.texas.gov/EWA/oilProQueryAction.do"
+    for row in updated_rows:
+        if not row.rrc_acres and row.notes and "Not found" in row.notes:
+            district = row.district or ""
+            lease = row.lease_number or ""
+            row.notes = f"Not found in RRC|{RRC_SEARCH_URL}?district={district}&lease={lease}"
+
+    logger.info("fetch-missing: matched %d of %d rows", matched, len(request.rows))
+
+    # Background: download full county data so future lookups hit Firestore directly
+    if missing_leases or matched > 0:
+        county_set: set[str] = set()
+        for row in request.rows:
+            if row.county:
+                county_set.add(row.county.strip().upper().replace(" COUNTY", ""))
+        bg_counties = []
+        for name in county_set:
+            result = lookup_county(name)
+            if result:
+                county_code, district_code, canonical = result
+                bg_counties.append({
+                    "county_name": canonical,
+                    "county_code": county_code,
+                    "district": district_code,
+                })
+        if bg_counties:
+            background_tasks.add_task(_background_county_download, bg_counties)
 
     return FetchMissingResult(
         updated_rows=updated_rows,
         matched_count=matched,
         still_missing_count=len(request.rows) - matched,
+        counties_downloaded=county_download_infos,
     )
+
+
+async def _background_county_download(counties: list[dict]) -> None:
+    """Download full county RRC data in the background to backfill Firestore."""
+    logger.info("Background county download starting for %d counties: %s",
+                len(counties), [c["county_name"] for c in counties])
+    try:
+        results = await ensure_counties_fresh(counties)
+        downloaded = sum(1 for r in results if r["status"] == "downloaded")
+        fresh = sum(1 for r in results if r["status"] == "fresh")
+        failed = sum(1 for r in results if r["status"] == "failed")
+        logger.info("Background county download complete: %d downloaded, %d fresh, %d failed",
+                    downloaded, fresh, failed)
+    except Exception as e:
+        logger.warning("Background county download failed: %s", e)
+
+
+def _apply_rrc_info(row, rrc_info: dict, WellType) -> None:
+    """Apply RRC lookup results to a row."""
+    row.rrc_acres = rrc_info.get("acres")
+    well_type_str = rrc_info.get("type", "")
+    if well_type_str == "oil":
+        row.well_type = WellType.OIL
+    elif well_type_str == "gas":
+        row.well_type = WellType.GAS
+    elif well_type_str == "both":
+        row.well_type = WellType.BOTH
+
+    # Recalculate est_nra if we now have acres
+    if row.rrc_acres and row.interest:
+        row.est_nra = round(row.rrc_acres * row.interest, 6)
+        if row.estimated_monthly_revenue and row.est_nra > 0:
+            row.dollars_per_nra = round(
+                row.estimated_monthly_revenue / row.est_nra, 2
+            )
+
+    row.notes = None  # Clear "Not found" note
 
 
 @router.post("/export/csv")

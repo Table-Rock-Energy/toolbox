@@ -1,0 +1,31 @@
+name: Weekly RRC County Refresh
+
+on:
+  schedule:
+    # Every Friday at 11:00 PM CST (Saturday 5:00 AM UTC)
+    - cron: '0 5 * * 6'
+  workflow_dispatch: {}
+
+jobs:
+  refresh-counties:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh tracked RRC counties
+        run: |
+          echo "Triggering weekly RRC county refresh..."
+
+          HTTP_STATUS=$(curl -s -o response.json -w "%{http_code}" \
+            -X POST "https://tools.tablerocktx.com/api/proration/rrc/refresh-counties" \
+            -H "Content-Type: application/json" \
+            --max-time 600)
+
+          echo "HTTP Status: $HTTP_STATUS"
+          echo "Response:"
+          python3 -m json.tool < response.json 2>/dev/null || cat response.json
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "County refresh completed successfully"
+          else
+            echo "County refresh failed with status $HTTP_STATUS"
+            exit 1
+          fi

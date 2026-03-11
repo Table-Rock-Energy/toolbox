@@ -141,12 +141,6 @@ const STORAGE_KEY_PREFIX = 'proration-visible-columns'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
-const STEP_LABELS: Record<string, string> = {
-  downloading_oil: 'Downloading oil data...',
-  downloading_gas: 'Downloading gas data...',
-  syncing_oil: 'Syncing oil to database...',
-  syncing_gas: 'Syncing gas to database...',
-}
 
 export default function Proration() {
   const { user, userName } = useAuth()
@@ -170,9 +164,9 @@ export default function Proration() {
     return null
   })
   const [rrcLoading, setRrcLoading] = useState(!rrcStatus)
-  const [isDownloadingRRC, setIsDownloadingRRC] = useState(false)
-  const [rrcMessage, setRrcMessage] = useState<string | null>(null)
-  const [rrcSyncJob, setRrcSyncJob] = useState<RRCSyncJob | null>(null)
+  const [_isDownloadingRRC, setIsDownloadingRRC] = useState(false)
+  const [_rrcMessage, setRrcMessage] = useState<string | null>(null)
+  const [_rrcSyncJob, setRrcSyncJob] = useState<RRCSyncJob | null>(null)
   const rrcPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Processing Options State
@@ -194,6 +188,7 @@ export default function Proration() {
   // Edit Row Modal State
   const [editingRow, setEditingRow] = useState<MineralHolderRow | null>(null)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const [isRetryingRrc, setIsRetryingRrc] = useState(false)
 
   // Column Visibility State (persisted in localStorage per user, separate keys for narrow/wide)
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
@@ -388,53 +383,6 @@ export default function Proration() {
     }
   }
 
-  const handleDownloadRRC = async () => {
-    setIsDownloadingRRC(true)
-    setRrcMessage(null)
-    setError(null)
-    setRrcSyncJob(null)
-
-    try {
-      const response = await fetch(`${API_BASE}/proration/rrc/download`, {
-        method: 'POST',
-      })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        // Check if it's a background job response (has job_id) or monthly guard response (has success)
-        if (data.job_id) {
-          // Background job started - begin polling
-          setRrcSyncJob({
-            id: data.job_id,
-            status: data.status || 'downloading_oil',
-            started_at: new Date().toISOString(),
-            completed_at: null,
-            oil_rows: 0,
-            gas_rows: 0,
-            error: null,
-            steps: [],
-          })
-          startPolling(data.job_id)
-        } else if (data.success) {
-          // Monthly guard returned early - already up to date
-          setRrcMessage(data.message || `Already up to date`)
-          setIsDownloadingRRC(false)
-          // Refresh status just in case
-          await checkRRCStatus()
-        } else {
-          setError(data.message || 'Failed to download RRC data')
-          setIsDownloadingRRC(false)
-        }
-      } else {
-        setError(data.message || 'Failed to download RRC data')
-        setIsDownloadingRRC(false)
-      }
-    } catch (err) {
-      setError('Failed to download RRC data. Please try again.')
-      setIsDownloadingRRC(false)
-    }
-  }
 
   const handleFilesSelected = async (files: File[]) => {
     if (files.length === 0) return
@@ -490,6 +438,7 @@ export default function Proration() {
       setJobs((prev) => [newJob, ...prev])
       setActiveJob(newJob)
       setSelectedFile(null)
+      setFetchMissingMessage(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to process file')
       newJob.result = {
@@ -542,6 +491,7 @@ export default function Proration() {
   const handleSelectJob = async (job: ProrationJob) => {
     setActiveJob(job)
     setError(null)
+    setFetchMissingMessage(null)
 
     // Lazy-load entries if not already loaded
     if (!job.result?.rows && job.job_id) {
@@ -611,6 +561,34 @@ export default function Proration() {
   const handleCancelEdit = () => {
     setEditingRow(null)
     setEditingIndex(null)
+    setIsRetryingRrc(false)
+  }
+
+  const handleRetryRrcLookup = async () => {
+    if (!editingRow || !editingRow.district || !editingRow.lease_number) return
+    setIsRetryingRrc(true)
+    try {
+      const response = await fetch(`${API_BASE}/proration/rrc/fetch-missing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: [editingRow] }),
+      })
+      if (!response.ok) throw new Error('RRC lookup failed')
+      const result = await response.json()
+      if (result.updated_rows?.[0]) {
+        const updated = result.updated_rows[0]
+        setEditingRow(updated)
+        if (updated.rrc_acres) {
+          setFetchMissingMessage(`Found: ${updated.rrc_acres} acres`)
+        } else {
+          setFetchMissingMessage('No RRC data found for this lease')
+        }
+      }
+    } catch (err) {
+      setFetchMissingMessage('RRC lookup failed')
+    } finally {
+      setIsRetryingRrc(false)
+    }
   }
 
   const handleFetchMissing = async () => {
@@ -660,9 +638,18 @@ export default function Proration() {
         },
       })
 
-      const msg = result.matched_count > 0
-        ? `Found RRC data for ${result.matched_count} rows`
-        : 'No additional RRC data found'
+      // Build descriptive message
+      const parts: string[] = []
+      if (result.counties_downloaded?.length) {
+        const downloaded = result.counties_downloaded.filter((c: { status: string }) => c.status === 'downloaded').length
+        const failed = result.counties_downloaded.filter((c: { status: string }) => c.status === 'failed').length
+        if (downloaded > 0) parts.push(`${downloaded} county download${downloaded !== 1 ? 's' : ''}`)
+        if (failed > 0) parts.push(`${failed} county timed out`)
+      }
+      if (result.matched_count > 0) {
+        parts.push(`matched ${result.matched_count} row${result.matched_count !== 1 ? 's' : ''}`)
+      }
+      const msg = parts.length > 0 ? parts.join(', ') : 'No additional RRC data found'
       setFetchMissingMessage(
         result.still_missing_count > 0
           ? `${msg} (${result.still_missing_count} still missing)`
@@ -706,17 +693,6 @@ export default function Proration() {
     return num.toFixed(decimals)
   }
 
-  const formatDate = (isoString?: string): string => {
-    if (!isoString) return 'Never'
-    const date = new Date(isoString)
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    })
-  }
 
   const hasDBData = (rrcStatus?.db_oil_rows || 0) + (rrcStatus?.db_gas_rows || 0) > 0
   const hasCSVData = rrcStatus?.oil_available || rrcStatus?.gas_available
@@ -729,18 +705,6 @@ export default function Proration() {
   const oilRecords = hasDBData ? (rrcStatus?.db_oil_rows || 0) : (rrcStatus?.oil_rows || 0)
   const gasRecords = hasDBData ? (rrcStatus?.db_gas_rows || 0) : (rrcStatus?.gas_rows || 0)
 
-  // Check if monthly update is needed: last sync is before the 1st of the current month
-  const isDataExpired = (): boolean => {
-    const syncDate = rrcStatus?.last_sync?.completed_at || rrcStatus?.oil_modified
-    if (!syncDate) return false
-    const lastUpdated = new Date(syncDate)
-    const firstOfMonth = new Date()
-    firstOfMonth.setDate(1)
-    firstOfMonth.setHours(0, 0, 0, 0)
-    return lastUpdated < firstOfMonth
-  }
-
-  const dataExpired = hasRRCData && isDataExpired()
 
   return (
     <div className="space-y-6">
@@ -768,30 +732,12 @@ export default function Proration() {
       </div>
 
       {/* RRC Data Status - informational only */}
-      {rrcLoading ? (
-        <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-gray-50 border border-gray-200">
-          <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm text-gray-500">Checking RRC data status...</span>
-        </div>
-      ) : hasRRCData ? (
+      {!rrcLoading && hasRRCData && (
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-green-50 border border-green-200">
           <Database className="w-4 h-4 text-green-600 flex-shrink-0" />
           <span className="text-sm text-green-800">
             <span className="font-medium">{totalRecords.toLocaleString()}</span> RRC records
             <span className="text-green-600 mx-1">({oilRecords.toLocaleString()} oil, {gasRecords.toLocaleString()} gas)</span>
-            <span className="text-green-600/70">&bull; Last updated {rrcStatus?.last_sync?.completed_at
-              ? formatDate(rrcStatus.last_sync.completed_at)
-              : rrcStatus?.oil_modified
-                ? formatDate(rrcStatus.oil_modified)
-                : 'Unknown'
-            }</span>
-          </span>
-        </div>
-      ) : (
-        <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-yellow-50 border border-yellow-200">
-          <Database className="w-4 h-4 text-yellow-600 flex-shrink-0" />
-          <span className="text-sm text-yellow-800">
-            No RRC data cached locally. Missing data will be fetched on demand when you process a file.
           </span>
         </div>
       )}
@@ -811,14 +757,6 @@ export default function Proration() {
                 <div className="mt-4 flex items-center gap-2 text-tre-teal">
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
                   <span className="text-sm">Processing...</span>
-                </div>
-              )}
-              {!hasRRCData && !isProcessing && (
-                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <p className="text-xs text-yellow-700">
-                    <AlertTriangle className="w-3 h-3 inline mr-1" />
-                    Download RRC data first for accurate NRA calculations
-                  </p>
                 </div>
               )}
             </>
@@ -1232,12 +1170,12 @@ export default function Proration() {
                         {isFetchingMissing ? (
                           <>
                             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            Fetching...
+                            Fetching from RRC...
                           </>
                         ) : (
                           <>
                             <Search className="w-3.5 h-3.5" />
-                            Fetch Missing Data
+                            Fetch from RRC
                           </>
                         )}
                       </button>
@@ -1359,7 +1297,26 @@ export default function Proration() {
                             <td className="py-2 px-3 text-gray-600 text-right">{formatCurrency(row.estimated_monthly_revenue)}</td>
                           )}
                           {isColumnVisible('well_type') && <td className="py-2 px-3 text-gray-600 text-xs">{row.well_type || '\u2014'}</td>}
-                          {isColumnVisible('notes') && <td className="py-2 px-3 text-gray-600 text-xs max-w-[150px] truncate" title={row.notes}>{row.notes || '\u2014'}</td>}
+                          {isColumnVisible('notes') && (
+                            <td className="py-2 px-3 text-gray-600 text-xs max-w-[200px]">
+                              {row.notes?.includes('|http') ? (
+                                <>
+                                  <span>{row.notes.split('|')[0]}</span>
+                                  {' '}
+                                  <a
+                                    href={row.notes.split('|')[1]}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-tre-teal hover:underline"
+                                  >
+                                    Verify on RRC
+                                  </a>
+                                </>
+                              ) : (
+                                <span className="truncate block" title={row.notes}>{row.notes || '\u2014'}</span>
+                              )}
+                            </td>
+                          )}
                           <td className="py-2 px-3 text-center">
                             <button
                               onClick={() => handleEditRow(row, origIndex)}
@@ -1470,6 +1427,16 @@ export default function Proration() {
             >
               Cancel
             </button>
+            {editingRow && !editingRow.rrc_acres && editingRow.district && editingRow.lease_number && (
+              <button
+                onClick={handleRetryRrcLookup}
+                disabled={isRetryingRrc}
+                className="px-4 py-2 bg-tre-teal text-tre-navy rounded-lg text-sm hover:bg-tre-teal/80 transition-colors disabled:opacity-50 flex items-center gap-1"
+              >
+                {isRetryingRrc ? <RefreshCw size={14} className="animate-spin" /> : <Search size={14} />}
+                {isRetryingRrc ? 'Looking up...' : 'Retry RRC Lookup'}
+              </button>
+            )}
             <button
               onClick={handleSaveEdit}
               className="px-4 py-2 bg-tre-navy text-white rounded-lg text-sm hover:bg-tre-navy/90 transition-colors"
@@ -1544,6 +1511,41 @@ export default function Proration() {
                 onChange={(e) => setEditingRow({ ...editingRow, operator: e.target.value })}
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
               />
+            </div>
+            <div className="col-span-2 border-t pt-3 mt-1">
+              <label className="block text-sm font-semibold text-tre-navy mb-2">RRC Lease Info</label>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">District</label>
+                  <input
+                    type="text"
+                    value={editingRow.district || ''}
+                    onChange={(e) => setEditingRow({ ...editingRow, district: e.target.value })}
+                    placeholder="e.g. 08"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Lease Number</label>
+                  <input
+                    type="text"
+                    value={editingRow.lease_number || ''}
+                    onChange={(e) => setEditingRow({ ...editingRow, lease_number: e.target.value })}
+                    placeholder="e.g. 33286"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">RRC Lease (raw)</label>
+                  <input
+                    type="text"
+                    value={editingRow.rrc_lease || ''}
+                    onChange={(e) => setEditingRow({ ...editingRow, rrc_lease: e.target.value })}
+                    placeholder="e.g. 08-33286"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-tre-teal focus:border-tre-teal"
+                  />
+                </div>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Block</label>
