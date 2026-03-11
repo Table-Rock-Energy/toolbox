@@ -66,6 +66,19 @@ class Settings(BaseSettings):
     # Entity matching threshold (0.0 - 1.0)
     entity_match_threshold: float = 0.85
 
+    # Environment and CORS settings
+    environment: str = "development"
+    cors_allowed_origins: str = ""
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """Get allowed CORS origins based on configuration."""
+        if self.cors_allowed_origins:
+            return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
+        if self.environment == "production":
+            return ["https://tools.tablerocktx.com"]
+        return ["http://localhost:5173"]
+
     @property
     def use_gcs(self) -> bool:
         """Check if GCS should be used for storage."""

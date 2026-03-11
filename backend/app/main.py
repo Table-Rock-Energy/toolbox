@@ -13,11 +13,12 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.core.auth import require_auth
 from app.api.extract import router as extract_router
 from app.api.title import router as title_router
 from app.api.proration import router as proration_router
@@ -45,13 +46,13 @@ app = FastAPI(
     version=settings.version,
 )
 
-# Configure CORS
+# Configure CORS with explicit origin allowlist
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify allowed origins
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -67,18 +68,18 @@ async def health_check() -> dict:
     }
 
 
-# Include tool-specific routers
-app.include_router(extract_router, prefix="/api/extract", tags=["extract"])
-app.include_router(title_router, prefix="/api/title", tags=["title"])
-app.include_router(proration_router, prefix="/api/proration", tags=["proration"])
-app.include_router(revenue_router, prefix="/api/revenue", tags=["revenue"])
-app.include_router(ghl_prep_router, prefix="/api/ghl-prep", tags=["ghl-prep"])
+# Include tool-specific routers with auth enforcement
+app.include_router(extract_router, prefix="/api/extract", tags=["extract"], dependencies=[Depends(require_auth)])
+app.include_router(title_router, prefix="/api/title", tags=["title"], dependencies=[Depends(require_auth)])
+app.include_router(proration_router, prefix="/api/proration", tags=["proration"], dependencies=[Depends(require_auth)])
+app.include_router(revenue_router, prefix="/api/revenue", tags=["revenue"], dependencies=[Depends(require_auth)])
+app.include_router(ghl_prep_router, prefix="/api/ghl-prep", tags=["ghl-prep"], dependencies=[Depends(require_auth)])
 app.include_router(ghl_router, prefix="/api/ghl", tags=["ghl"])
 app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
-app.include_router(history_router, prefix="/api/history", tags=["history"])
-app.include_router(ai_router, prefix="/api/ai", tags=["ai"])
-app.include_router(enrichment_router, prefix="/api/enrichment", tags=["enrichment"])
-app.include_router(etl_router, prefix="/api/etl", tags=["etl"])
+app.include_router(history_router, prefix="/api/history", tags=["history"], dependencies=[Depends(require_auth)])
+app.include_router(ai_router, prefix="/api/ai", tags=["ai"], dependencies=[Depends(require_auth)])
+app.include_router(enrichment_router, prefix="/api/enrichment", tags=["enrichment"], dependencies=[Depends(require_auth)])
+app.include_router(etl_router, prefix="/api/etl", tags=["etl"], dependencies=[Depends(require_auth)])
 
 
 @app.exception_handler(404)
