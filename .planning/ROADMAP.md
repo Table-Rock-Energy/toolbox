@@ -73,11 +73,11 @@ Plans:
   2. Results table displays respondent entries with name, entity type, address, city, state, and ZIP columns
   3. Case metadata (county, case number, applicant, well name) displays above the results table in a summary panel
   4. User can export results as mineral export CSV or Excel using the existing export buttons
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 04-01: Dual-file upload UI and ECF format selection
-- [ ] 04-02: Results table, metadata panel, and export wiring
+- [ ] 04-01-PLAN.md -- ECF format option, dual-file upload, CaseMetadata types
+- [ ] 04-02-PLAN.md -- Case metadata panel, mineral export modal wiring, visual verification
 
 ## Progress
 
