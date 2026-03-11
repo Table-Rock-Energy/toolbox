@@ -9,9 +9,8 @@ import {
   Check,
   AlertCircle,
   X,
-  Bot,
+  Cloud,
   Save,
-  MapPin,
   Plug,
   Eye,
   EyeOff,
@@ -43,16 +42,13 @@ interface AdminOptions {
   tools: string[]
 }
 
-interface GeminiSettings {
+interface GoogleCloudSettings {
   has_key: boolean
-  enabled: boolean
-  model: string
-  monthly_budget: number
-}
-
-interface GoogleMapsSettings {
-  has_key: boolean
-  enabled: boolean
+  gemini_enabled: boolean
+  gemini_model: string
+  gemini_monthly_budget: number
+  maps_enabled: boolean
+  places_enabled: boolean
 }
 
 export default function AdminSettings() {
@@ -86,23 +82,20 @@ export default function AdminSettings() {
   const [passwordCopied, setPasswordCopied] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
 
-  // Gemini state
-  const [gemini, setGemini] = useState<GeminiSettings>({ has_key: false, enabled: false, model: 'gemini-2.5-flash', monthly_budget: 15.0 })
-  const [geminiApiKey, setGeminiApiKey] = useState('')
+  // Google Cloud API state
+  const [googleCloud, setGoogleCloud] = useState<GoogleCloudSettings>({
+    has_key: false, gemini_enabled: false, gemini_model: 'gemini-2.5-flash',
+    gemini_monthly_budget: 15.0, maps_enabled: false, places_enabled: false,
+  })
+  const [googleCloudApiKey, setGoogleCloudApiKey] = useState('')
   const [geminiEnabled, setGeminiEnabled] = useState(false)
   const [geminiModel, setGeminiModel] = useState('gemini-2.5-flash')
   const [geminiBudget, setGeminiBudget] = useState(15.0)
-  const [isSavingGemini, setIsSavingGemini] = useState(false)
-  const [geminiSuccess, setGeminiSuccess] = useState('')
-  const [geminiError, setGeminiError] = useState('')
-
-  // Google Maps state
-  const [googleMaps, setGoogleMaps] = useState<GoogleMapsSettings>({ has_key: false, enabled: false })
-  const [googleMapsApiKey, setGoogleMapsApiKey] = useState('')
-  const [googleMapsEnabled, setGoogleMapsEnabled] = useState(false)
-  const [isSavingGoogleMaps, setIsSavingGoogleMaps] = useState(false)
-  const [googleMapsSuccess, setGoogleMapsSuccess] = useState('')
-  const [googleMapsError, setGoogleMapsError] = useState('')
+  const [mapsEnabled, setMapsEnabled] = useState(false)
+  const [placesEnabled, setPlacesEnabled] = useState(false)
+  const [isSavingGoogleCloud, setIsSavingGoogleCloud] = useState(false)
+  const [googleCloudSuccess, setGoogleCloudSuccess] = useState('')
+  const [googleCloudError, setGoogleCloudError] = useState('')
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
@@ -192,8 +185,7 @@ export default function AdminSettings() {
   useEffect(() => {
     fetchUsers()
     fetchOptions()
-    fetchGeminiSettings()
-    fetchGoogleMapsSettings()
+    fetchGoogleCloudSettings()
     loadEnrichmentConfig()
     fetchConnections()
   }, [])
@@ -224,63 +216,52 @@ export default function AdminSettings() {
     }
   }
 
-  const fetchGeminiSettings = async () => {
+  const fetchGoogleCloudSettings = async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/settings/gemini`)
+      const res = await fetch(`${API_BASE}/admin/settings/google-cloud`)
       if (res.ok) {
         const data = await res.json()
-        setGemini(data)
-        setGeminiEnabled(data.enabled)
-        setGeminiModel(data.model)
-        setGeminiBudget(data.monthly_budget)
+        setGoogleCloud(data)
+        setGeminiEnabled(data.gemini_enabled)
+        setGeminiModel(data.gemini_model)
+        setGeminiBudget(data.gemini_monthly_budget)
+        setMapsEnabled(data.maps_enabled)
+        setPlacesEnabled(data.places_enabled)
       }
     } catch (err) {
-      console.error('Error fetching Gemini settings:', err)
+      console.error('Error fetching Google Cloud settings:', err)
     }
   }
 
-  const fetchGoogleMapsSettings = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/admin/settings/google-maps`)
-      if (res.ok) {
-        const data = await res.json()
-        setGoogleMaps(data)
-        setGoogleMapsEnabled(data.enabled)
-      }
-    } catch (err) {
-      console.error('Error fetching Google Maps settings:', err)
-    }
-  }
-
-  const handleSaveGoogleMaps = async () => {
-    setIsSavingGoogleMaps(true)
-    setGoogleMapsError('')
-    setGoogleMapsSuccess('')
-
+  const handleSaveGoogleCloud = async () => {
+    setIsSavingGoogleCloud(true)
+    setGoogleCloudError('')
+    setGoogleCloudSuccess('')
     try {
       const body: Record<string, unknown> = {
-        enabled: googleMapsEnabled,
+        gemini_enabled: geminiEnabled,
+        gemini_model: geminiModel,
+        gemini_monthly_budget: geminiBudget,
+        maps_enabled: mapsEnabled,
+        places_enabled: placesEnabled,
       }
-      if (googleMapsApiKey) {
-        body.api_key = googleMapsApiKey
+      if (googleCloudApiKey) {
+        body.api_key = googleCloudApiKey
       }
-
-      const res = await fetch(`${API_BASE}/admin/settings/google-maps`, {
+      const res = await fetch(`${API_BASE}/admin/settings/google-cloud`, {
         method: 'PUT',
         headers: await authHeaders(),
         body: JSON.stringify(body),
       })
-
-      if (!res.ok) throw new Error('Failed to update Google Maps settings')
-
+      if (!res.ok) throw new Error('Failed to update Google Cloud settings')
       const data = await res.json()
-      setGoogleMaps(data)
-      setGoogleMapsApiKey('')
-      setGoogleMapsSuccess('Google Maps API settings saved successfully')
+      setGoogleCloud(data)
+      setGoogleCloudApiKey('')
+      setGoogleCloudSuccess('Google Cloud API settings saved successfully')
     } catch (err) {
-      setGoogleMapsError(err instanceof Error ? err.message : 'An error occurred')
+      setGoogleCloudError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
-      setIsSavingGoogleMaps(false)
+      setIsSavingGoogleCloud(false)
     }
   }
 
@@ -481,42 +462,6 @@ export default function AdminSettings() {
     }
   }
 
-  const handleSaveGemini = async () => {
-    setIsSavingGemini(true)
-    setGeminiError('')
-    setGeminiSuccess('')
-
-    try {
-      const body: Record<string, unknown> = {
-        enabled: geminiEnabled,
-        model: geminiModel,
-        monthly_budget: geminiBudget,
-      }
-      if (geminiApiKey) {
-        body.api_key = geminiApiKey
-      }
-
-      const res = await fetch(`${API_BASE}/admin/settings/gemini`, {
-        method: 'PUT',
-        headers: await authHeaders(),
-        body: JSON.stringify(body),
-      })
-
-      if (!res.ok) {
-        throw new Error('Failed to update Gemini settings')
-      }
-
-      const data = await res.json()
-      setGemini(data)
-      setGeminiApiKey('')
-      setGeminiSuccess('Gemini AI settings saved successfully')
-    } catch (err) {
-      setGeminiError(err instanceof Error ? err.message : 'An error occurred')
-    } finally {
-      setIsSavingGemini(false)
-    }
-  }
-
   const roleColors: Record<string, string> = {
     admin: 'bg-red-100 text-red-800',
     user: 'bg-blue-100 text-blue-800',
@@ -665,25 +610,32 @@ export default function AdminSettings() {
         )}
       </div>
 
-      {/* Gemini AI Configuration */}
+      {/* Google Cloud API Configuration */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex items-center gap-2 mb-4">
-          <Bot className="w-5 h-5 text-tre-navy" />
+          <Cloud className="w-5 h-5 text-tre-navy" />
           <h2 className="text-lg font-oswald font-semibold text-tre-navy">
-            Gemini AI Configuration
+            Google Cloud API
           </h2>
         </div>
 
         <div className="space-y-4">
           {/* Status indicator */}
           <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-            <div className={`w-3 h-3 rounded-full ${gemini.has_key && gemini.enabled ? 'bg-green-500' : 'bg-gray-400'}`} />
+            <div className={`w-3 h-3 rounded-full ${googleCloud.has_key ? 'bg-green-500' : 'bg-gray-400'}`} />
             <span className="text-sm text-gray-700">
-              {gemini.has_key && gemini.enabled
-                ? 'Gemini AI is active'
-                : gemini.has_key
-                  ? 'API key configured but AI is disabled'
-                  : 'No API key configured'}
+              {googleCloud.has_key
+                ? (() => {
+                    const active = [
+                      googleCloud.gemini_enabled && 'Gemini AI',
+                      googleCloud.maps_enabled && 'Address Validation',
+                      googleCloud.places_enabled && 'Places',
+                    ].filter(Boolean)
+                    return active.length > 0
+                      ? `Key configured — ${active.join(', ')} active`
+                      : 'Key configured — no services enabled'
+                  })()
+                : 'No API key configured'}
             </span>
           </div>
 
@@ -691,183 +643,147 @@ export default function AdminSettings() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               <Key className="w-4 h-4 inline mr-1" />
-              Gemini API Key
+              Google Cloud API Key
             </label>
             <input
               type="password"
-              value={geminiApiKey}
-              onChange={(e) => setGeminiApiKey(e.target.value)}
-              placeholder={gemini.has_key ? 'Key is set (enter new key to replace)' : 'Enter your Gemini API key'}
+              value={googleCloudApiKey}
+              onChange={(e) => setGoogleCloudApiKey(e.target.value)}
+              placeholder={googleCloud.has_key ? 'Key is set (enter new key to replace)' : 'Enter your Google Cloud API key'}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
             />
             <p className="text-xs text-gray-500 mt-1">
-              Get an API key from Google AI Studio
+              A single Google Cloud API key powers all Google services below. Enable APIs in Google Cloud Console.
             </p>
           </div>
 
-          {/* Enable/Disable toggle */}
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <p className="font-medium text-gray-900">Enable AI Validation</p>
-              <p className="text-sm text-gray-500">Use Gemini to validate and suggest corrections for extracted data</p>
+          {/* Services sub-section */}
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Services</p>
             </div>
-            <button
-              onClick={() => setGeminiEnabled(!geminiEnabled)}
-              className={`relative w-12 h-6 rounded-full transition-colors ${
-                geminiEnabled ? 'bg-tre-teal' : 'bg-gray-300'
-              }`}
-            >
-              <span
-                className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                  geminiEnabled ? 'left-7' : 'left-1'
-                }`}
-              />
-            </button>
+            <div className="divide-y divide-gray-100">
+              {/* Gemini AI toggle */}
+              <div className="flex items-center justify-between px-4 py-3">
+                <div>
+                  <p className="font-medium text-gray-900 text-sm">Generative AI (Gemini)</p>
+                  <p className="text-xs text-gray-500">AI-powered data validation and revenue parsing</p>
+                </div>
+                <button
+                  onClick={() => setGeminiEnabled(!geminiEnabled)}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${
+                    geminiEnabled ? 'bg-tre-teal' : 'bg-gray-300'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                      geminiEnabled ? 'left-7' : 'left-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Address Validation toggle */}
+              <div className="flex items-center justify-between px-4 py-3">
+                <div>
+                  <p className="font-medium text-gray-900 text-sm">Address Validation (Maps)</p>
+                  <p className="text-xs text-gray-500">Validate and correct addresses using Google Geocoding</p>
+                </div>
+                <button
+                  onClick={() => setMapsEnabled(!mapsEnabled)}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${
+                    mapsEnabled ? 'bg-tre-teal' : 'bg-gray-300'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                      mapsEnabled ? 'left-7' : 'left-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Places API toggle */}
+              <div className="flex items-center justify-between px-4 py-3">
+                <div>
+                  <p className="font-medium text-gray-900 text-sm">Places API</p>
+                  <p className="text-xs text-gray-500">Identify facility types (correctional, senior living) at addresses</p>
+                </div>
+                <button
+                  onClick={() => setPlacesEnabled(!placesEnabled)}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${
+                    placesEnabled ? 'bg-tre-teal' : 'bg-gray-300'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                      placesEnabled ? 'left-7' : 'left-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
           </div>
 
-          {/* Model selector */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Model
-            </label>
-            <select
-              value={geminiModel}
-              onChange={(e) => setGeminiModel(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal bg-white"
-            >
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash (fast, affordable)</option>
-              <option value="gemini-2.5-pro">Gemini 2.5 Pro (advanced)</option>
-              <option value="gemini-2.0-flash">Gemini 2.0 Flash (legacy)</option>
-            </select>
-          </div>
+          {/* Gemini-specific settings — only visible when Gemini is enabled */}
+          {geminiEnabled && (
+            <div className="space-y-4 pl-4 border-l-2 border-tre-teal/30">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Model
+                </label>
+                <select
+                  value={geminiModel}
+                  onChange={(e) => setGeminiModel(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal bg-white"
+                >
+                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (fast, affordable)</option>
+                  <option value="gemini-2.5-pro">Gemini 2.5 Pro (advanced)</option>
+                  <option value="gemini-2.0-flash">Gemini 2.0 Flash (legacy)</option>
+                </select>
+              </div>
 
-          {/* Budget */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Monthly Budget (USD)
-            </label>
-            <input
-              type="number"
-              value={geminiBudget}
-              onChange={(e) => setGeminiBudget(parseFloat(e.target.value) || 0)}
-              min={0}
-              step={5}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              AI requests will stop when the monthly budget is reached
-            </p>
-          </div>
-
-          {/* Gemini alerts */}
-          {geminiError && (
-            <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
-              <AlertCircle className="w-4 h-4" />
-              {geminiError}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Monthly Budget (USD)
+                </label>
+                <input
+                  type="number"
+                  value={geminiBudget}
+                  onChange={(e) => setGeminiBudget(parseFloat(e.target.value) || 0)}
+                  min={0}
+                  step={5}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  AI requests will stop when the monthly budget is reached
+                </p>
+              </div>
             </div>
           )}
-          {geminiSuccess && (
+
+          {/* Alerts */}
+          {googleCloudError && (
+            <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
+              <AlertCircle className="w-4 h-4" />
+              {googleCloudError}
+            </div>
+          )}
+          {googleCloudSuccess && (
             <div className="flex items-center gap-2 text-green-600 text-sm p-3 bg-green-50 rounded-lg">
               <Check className="w-4 h-4" />
-              {geminiSuccess}
+              {googleCloudSuccess}
             </div>
           )}
 
           <div className="flex justify-end pt-2">
             <button
-              onClick={handleSaveGemini}
-              disabled={isSavingGemini}
+              onClick={handleSaveGoogleCloud}
+              disabled={isSavingGoogleCloud}
               className="flex items-center gap-2 px-6 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
-              {isSavingGemini ? 'Saving...' : 'Save AI Settings'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Google Maps API Configuration */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <MapPin className="w-5 h-5 text-tre-navy" />
-          <h2 className="text-lg font-oswald font-semibold text-tre-navy">
-            Google Maps API Configuration
-          </h2>
-        </div>
-
-        <div className="space-y-4">
-          {/* Status indicator */}
-          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-            <div className={`w-3 h-3 rounded-full ${googleMaps.has_key && googleMaps.enabled ? 'bg-green-500' : 'bg-gray-400'}`} />
-            <span className="text-sm text-gray-700">
-              {googleMaps.has_key && googleMaps.enabled
-                ? 'Google Maps address validation is active'
-                : googleMaps.has_key
-                  ? 'API key configured but validation is disabled'
-                  : 'No API key configured'}
-            </span>
-          </div>
-
-          {/* API Key input */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              <Key className="w-4 h-4 inline mr-1" />
-              Google Maps API Key
-            </label>
-            <input
-              type="password"
-              value={googleMapsApiKey}
-              onChange={(e) => setGoogleMapsApiKey(e.target.value)}
-              placeholder={googleMaps.has_key ? 'Key is set (enter new key to replace)' : 'Enter your Google Maps API key'}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Requires Geocoding API enabled in Google Cloud Console
-            </p>
-          </div>
-
-          {/* Enable/Disable toggle */}
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <p className="font-medium text-gray-900">Enable Address Validation</p>
-              <p className="text-sm text-gray-500">Validate and correct addresses using Google Maps during data enrichment</p>
-            </div>
-            <button
-              onClick={() => setGoogleMapsEnabled(!googleMapsEnabled)}
-              className={`relative w-12 h-6 rounded-full transition-colors ${
-                googleMapsEnabled ? 'bg-tre-teal' : 'bg-gray-300'
-              }`}
-            >
-              <span
-                className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                  googleMapsEnabled ? 'left-7' : 'left-1'
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Google Maps alerts */}
-          {googleMapsError && (
-            <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
-              <AlertCircle className="w-4 h-4" />
-              {googleMapsError}
-            </div>
-          )}
-          {googleMapsSuccess && (
-            <div className="flex items-center gap-2 text-green-600 text-sm p-3 bg-green-50 rounded-lg">
-              <Check className="w-4 h-4" />
-              {googleMapsSuccess}
-            </div>
-          )}
-
-          <div className="flex justify-end pt-2">
-            <button
-              onClick={handleSaveGoogleMaps}
-              disabled={isSavingGoogleMaps}
-              className="flex items-center gap-2 px-6 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors disabled:opacity-50"
-            >
-              <Save className="w-4 h-4" />
-              {isSavingGoogleMaps ? 'Saving...' : 'Save Maps Settings'}
+              {isSavingGoogleCloud ? 'Saving...' : 'Save Google Cloud Settings'}
             </button>
           </div>
         </div>

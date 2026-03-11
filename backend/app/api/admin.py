@@ -37,6 +37,7 @@ APP_SETTINGS_FILE = Path(__file__).parent.parent.parent / "data" / "app_settings
 
 # Fields to encrypt before persistence. Each tuple is (top-level-key, field-name).
 _SENSITIVE_FIELDS: list[tuple[str, str]] = [
+    ("google_cloud", "api_key"),
     ("gemini", "api_key"),
     ("google_maps", "api_key"),
     ("pdl", "api_key"),
@@ -133,24 +134,49 @@ async def init_app_settings_from_firestore() -> None:
 
 
 def _apply_settings_to_runtime(settings_data: dict) -> None:
-    """Apply loaded settings to the runtime config object."""
+    """Apply loaded settings to the runtime config object.
+
+    Prefers the unified ``google_cloud`` section when present. Falls back to
+    the legacy ``gemini`` and ``google_maps`` sections for backward compatibility.
+    """
     from app.core.config import settings as runtime_settings
 
-    gemini = settings_data.get("gemini", {})
-    if gemini.get("api_key"):
-        runtime_settings.gemini_api_key = gemini["api_key"]
-    if "enabled" in gemini:
-        runtime_settings.gemini_enabled = gemini["enabled"]
-    if "model" in gemini:
-        runtime_settings.gemini_model = gemini["model"]
-    if "monthly_budget" in gemini:
-        runtime_settings.gemini_monthly_budget = gemini["monthly_budget"]
+    # --- Unified Google Cloud section (preferred) ---
+    gc = settings_data.get("google_cloud", {})
+    if gc.get("api_key"):
+        runtime_settings.google_api_key = gc["api_key"]
+        # Propagate to the per-service fields so existing callers still work
+        runtime_settings.gemini_api_key = gc["api_key"]
+        runtime_settings.google_maps_api_key = gc["api_key"]
+    if "gemini_enabled" in gc:
+        runtime_settings.gemini_enabled = gc["gemini_enabled"]
+    if "gemini_model" in gc:
+        runtime_settings.gemini_model = gc["gemini_model"]
+    if "gemini_monthly_budget" in gc:
+        runtime_settings.gemini_monthly_budget = gc["gemini_monthly_budget"]
+    if "maps_enabled" in gc:
+        runtime_settings.google_maps_enabled = gc["maps_enabled"]
+    if "places_enabled" in gc:
+        runtime_settings.places_enabled = gc["places_enabled"]
 
-    gmaps = settings_data.get("google_maps", {})
-    if gmaps.get("api_key"):
-        runtime_settings.google_maps_api_key = gmaps["api_key"]
-    if "enabled" in gmaps:
-        runtime_settings.google_maps_enabled = gmaps["enabled"]
+    # --- Legacy ``gemini`` section (backward compat, only applied when no
+    #     unified section is present) ---
+    if not gc:
+        gemini = settings_data.get("gemini", {})
+        if gemini.get("api_key"):
+            runtime_settings.gemini_api_key = gemini["api_key"]
+        if "enabled" in gemini:
+            runtime_settings.gemini_enabled = gemini["enabled"]
+        if "model" in gemini:
+            runtime_settings.gemini_model = gemini["model"]
+        if "monthly_budget" in gemini:
+            runtime_settings.gemini_monthly_budget = gemini["monthly_budget"]
+
+        gmaps = settings_data.get("google_maps", {})
+        if gmaps.get("api_key"):
+            runtime_settings.google_maps_api_key = gmaps["api_key"]
+        if "enabled" in gmaps:
+            runtime_settings.google_maps_enabled = gmaps["enabled"]
 
 
 class AddUserRequest(BaseModel):
@@ -194,6 +220,26 @@ class AllowlistResponse(BaseModel):
     """Response containing the full allowlist."""
     users: list[UserResponse]
     count: int
+
+
+class GoogleCloudSettingsRequest(BaseModel):
+    """Request to update unified Google Cloud API settings."""
+    api_key: Optional[str] = None
+    gemini_enabled: bool = False
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_monthly_budget: float = 15.00
+    maps_enabled: bool = False
+    places_enabled: bool = False
+
+
+class GoogleCloudSettingsResponse(BaseModel):
+    """Response with Google Cloud settings (key masked)."""
+    has_key: bool
+    gemini_enabled: bool
+    gemini_model: str
+    gemini_monthly_budget: float
+    maps_enabled: bool
+    places_enabled: bool
 
 
 class GeminiSettingsRequest(BaseModel):
@@ -364,10 +410,22 @@ async def check_user(email: str):
 
 @router.get("/settings/gemini", response_model=GeminiSettingsResponse)
 async def get_gemini_settings():
-    """Get current Gemini AI settings (API key masked)."""
-    app_settings = load_app_settings()
-    gemini = app_settings.get("gemini", {})
+    """Get current Gemini AI settings (API key masked).
 
+    Reads from the unified ``google_cloud`` section when present; falls back
+    to the legacy ``gemini`` section for backward compatibility.
+    """
+    app_settings = load_app_settings()
+    gc = app_settings.get("google_cloud", {})
+    if gc:
+        return GeminiSettingsResponse(
+            has_key=bool(gc.get("api_key")),
+            enabled=gc.get("gemini_enabled", False),
+            model=gc.get("gemini_model", "gemini-2.5-flash"),
+            monthly_budget=gc.get("gemini_monthly_budget", 15.00),
+        )
+
+    gemini = app_settings.get("gemini", {})
     return GeminiSettingsResponse(
         has_key=bool(gemini.get("api_key")),
         enabled=gemini.get("enabled", False),
@@ -378,22 +436,27 @@ async def get_gemini_settings():
 
 @router.put("/settings/gemini", response_model=GeminiSettingsResponse)
 async def update_gemini_settings(request: GeminiSettingsRequest, user: dict = Depends(require_admin)):
-    """Update Gemini AI settings including API key."""
+    """Update Gemini AI settings including API key.
+
+    Writes into the unified ``google_cloud`` section. The legacy ``gemini``
+    section is preserved unchanged for backward compatibility.
+    """
     app_settings = load_app_settings()
 
-    gemini = app_settings.get("gemini", {})
+    gc = app_settings.get("google_cloud", {})
     if request.api_key is not None:
-        gemini["api_key"] = request.api_key
-    gemini["enabled"] = request.enabled
-    gemini["model"] = request.model
-    gemini["monthly_budget"] = request.monthly_budget
-    app_settings["gemini"] = gemini
+        gc["api_key"] = request.api_key
+    gc["gemini_enabled"] = request.enabled
+    gc["gemini_model"] = request.model
+    gc["gemini_monthly_budget"] = request.monthly_budget
+    app_settings["google_cloud"] = gc
 
     save_app_settings(app_settings)
 
     # Update runtime config
     from app.core.config import settings as runtime_settings
     if request.api_key is not None:
+        runtime_settings.google_api_key = request.api_key
         runtime_settings.gemini_api_key = request.api_key
     runtime_settings.gemini_enabled = request.enabled
     runtime_settings.gemini_model = request.model
@@ -402,19 +465,89 @@ async def update_gemini_settings(request: GeminiSettingsRequest, user: dict = De
     logger.info("Gemini AI settings updated")
 
     return GeminiSettingsResponse(
-        has_key=bool(gemini.get("api_key")),
+        has_key=bool(gc.get("api_key")),
         enabled=request.enabled,
         model=request.model,
         monthly_budget=request.monthly_budget,
     )
 
 
+@router.get("/settings/google-cloud", response_model=GoogleCloudSettingsResponse)
+async def get_google_cloud_settings():
+    """Get current unified Google Cloud API settings (key masked)."""
+    app_settings = load_app_settings()
+    gc = app_settings.get("google_cloud", {})
+
+    return GoogleCloudSettingsResponse(
+        has_key=bool(gc.get("api_key")),
+        gemini_enabled=gc.get("gemini_enabled", False),
+        gemini_model=gc.get("gemini_model", "gemini-2.5-flash"),
+        gemini_monthly_budget=gc.get("gemini_monthly_budget", 15.00),
+        maps_enabled=gc.get("maps_enabled", False),
+        places_enabled=gc.get("places_enabled", False),
+    )
+
+
+@router.put("/settings/google-cloud", response_model=GoogleCloudSettingsResponse)
+async def update_google_cloud_settings(
+    request: GoogleCloudSettingsRequest,
+    user: dict = Depends(require_admin),
+):
+    """Update unified Google Cloud API settings."""
+    app_settings = load_app_settings()
+
+    gc = app_settings.get("google_cloud", {})
+    if request.api_key is not None:
+        gc["api_key"] = request.api_key
+    gc["gemini_enabled"] = request.gemini_enabled
+    gc["gemini_model"] = request.gemini_model
+    gc["gemini_monthly_budget"] = request.gemini_monthly_budget
+    gc["maps_enabled"] = request.maps_enabled
+    gc["places_enabled"] = request.places_enabled
+    app_settings["google_cloud"] = gc
+
+    save_app_settings(app_settings)
+
+    # Update runtime config
+    from app.core.config import settings as runtime_settings
+    if request.api_key is not None:
+        runtime_settings.google_api_key = request.api_key
+        runtime_settings.gemini_api_key = request.api_key
+        runtime_settings.google_maps_api_key = request.api_key
+    runtime_settings.gemini_enabled = request.gemini_enabled
+    runtime_settings.gemini_model = request.gemini_model
+    runtime_settings.gemini_monthly_budget = request.gemini_monthly_budget
+    runtime_settings.google_maps_enabled = request.maps_enabled
+    runtime_settings.places_enabled = request.places_enabled
+
+    logger.info("Google Cloud API settings updated")
+
+    return GoogleCloudSettingsResponse(
+        has_key=bool(gc.get("api_key")),
+        gemini_enabled=request.gemini_enabled,
+        gemini_model=request.gemini_model,
+        gemini_monthly_budget=request.gemini_monthly_budget,
+        maps_enabled=request.maps_enabled,
+        places_enabled=request.places_enabled,
+    )
+
+
 @router.get("/settings/google-maps", response_model=GoogleMapsSettingsResponse)
 async def get_google_maps_settings():
-    """Get current Google Maps API settings (key masked)."""
-    app_settings = load_app_settings()
-    gmaps = app_settings.get("google_maps", {})
+    """Get current Google Maps API settings (key masked).
 
+    Reads from the unified ``google_cloud`` section when present; falls back
+    to the legacy ``google_maps`` section for backward compatibility.
+    """
+    app_settings = load_app_settings()
+    gc = app_settings.get("google_cloud", {})
+    if gc:
+        return GoogleMapsSettingsResponse(
+            has_key=bool(gc.get("api_key")),
+            enabled=gc.get("maps_enabled", False),
+        )
+
+    gmaps = app_settings.get("google_maps", {})
     return GoogleMapsSettingsResponse(
         has_key=bool(gmaps.get("api_key")),
         enabled=gmaps.get("enabled", False),
@@ -423,27 +556,32 @@ async def get_google_maps_settings():
 
 @router.put("/settings/google-maps", response_model=GoogleMapsSettingsResponse)
 async def update_google_maps_settings(request: GoogleMapsSettingsRequest, user: dict = Depends(require_admin)):
-    """Update Google Maps API settings."""
+    """Update Google Maps API settings.
+
+    Writes into the unified ``google_cloud`` section. The legacy
+    ``google_maps`` section is preserved unchanged for backward compatibility.
+    """
     app_settings = load_app_settings()
 
-    gmaps = app_settings.get("google_maps", {})
+    gc = app_settings.get("google_cloud", {})
     if request.api_key is not None:
-        gmaps["api_key"] = request.api_key
-    gmaps["enabled"] = request.enabled
-    app_settings["google_maps"] = gmaps
+        gc["api_key"] = request.api_key
+    gc["maps_enabled"] = request.enabled
+    app_settings["google_cloud"] = gc
 
     save_app_settings(app_settings)
 
     # Update runtime config
     from app.core.config import settings as runtime_settings
     if request.api_key is not None:
+        runtime_settings.google_api_key = request.api_key
         runtime_settings.google_maps_api_key = request.api_key
     runtime_settings.google_maps_enabled = request.enabled
 
     logger.info("Google Maps API settings updated")
 
     return GoogleMapsSettingsResponse(
-        has_key=bool(gmaps.get("api_key")),
+        has_key=bool(gc.get("api_key")),
         enabled=request.enabled,
     )
 

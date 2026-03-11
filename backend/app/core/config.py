@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     # Firestore settings (primary database)
     firestore_enabled: bool = True
 
+    # Unified Google Cloud API key (Gemini, Places, Geocoding/Maps)
+    google_api_key: Optional[str] = None
+
     # Gemini AI settings (optional AI-powered data validation)
     gemini_api_key: Optional[str] = None
     gemini_enabled: bool = False
@@ -54,6 +57,9 @@ class Settings(BaseSettings):
     # Google Maps API settings (address validation)
     google_maps_api_key: Optional[str] = None
     google_maps_enabled: bool = False
+
+    # Google Places API settings
+    places_enabled: bool = False
 
     # Data enrichment settings (People Data Labs + SearchBug)
     pdl_api_key: Optional[str] = None
@@ -92,12 +98,17 @@ class Settings(BaseSettings):
     @property
     def use_gemini(self) -> bool:
         """Check if Gemini AI validation should be used."""
-        return self.gemini_enabled and bool(self.gemini_api_key)
+        return self.gemini_enabled and bool(self.gemini_api_key or self.google_api_key)
 
     @property
     def use_google_maps(self) -> bool:
         """Check if Google Maps address validation should be used."""
-        return self.google_maps_enabled and bool(self.google_maps_api_key)
+        return self.google_maps_enabled and bool(self.google_maps_api_key or self.google_api_key)
+
+    @property
+    def use_places(self) -> bool:
+        """Check if Google Places API should be used."""
+        return self.places_enabled and bool(self.google_api_key)
 
     @property
     def use_enrichment(self) -> bool:
