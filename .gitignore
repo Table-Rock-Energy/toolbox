@@ -66,7 +66,10 @@ serviceAccountKey.json
 # Data files (large RRC data)
 backend/data/*.txt
 backend/data/*.csv
+backend/data/rrc-data/
 !backend/data/.gitkeep
+oil_proration.csv
+gas_proration.csv
 
 # Logs
 logs/
