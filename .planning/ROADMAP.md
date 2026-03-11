@@ -12,7 +12,7 @@ Harden the application's security posture in three phases: enforce authenticatio
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Auth Enforcement and CORS Lockdown** - All endpoints require authentication, CORS restricted to explicit origins, frontend fails closed
+- [x] **Phase 1: Auth Enforcement and CORS Lockdown** - All endpoints require authentication, CORS restricted to explicit origins, frontend fails closed
 - [ ] **Phase 2: Encryption Hardening** - Application requires encryption key at startup and encrypts sensitive settings before Firestore persistence
 - [ ] **Phase 3: Backend Test Suite** - Test infrastructure with auth smoke tests and parsing regression tests
 
@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 - [x] 01-01-PLAN.md -- Backend auth enforcement, CORS lockdown, dev-mode bypass, SSE auth, and test suite
-- [ ] 01-02-PLAN.md — Frontend fail-closed auth, ApiClient 401 interceptor, SSE token, login banner
+- [x] 01-02-PLAN.md -- Frontend fail-closed auth, ApiClient 401 interceptor, SSE token, login banner
 
 ### Phase 2: Encryption Hardening
 **Goal**: Sensitive API keys stored in Firestore are encrypted at rest, and the application refuses to start without the encryption key in production
@@ -68,6 +68,6 @@ Phases execute in numeric order: 1 -> 2 -> 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Auth Enforcement and CORS Lockdown | 1/2 | In progress | - |
+| 1. Auth Enforcement and CORS Lockdown | 2/2 | Complete | 2026-03-11 |
 | 2. Encryption Hardening | 0/1 | Not started | - |
 | 3. Backend Test Suite | 0/2 | Not started | - |

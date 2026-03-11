@@ -10,7 +10,7 @@ Requirements for security hardening milestone. Each maps to roadmap phases.
 ### Authentication
 
 - [x] **AUTH-01**: All tool endpoints (Extract, Title, Proration, Revenue, GHL Prep, History, ETL) require authenticated Firebase token — unauthenticated requests return 401
-- [ ] **AUTH-02**: Frontend AuthContext returns `false` (fail-closed) when backend is unreachable, with `import.meta.env.DEV` override for local development
+- [x] **AUTH-02**: Frontend AuthContext returns `false` (fail-closed) when backend is unreachable, with `import.meta.env.DEV` override for local development
 
 ### Network Security
 
@@ -63,7 +63,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | AUTH-01 | Phase 1 | Complete |
-| AUTH-02 | Phase 1 | Pending |
+| AUTH-02 | Phase 1 | Complete |
 | SEC-01 | Phase 1 | Complete |
 | ENC-01 | Phase 2 | Pending |
 | ENC-02 | Phase 2 | Pending |
@@ -78,4 +78,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-03-11*
-*Last updated: 2026-03-11 after 01-01 completion*
+*Last updated: 2026-03-11 after 01-02 completion*

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-03-11T12:40:29Z"
-last_activity: 2026-03-11 -- Completed 01-01 auth enforcement, CORS lockdown, dev-mode bypass, SSE auth, test suite
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-03-11T12:46:05.672Z"
+last_activity: 2026-03-11 -- Completed 01-02 frontend fail-closed auth, 401 interceptor, SSE token, login banner
 progress:
   total_phases: 3
-  completed_phases: 0
-  total_plans: 5
-  completed_plans: 1
-  percent: 20
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
+  percent: 40
 ---
 
 # Project State
@@ -21,33 +21,33 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results. Everything else is secondary to parsing accuracy and data integrity.
-**Current focus:** Phase 1 - Auth Enforcement and CORS Lockdown
+**Current focus:** Phase 2 - Encryption Hardening
 
 ## Current Position
 
-Phase: 1 of 3 (Auth Enforcement and CORS Lockdown)
-Plan: 1 of 2 in current phase
-Status: Executing
-Last activity: 2026-03-11 -- Completed 01-01 auth enforcement, CORS lockdown, dev-mode bypass, SSE auth, test suite
+Phase: 2 of 3 (Encryption Hardening)
+Plan: 1 of 1 in current phase
+Status: Ready
+Last activity: 2026-03-11 -- Completed 01-02 frontend fail-closed auth, 401 interceptor, SSE token, login banner
 
-Progress: [██░░░░░░░░] 20%
+Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
-- Average duration: 3m
-- Total execution time: 0.05 hours
+- Total plans completed: 2
+- Average duration: 4m
+- Total execution time: 0.13 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01 | 1 | 3m | 3m |
+| 01 | 2 | 8m | 4m |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (3m)
-- Trend: Starting
+- Last 5 plans: 01-01 (3m), 01-02 (5m)
+- Trend: Consistent
 
 *Updated after each plan completion*
 
@@ -65,6 +65,9 @@ Recent decisions affecting current work:
 - [01-01]: GHL and admin routers excluded from router-level auth (per-endpoint auth already present, SSE needs query-param)
 - [01-01]: CORS uses explicit method/header lists instead of wildcards
 - [01-01]: Dev-mode bypass returns synthetic user when Firebase not configured
+- [01-02]: Fail-closed in dev mode too -- import.meta.env.DEV override is informational only (console warning)
+- [01-02]: 401 interceptor uses isRefreshing guard to prevent re-entrancy during token refresh
+- [01-02]: SSE auth passed as query parameter since EventSource API does not support custom headers
 
 ### Pending Todos
 
@@ -85,6 +88,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T12:40:29Z
-Stopped at: Completed 01-01-PLAN.md
-Resume file: .planning/phases/01-auth-enforcement-and-cors-lockdown/01-02-PLAN.md
+Last session: 2026-03-11T12:46:05Z
+Stopped at: Completed 01-02-PLAN.md (Phase 1 complete)
+Resume file: .planning/phases/02-encryption-hardening/02-01-PLAN.md
