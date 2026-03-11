@@ -25,7 +25,7 @@ Requirements for security hardening milestone. Each maps to roadmap phases.
 
 - [ ] **TEST-01**: pytest + httpx test infrastructure with Firebase auth mocking via `app.dependency_overrides[require_auth]` pattern, reusable test client fixture
 - [ ] **TEST-02**: Auth smoke tests verify every protected route returns 401 without token and 200/appropriate status with valid token
-- [ ] **TEST-03**: Parsing regression tests with representative test fixtures for at least one revenue parser (EnergyLink or Enverus) and one extract parser (OCC Exhibit A), asserting expected output structure
+- [x] **TEST-03**: Parsing regression tests with representative test fixtures for at least one revenue parser (EnergyLink or Enverus) and one extract parser (OCC Exhibit A), asserting expected output structure
 
 ## Future Requirements
 
@@ -69,7 +69,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ENC-02 | Phase 2 | Complete |
 | TEST-01 | Phase 3 | Pending |
 | TEST-02 | Phase 3 | Pending |
-| TEST-03 | Phase 3 | Pending |
+| TEST-03 | Phase 3 | Complete |
 
 **Coverage:**
 - v1.3 requirements: 8 total
