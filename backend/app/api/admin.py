@@ -26,6 +26,7 @@ from app.core.auth import (
     require_admin,
     set_user_password,
 )
+from app.services.shared.encryption import encrypt_value, decrypt_value
 from app.services.storage_service import profile_storage, storage_service
 
 logger = logging.getLogger(__name__)
@@ -34,13 +35,45 @@ router = APIRouter()
 # App settings file (local cache, source of truth is Firestore)
 APP_SETTINGS_FILE = Path(__file__).parent.parent.parent / "data" / "app_settings.json"
 
+# Fields to encrypt before persistence. Each tuple is (top-level-key, field-name).
+_SENSITIVE_FIELDS: list[tuple[str, str]] = [
+    ("gemini", "api_key"),
+    ("google_maps", "api_key"),
+    ("pdl", "api_key"),
+    ("searchbug", "api_key"),
+]
+
+
+def _encrypt_settings(settings_data: dict) -> dict:
+    """Return a copy with sensitive fields encrypted for persistence."""
+    import copy
+    encrypted = copy.deepcopy(settings_data)
+    for section, field in _SENSITIVE_FIELDS:
+        value = encrypted.get(section, {}).get(field)
+        if value and not value.startswith("enc:"):
+            encrypted.setdefault(section, {})[field] = encrypt_value(value)
+    return encrypted
+
+
+def _decrypt_settings(settings_data: dict) -> dict:
+    """Return a copy with sensitive fields decrypted for runtime use."""
+    import copy
+    decrypted = copy.deepcopy(settings_data)
+    for section, field in _SENSITIVE_FIELDS:
+        value = decrypted.get(section, {}).get(field)
+        if value:
+            result = decrypt_value(value)
+            decrypted.setdefault(section, {})[field] = result
+    return decrypted
+
 
 def load_app_settings() -> dict:
     """Load app settings from local file cache."""
     if APP_SETTINGS_FILE.exists():
         try:
             with open(APP_SETTINGS_FILE, "r") as f:
-                return json.load(f)
+                raw = json.load(f)
+            return _decrypt_settings(raw)
         except Exception as e:
             logger.error(f"Error loading app settings: {e}")
     return {}
@@ -48,14 +81,15 @@ def load_app_settings() -> dict:
 
 def save_app_settings(settings_data: dict) -> None:
     """Save app settings to local file and schedule Firestore persist."""
+    encrypted = _encrypt_settings(settings_data)
     APP_SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(APP_SETTINGS_FILE, "w") as f:
-        json.dump(settings_data, f, indent=2)
+        json.dump(encrypted, f, indent=2)
 
     # Fire-and-forget Firestore persist
     try:
         loop = asyncio.get_running_loop()
-        loop.create_task(_persist_app_settings_to_firestore(settings_data))
+        loop.create_task(_persist_app_settings_to_firestore(encrypted))
     except RuntimeError:
         pass  # No event loop running
 
@@ -78,13 +112,14 @@ async def init_app_settings_from_firestore() -> None:
         if data:
             # Remove internal Firestore fields before saving locally
             clean = {k: v for k, v in data.items() if not k.startswith("_")}
-            # Write to local file cache
+            # Write encrypted data to local cache (preserve ciphertext on disk)
             APP_SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
             with open(APP_SETTINGS_FILE, "w") as f:
                 json.dump(clean, f, indent=2)
 
-            # Update runtime config
-            _apply_settings_to_runtime(clean)
+            # Decrypt before applying to runtime
+            decrypted = _decrypt_settings(clean)
+            _apply_settings_to_runtime(decrypted)
             logger.info("Loaded app settings from Firestore")
         else:
             # Seed Firestore from local file
