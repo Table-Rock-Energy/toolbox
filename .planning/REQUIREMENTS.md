@@ -18,8 +18,8 @@ Requirements for security hardening milestone. Each maps to roadmap phases.
 
 ### Encryption
 
-- [ ] **ENC-01**: Application fails fast at startup if `ENCRYPTION_KEY` environment variable is missing when `ENVIRONMENT=production` — logs clear error message explaining what to set
-- [ ] **ENC-02**: Sensitive admin/app settings (API keys for Gemini, Google Maps, PDL, SearchBug, GHL) encrypted before Firestore persistence using existing `shared/encryption.py` Fernet functions; decrypted on read
+- [x] **ENC-01**: Application fails fast at startup if `ENCRYPTION_KEY` environment variable is missing when `ENVIRONMENT=production` — logs clear error message explaining what to set
+- [x] **ENC-02**: Sensitive admin/app settings (API keys for Gemini, Google Maps, PDL, SearchBug, GHL) encrypted before Firestore persistence using existing `shared/encryption.py` Fernet functions; decrypted on read
 
 ### Testing
 
@@ -65,8 +65,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-01 | Phase 1 | Complete |
 | AUTH-02 | Phase 1 | Complete |
 | SEC-01 | Phase 1 | Complete |
-| ENC-01 | Phase 2 | Pending |
-| ENC-02 | Phase 2 | Pending |
+| ENC-01 | Phase 2 | Complete |
+| ENC-02 | Phase 2 | Complete |
 | TEST-01 | Phase 3 | Pending |
 | TEST-02 | Phase 3 | Pending |
 | TEST-03 | Phase 3 | Pending |
