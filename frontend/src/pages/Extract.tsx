@@ -3,7 +3,7 @@ import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Fi
 import { FileUpload, Modal, AiReviewPanel, EnrichmentPanel } from '../components'
 import MineralExportModal from '../components/MineralExportModal'
 import EnrichmentProgress, { DEFAULT_STEPS, type EnrichmentStep, type EnrichmentSummary } from '../components/EnrichmentProgress'
-import { aiApi, enrichmentApi } from '../utils/api'
+import { aiApi, enrichmentApi, extractApi } from '../utils/api'
 import type { AiSuggestion } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
@@ -134,12 +134,16 @@ export default function Extract() {
   const [showAiReview, setShowAiReview] = useState(false)
   const [aiEnabled, setAiEnabled] = useState(false)
 
-  // Enrichment state
-  const [isEnriching, setIsEnriching] = useState(false)
-  const [showEnrichment, setShowEnrichment] = useState(false)
+  // Data validation pipeline state (Google Maps + Gemini)
+  const [isValidating, setIsValidating] = useState(false)
+  const [showValidation, setShowValidation] = useState(false)
   const [enrichSteps, setEnrichSteps] = useState<EnrichmentStep[]>([])
   const [enrichSummary, setEnrichSummary] = useState<EnrichmentSummary | null>(null)
   const [enrichComplete, setEnrichComplete] = useState(false)
+  const [pipelineEnabled, setPipelineEnabled] = useState(false)
+
+  // Contact enrichment state (PDL/SearchBug)
+  const [showEnrichment, setShowEnrichment] = useState(false)
   const [enrichmentEnabled, setEnrichmentEnabled] = useState(false)
 
   // Mineral export modal state
@@ -216,13 +220,18 @@ export default function Extract() {
     loadJobs()
   }, [])
 
-  // Check AI status on mount
+  // Check feature status on mount
   useEffect(() => {
     aiApi.getStatus().then(res => {
       if (res.data?.enabled) setAiEnabled(true)
     })
     enrichmentApi.getStatus().then(res => {
       if (res.data?.enabled) setEnrichmentEnabled(true)
+    })
+    extractApi.getPipelineStatus().then(res => {
+      if (res.data?.google_maps_enabled || res.data?.gemini_enabled) {
+        setPipelineEnabled(true)
+      }
     })
   }, [])
 
@@ -254,11 +263,11 @@ export default function Extract() {
     setShowAiReview(false)
   }
 
-  const handleEnrich = async () => {
+  const handleValidate = async () => {
     if (!activeJob?.result?.entries || activeJob.result.entries.length === 0) return
 
-    setIsEnriching(true)
-    setShowEnrichment(true)
+    setIsValidating(true)
+    setShowValidation(true)
     setEnrichComplete(false)
     setEnrichSummary(null)
     setEnrichSteps(DEFAULT_STEPS.map(s => ({ ...s, status: 'pending' as const })))
@@ -297,7 +306,6 @@ export default function Extract() {
                 if (event.status === 'progress') return { ...s, progress: event.progress, total: event.total, message: event.message }
                 if (event.status === 'completed') {
                   if (event.step === 'addresses') summary.addressesCorrected = event.corrected || 0
-                  if (event.step === 'property') summary.propertiesFound = event.values_found || 0
                   if (event.step === 'names') summary.namesCorrected = event.applied || 0
                   if (event.step === 'splitting') summary.entriesSplit = event.split_count || 0
                   return { ...s, status: 'completed', detail: event.message }
@@ -325,10 +333,10 @@ export default function Extract() {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Enrichment failed')
-      setShowEnrichment(false)
+      setError(err instanceof Error ? err.message : 'Validation failed')
+      setShowValidation(false)
     } finally {
-      setIsEnriching(false)
+      setIsValidating(false)
     }
   }
 
@@ -774,14 +782,16 @@ export default function Extract() {
                     )}
                   </div>
                   <div className="flex gap-2">
-                    <button
-                      onClick={handleEnrich}
-                      disabled={isEnriching}
-                      className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-tre-teal to-tre-teal/80 text-white rounded-lg hover:from-tre-teal/90 hover:to-tre-teal/70 transition-colors text-sm disabled:opacity-50"
-                    >
-                      <Wand2 className="w-4 h-4" />
-                      {isEnriching ? 'Enriching...' : 'Enrich Data'}
-                    </button>
+                    {pipelineEnabled && (
+                      <button
+                        onClick={handleValidate}
+                        disabled={isValidating}
+                        className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-tre-teal to-tre-teal/80 text-white rounded-lg hover:from-tre-teal/90 hover:to-tre-teal/70 transition-colors text-sm disabled:opacity-50"
+                      >
+                        <Wand2 className="w-4 h-4" />
+                        {isValidating ? 'Validating...' : 'Validate Data'}
+                      </button>
+                    )}
                     {aiEnabled && (
                       <button
                         onClick={() => setShowAiReview(!showAiReview)}
@@ -802,7 +812,7 @@ export default function Extract() {
                         className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm disabled:opacity-50"
                       >
                         <Search className="w-4 h-4" />
-                        Enrich ({entriesToExport.length})
+                        Contact Lookup ({entriesToExport.length})
                       </button>
                     )}
                     <button
@@ -1240,10 +1250,10 @@ export default function Extract() {
         </div>
       )}
 
-      {/* Enrichment Progress Modal */}
+      {/* Validation Progress Modal */}
       <EnrichmentProgress
-        isOpen={showEnrichment}
-        onClose={() => setShowEnrichment(false)}
+        isOpen={showValidation}
+        onClose={() => setShowValidation(false)}
         steps={enrichSteps}
         summary={enrichSummary}
         isComplete={enrichComplete}

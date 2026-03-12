@@ -411,9 +411,8 @@ async def enrich_entries(
     async for event in _validate_addresses_step(entries, tool, field_map):
         yield json.dumps(event) + "\n"
 
-    # Step 2: Property lookup (after addresses are validated)
-    async for event in _property_lookup_step(entries, tool, field_map):
-        yield json.dumps(event) + "\n"
+    # Step 2: Property lookup — skipped (stub, no API configured)
+    yield json.dumps({"step": "property", "status": "skipped", "message": "Property lookup not available"}) + "\n"
 
     # Step 3: Name validation
     async for event in _validate_names_step(entries, tool, field_map):

@@ -1,4 +1,4 @@
-import { MapPin, Bot, Users, Check, X, AlertCircle, Loader2, Home } from 'lucide-react'
+import { MapPin, Bot, Users, Check, X, AlertCircle, Loader2 } from 'lucide-react'
 
 export interface EnrichmentStep {
   id: string
@@ -15,7 +15,6 @@ export interface EnrichmentSummary {
   originalCount: number
   finalCount: number
   addressesCorrected?: number
-  propertiesFound?: number
   namesCorrected?: number
   entriesSplit?: number
 }
@@ -38,7 +37,6 @@ const statusIcons: Record<string, string> = {
 
 export const DEFAULT_STEPS: EnrichmentStep[] = [
   { id: 'addresses', label: 'Validate Addresses', icon: MapPin, status: 'pending' },
-  { id: 'property', label: 'Property Lookup', icon: Home, status: 'pending' },
   { id: 'names', label: 'Clean Names', icon: Bot, status: 'pending' },
   { id: 'splitting', label: 'Split Multiple Names', icon: Users, status: 'pending' },
 ]
@@ -63,7 +61,7 @@ export default function EnrichmentProgress({
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-oswald font-semibold text-tre-navy">
-              {isComplete ? 'Enrichment Complete' : 'Enriching Data...'}
+              {isComplete ? 'Validation Complete' : 'Validating Data...'}
             </h3>
             {isComplete && (
               <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
@@ -166,12 +164,6 @@ export default function EnrichmentProgress({
                   <div className="flex items-center gap-1">
                     <MapPin className="w-3 h-3" />
                     <span>{summary.addressesCorrected} addresses corrected</span>
-                  </div>
-                )}
-                {summary.propertiesFound !== undefined && summary.propertiesFound > 0 && (
-                  <div className="flex items-center gap-1">
-                    <Home className="w-3 h-3" />
-                    <span>{summary.propertiesFound} property values found</span>
                   </div>
                 )}
                 {summary.namesCorrected !== undefined && summary.namesCorrected > 0 && (

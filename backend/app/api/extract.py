@@ -243,6 +243,17 @@ async def export_excel(request: ExportRequest):
         raise HTTPException(status_code=500, detail=f"Error generating Excel: {e!s}") from e
 
 
+@router.get("/pipeline-status")
+async def pipeline_status():
+    """Return which data pipeline features are enabled."""
+    from app.core.config import settings
+
+    return {
+        "google_maps_enabled": settings.use_google_maps,
+        "gemini_enabled": settings.use_gemini,
+    }
+
+
 class EnrichRequest(BaseModel):
     """Request to enrich extracted entries."""
     entries: list[dict]

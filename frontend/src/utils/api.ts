@@ -281,10 +281,19 @@ export interface AiStatusResponse {
   monthly_budget_remaining: number
 }
 
+export interface PipelineStatusResponse {
+  google_maps_enabled: boolean
+  gemini_enabled: boolean
+}
+
 export const aiApi = {
   getStatus: () => api.get<AiStatusResponse>('/ai/status'),
   validate: (tool: string, entries: unknown[]) =>
     api.post<AiValidationResult>('/ai/validate', { tool, entries }, { timeout: 120000 }),
+}
+
+export const extractApi = {
+  getPipelineStatus: () => api.get<PipelineStatusResponse>('/extract/pipeline-status'),
 }
 
 // Enrichment types
