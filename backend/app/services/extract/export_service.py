@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 
-from app.models.extract import PartyEntry
+from app.models.extract import CaseMetadata, PartyEntry
 from app.services.extract.name_parser import (
     clean_name_for_export,
     is_business_name,
@@ -23,14 +23,33 @@ from app.services.shared.export_utils import (
 COLUMNS = MINERAL_EXPORT_COLUMNS
 
 
+def _format_metadata_note(case_metadata: CaseMetadata) -> str:
+    """Build pipe-separated note string from case metadata.
+
+    Only includes legal_description, applicant, and well_name.
+    County and case_number go in their own columns, not in notes.
+    """
+    parts: list[str] = []
+    if case_metadata.legal_description:
+        parts.append(f"Legal: {case_metadata.legal_description}")
+    if case_metadata.applicant:
+        parts.append(f"Applicant: {case_metadata.applicant}")
+    if case_metadata.well_name:
+        parts.append(f"Well: {case_metadata.well_name}")
+    return " | ".join(parts)
+
+
 def to_csv(
     entries: list[PartyEntry],
     *,
     county: str = "",
     campaign_name: str = "",
+    case_metadata: CaseMetadata | None = None,
 ) -> bytes:
     """Convert party entries to CSV format."""
-    df = _entries_to_dataframe(entries, county=county, campaign_name=campaign_name)
+    df = _entries_to_dataframe(
+        entries, county=county, campaign_name=campaign_name, case_metadata=case_metadata,
+    )
     return dataframe_to_csv_bytes(df)
 
 
@@ -39,9 +58,12 @@ def to_excel(
     *,
     county: str = "",
     campaign_name: str = "",
+    case_metadata: CaseMetadata | None = None,
 ) -> bytes:
     """Convert party entries to Excel format."""
-    df = _entries_to_dataframe(entries, county=county, campaign_name=campaign_name)
+    df = _entries_to_dataframe(
+        entries, county=county, campaign_name=campaign_name, case_metadata=case_metadata,
+    )
     return dataframe_to_excel_bytes(df, sheet_name="Contacts")
 
 
@@ -50,6 +72,7 @@ def _entries_to_dataframe(
     *,
     county: str = "",
     campaign_name: str = "",
+    case_metadata: CaseMetadata | None = None,
 ) -> pd.DataFrame:
     """Convert party entries to a pandas DataFrame in CRM contact format."""
     # Filter address-less entries from ECF sections (address_unknown, curative_unknown)
@@ -85,6 +108,16 @@ def _entries_to_dataframe(
             row["Notes/Comments"] = entry.notes or ""
             row["County"] = county
             row["Campaign Name"] = campaign_name
+
+            # Append metadata note if case_metadata provided
+            if case_metadata is not None:
+                meta_note = _format_metadata_note(case_metadata)
+                if meta_note:
+                    existing = row["Notes/Comments"]
+                    if existing:
+                        row["Notes/Comments"] = f"{existing}; {meta_note}"
+                    else:
+                        row["Notes/Comments"] = meta_note
 
             if entity_type == "Individual" and not is_business_name(name):
                 parsed = parse_name(name, "Individual")

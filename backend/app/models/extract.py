@@ -137,3 +137,6 @@ class ExportRequest(BaseModel):
     campaign_name: Optional[str] = Field(
         None, description="Campaign name to populate in mineral export"
     )
+    case_metadata: Optional[CaseMetadata] = Field(
+        None, description="Case metadata for Notes/Comments population"
+    )
