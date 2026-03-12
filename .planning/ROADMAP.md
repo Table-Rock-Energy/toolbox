@@ -55,10 +55,10 @@ Plans:
   1. User uploads a Convey 640 CSV or Excel file and receives parsed respondent rows with names stripped of entry line numbers
   2. ZIP codes with leading zeros (e.g., 02101 for Massachusetts) are preserved as strings in the parsed output
   3. Metadata columns (county, section-township-range, applicant, case number, classification) are extracted and returned separately from respondent data
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 02-01: Convey 640 parser with column mapping, name normalization, and ZIP preservation
+- [ ] 02-01-PLAN.md -- Convey 640 parser with name normalization pipeline, ZIP preservation, metadata extraction, and TDD test suite
 
 ### Phase 3: Merge and Export
 **Goal**: When both PDF and CSV are provided, the system merges them with PDF as source of truth and exports to mineral format with maximum field coverage
@@ -70,7 +70,7 @@ Plans:
   3. Entries are matched by entry number, and mismatched counts or unmatched entries are flagged with warnings in the response
   4. Merged results export to mineral export CSV and Excel formats with county, case number, applicant, and legal description populating the appropriate columns
   5. PDF-only mode (no CSV) still produces a valid mineral export with whatever metadata the PDF header provides
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
 - [ ] 03-01: Merge service with entry-number matching and PDF precedence rules
