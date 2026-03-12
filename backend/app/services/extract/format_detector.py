@@ -53,6 +53,14 @@ _TWO_COL_NUMBERED = re.compile(
     r"^\s*\d+\.\s+.{20,}\s{4,}\d+\.\s+", re.MULTILINE
 )
 
+# ECF filing: multiunit horizontal well application with Exhibit A respondent list
+_ECF_MULTIUNIT = re.compile(
+    r"MULTIUNIT\s+HORIZONTAL\s+WELL", re.IGNORECASE
+)
+_ECF_CAUSE_CD = re.compile(
+    r"CAUSE\s+(?:NO\.?\s+)?CD\s+\d{4}-\d+", re.IGNORECASE
+)
+
 
 def detect_format(
     text: str, file_bytes: bytes | None = None
@@ -80,6 +88,11 @@ def detect_format(
     if _CITY_STATE_ZIP_HEADERS.search(text) or _CURATIVE_PARTIES.search(text):
         logger.info("Format detected: TABLE_SPLIT_ADDR (split city/state/zip headers)")
         return ExhibitFormat.TABLE_SPLIT_ADDR
+
+    # Check for ECF filing (multiunit horizontal well application)
+    if _ECF_MULTIUNIT.search(text) and _ECF_CAUSE_CD.search(text):
+        logger.info("Format detected: ECF (multiunit horizontal well filing)")
+        return ExhibitFormat.ECF
 
     # Check for FREE_TEXT_LIST (Coterra-style two-column numbered list)
     if _TWO_COL_NUMBERED.search(text) or _RESPONDENTS_UNKNOWN.search(text):

@@ -111,8 +111,8 @@ class TestECFFormatRouting:
         """ExhibitFormat.ECF exists with value 'ECF'."""
         assert ExhibitFormat.ECF.value == "ECF"
 
-    def test_detect_format_never_returns_ecf(self):
-        """detect_format() never returns ECF for any input."""
+    def test_detect_format_returns_ecf_for_multiunit_filing(self):
+        """detect_format() returns ECF when text has multiunit horizontal well + cause CD."""
         ecf_text = """MULTIUNIT HORIZONTAL WELL
 APPLICANT: TEST ENERGY CO.
 CAUSE NO. CD 2026-000909-T
@@ -123,6 +123,16 @@ EXHIBIT "A"
 Oklahoma City, OK 73101
 """
         result = detect_format(ecf_text)
+        assert result == ExhibitFormat.ECF
+
+    def test_detect_format_no_ecf_without_cause_cd(self):
+        """detect_format() does not return ECF without CAUSE CD pattern."""
+        text = """MULTIUNIT HORIZONTAL WELL
+APPLICANT: TEST ENERGY CO.
+EXHIBIT "A"
+1. John Smith
+"""
+        result = detect_format(text)
         assert result != ExhibitFormat.ECF
 
     def test_detect_format_returns_valid_format_for_empty(self):

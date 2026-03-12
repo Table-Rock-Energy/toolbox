@@ -24,8 +24,8 @@ See: `.planning/milestones/v1.3-ROADMAP.md` for full details
 - Integer phases (1, 2, 3, 4): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 1: ECF PDF Parsing** - Parse ECF Exhibit A respondent lists from OCC multiunit well application PDFs with entity detection and case metadata
-- [x] **Phase 2: Convey 640 Processing** - Parse optional Convey 640 CSV/Excel files with name normalization and ZIP code preservation
+- [x] **Phase 1: ECF PDF Parsing** - Parse ECF Exhibit A respondent lists from OCC multiunit well application PDFs with entity detection and case metadata (completed 2026-03-12)
+- [x] **Phase 2: Convey 640 Processing** - Parse optional Convey 640 CSV/Excel files with name normalization and ZIP code preservation (completed 2026-03-12)
 - [x] **Phase 3: Merge and Export** - Combine PDF-authoritative respondent data with CSV metadata and export to mineral format (completed 2026-03-12)
 - [x] **Phase 4: Frontend Integration** - Dual-file upload UI in Extract page with metadata display and mineral export (completed 2026-03-11)
 
@@ -44,8 +44,8 @@ See: `.planning/milestones/v1.3-ROADMAP.md` for full details
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md -- ECF parser module, CaseMetadata model, format enum, and test suite
-- [ ] 01-02-PLAN.md -- API endpoint routing, export address filtering, and integration tests
+- [x] 01-01-PLAN.md -- ECF parser module, CaseMetadata model, format enum, and test suite
+- [x] 01-02-PLAN.md -- API endpoint routing, export address filtering, and integration tests
 
 ### Phase 2: Convey 640 Processing
 **Goal**: Users can upload a Convey 640 CSV or Excel file and get clean, normalized respondent and metadata records
@@ -73,8 +73,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01-PLAN.md -- TDD merge service with entry-number matching, PDF precedence, metadata merging, and mismatch warnings
-- [ ] 03-02-PLAN.md -- Export metadata-to-notes enhancement, upload endpoint CSV wiring, and ExportRequest model update
+- [x] 03-01-PLAN.md -- TDD merge service with entry-number matching, PDF precedence, metadata merging, and mismatch warnings
+- [x] 03-02-PLAN.md -- Export metadata-to-notes enhancement, upload endpoint CSV wiring, and ExportRequest model update
 
 ### Phase 4: Frontend Integration
 **Goal**: Users can upload ECF PDFs (with optional CSV) through the Extract UI and view, review, and export respondent data
@@ -99,7 +99,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. ECF PDF Parsing | 0/2 | Not started | - |
+| 1. ECF PDF Parsing | 2/2 | Complete | 2026-03-12 |
 | 2. Convey 640 Processing | 1/1 | Complete | 2026-03-12 |
 | 3. Merge and Export | 2/2 | Complete   | 2026-03-12 |
 | 4. Frontend Integration | 2/2 | Complete   | 2026-03-11 |
