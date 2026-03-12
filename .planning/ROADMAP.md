@@ -26,7 +26,7 @@ See: `.planning/milestones/v1.3-ROADMAP.md` for full details
 
 - [ ] **Phase 1: ECF PDF Parsing** - Parse ECF Exhibit A respondent lists from OCC multiunit well application PDFs with entity detection and case metadata
 - [x] **Phase 2: Convey 640 Processing** - Parse optional Convey 640 CSV/Excel files with name normalization and ZIP code preservation
-- [ ] **Phase 3: Merge and Export** - Combine PDF-authoritative respondent data with CSV metadata and export to mineral format
+- [x] **Phase 3: Merge and Export** - Combine PDF-authoritative respondent data with CSV metadata and export to mineral format (completed 2026-03-12)
 - [x] **Phase 4: Frontend Integration** - Dual-file upload UI in Extract page with metadata display and mineral export (completed 2026-03-11)
 
 ## Phase Details
@@ -101,5 +101,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 |-------|----------------|--------|-----------|
 | 1. ECF PDF Parsing | 0/2 | Not started | - |
 | 2. Convey 640 Processing | 1/1 | Complete | 2026-03-12 |
-| 3. Merge and Export | 1/2 | In Progress|  |
+| 3. Merge and Export | 2/2 | Complete   | 2026-03-12 |
 | 4. Frontend Integration | 2/2 | Complete   | 2026-03-11 |

@@ -31,9 +31,9 @@ Requirements for ECF/Convey 640 extraction. Each maps to roadmap phases.
 
 ### Export
 
-- [ ] **EXP-01**: Merged results export to mineral export CSV format (MINERAL_EXPORT_COLUMNS)
-- [ ] **EXP-02**: Merged results export to mineral export Excel format
-- [ ] **EXP-03**: County, case number, applicant, and legal description populate appropriate mineral export fields
+- [x] **EXP-01**: Merged results export to mineral export CSV format (MINERAL_EXPORT_COLUMNS)
+- [x] **EXP-02**: Merged results export to mineral export Excel format
+- [x] **EXP-03**: County, case number, applicant, and legal description populate appropriate mineral export fields
 
 ### Frontend
 
@@ -87,9 +87,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MRG-02 | Phase 3 | Complete |
 | MRG-03 | Phase 3 | Complete |
 | MRG-04 | Phase 3 | Complete |
-| EXP-01 | Phase 3 | Pending |
-| EXP-02 | Phase 3 | Pending |
-| EXP-03 | Phase 3 | Pending |
+| EXP-01 | Phase 3 | Complete |
+| EXP-02 | Phase 3 | Complete |
+| EXP-03 | Phase 3 | Complete |
 | FE-01 | Phase 4 | Complete |
 | FE-02 | Phase 4 | Complete |
 | FE-03 | Phase 4 | Complete |
