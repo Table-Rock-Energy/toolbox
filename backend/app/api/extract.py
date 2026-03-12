@@ -78,6 +78,7 @@ async def upload_pdf(
             fmt = detect_format(full_text, file_bytes)
 
         # Route to correct parser based on format
+        case_metadata = None
         if fmt in (ExhibitFormat.TABLE_ATTENTION, ExhibitFormat.TABLE_SPLIT_ADDR):
             entries = parse_table_pdf(file_bytes, fmt)
             # Fallback: if table parser found nothing, try free-text parser
@@ -93,6 +94,12 @@ async def upload_pdf(
                     logger.info(
                         "Free-text fallback found %d entries", len(entries)
                     )
+        elif fmt == ExhibitFormat.ECF:
+            from app.services.extract.ecf_parser import parse_ecf_filing
+
+            ecf_result = parse_ecf_filing(full_text)
+            entries = ecf_result.entries
+            case_metadata = ecf_result.metadata
         elif fmt == ExhibitFormat.FREE_TEXT_LIST:
             # Re-extract with 2-column layout for Coterra-style
             two_col_text = extract_text_from_pdf(file_bytes, num_columns=2)
@@ -109,6 +116,7 @@ async def upload_pdf(
                 ExhibitFormat.TABLE_SPLIT_ADDR: "table with split address columns (Mewbourne-style)",
                 ExhibitFormat.FREE_TEXT_LIST: "two-column numbered list (Coterra-style)",
                 ExhibitFormat.FREE_TEXT_NUMBERED: "numbered list (e.g., '1. Name, Address')",
+                ExhibitFormat.ECF: "ECF multiunit horizontal well filing",
             }.get(fmt, fmt.value)
             return UploadResponse(
                 message="No party entries found",
@@ -122,8 +130,12 @@ async def upload_pdf(
             )
 
         # Populate parsed name fields for individuals (for non-table formats;
-        # table parsers already do this inline)
-        if fmt not in (ExhibitFormat.TABLE_ATTENTION, ExhibitFormat.TABLE_SPLIT_ADDR):
+        # table parsers and ECF parser already do this inline)
+        if fmt not in (
+            ExhibitFormat.TABLE_ATTENTION,
+            ExhibitFormat.TABLE_SPLIT_ADDR,
+            ExhibitFormat.ECF,
+        ):
             for entry in entries:
                 parsed = parse_name(entry.primary_name, entry.entity_type.value)
                 if parsed.is_person:
@@ -156,6 +168,7 @@ async def upload_pdf(
             format_detected=fmt.value,
             quality_score=quality,
             format_warning=format_warning,
+            case_metadata=case_metadata,
         )
 
         # Persist to Firestore (non-blocking)

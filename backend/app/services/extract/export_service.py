@@ -52,6 +52,16 @@ def _entries_to_dataframe(
     campaign_name: str = "",
 ) -> pd.DataFrame:
     """Convert party entries to a pandas DataFrame in CRM contact format."""
+    # Filter address-less entries from ECF sections (address_unknown, curative_unknown)
+    # Only applies when entries have section_type set (ECF format).
+    # Entries with addresses are always kept, even from address_unknown sections.
+    if any(e.section_type for e in entries):
+        entries = [
+            e for e in entries
+            if e.mailing_address or e.city
+            or e.section_type not in ("address_unknown", "curative_unknown")
+        ]
+
     data: list[dict[str, Any]] = []
     for entry in entries:
         cleaned_name = clean_name_for_export(entry.primary_name)
