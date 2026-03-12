@@ -283,16 +283,15 @@ async def test_ghl_daily_limit_no_auth_required(unauthenticated_client: AsyncCli
 
 
 @pytest.mark.asyncio
-async def test_dev_mode_bypass(unauthenticated_client: AsyncClient):
-    """When Firebase not configured, request with Bearer token gets synthetic user (not 401).
+async def test_no_dev_mode_bypass(unauthenticated_client: AsyncClient):
+    """When Firebase not configured, requests with fake tokens still get 401.
 
-    In dev mode (Firebase not initialized), any Bearer token should be accepted
-    and return the synthetic dev user, not a 401.
+    v1.3 removed dev-mode bypass — no synthetic user is created when
+    Firebase Admin SDK is unavailable.
     """
     with patch("app.core.auth.get_firebase_app", return_value=None):
-        response = await unauthenticated_client.get(
-            "/api/extract/health",
+        response = await unauthenticated_client.post(
+            "/api/extract/upload",
             headers={"Authorization": "Bearer fake-dev-token"},
         )
-    # Should NOT be 401 because dev-mode bypass returns synthetic user
-    assert response.status_code != 401
+    assert response.status_code == 401
