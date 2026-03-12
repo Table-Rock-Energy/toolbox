@@ -24,10 +24,10 @@ Requirements for ECF/Convey 640 extraction. Each maps to roadmap phases.
 
 ### Merge Logic
 
-- [ ] **MRG-01**: When both PDF and CSV are provided, merge uses PDF as source of truth for names and addresses
-- [ ] **MRG-02**: CSV metadata (county, STR, case number) enriches the merged result
-- [ ] **MRG-03**: Entries are matched between PDF and CSV by entry number
-- [ ] **MRG-04**: Mismatched entry counts or unmatched entries are flagged for user review
+- [x] **MRG-01**: When both PDF and CSV are provided, merge uses PDF as source of truth for names and addresses
+- [x] **MRG-02**: CSV metadata (county, STR, case number) enriches the merged result
+- [x] **MRG-03**: Entries are matched between PDF and CSV by entry number
+- [x] **MRG-04**: Mismatched entry counts or unmatched entries are flagged for user review
 
 ### Export
 
@@ -83,10 +83,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CSV-02 | Phase 2 | Complete |
 | CSV-03 | Phase 2 | Complete |
 | CSV-04 | Phase 2 | Complete |
-| MRG-01 | Phase 3 | Pending |
-| MRG-02 | Phase 3 | Pending |
-| MRG-03 | Phase 3 | Pending |
-| MRG-04 | Phase 3 | Pending |
+| MRG-01 | Phase 3 | Complete |
+| MRG-02 | Phase 3 | Complete |
+| MRG-03 | Phase 3 | Complete |
+| MRG-04 | Phase 3 | Complete |
 | EXP-01 | Phase 3 | Pending |
 | EXP-02 | Phase 3 | Pending |
 | EXP-03 | Phase 3 | Pending |

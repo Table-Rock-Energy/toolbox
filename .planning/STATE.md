@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: ECF Extraction
-status: completed
-stopped_at: Phase 3 context gathered
-last_updated: "2026-03-12T14:42:57.955Z"
-last_activity: 2026-03-12 — Completed Plan 02-01
+status: in-progress
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-03-12T15:12:09.000Z"
+last_activity: 2026-03-12 — Completed Plan 03-01
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 5
-  completed_plans: 5
-  percent: 71
+  total_plans: 6
+  completed_plans: 6
+  percent: 86
 ---
 
 # Project State
@@ -21,23 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results. Everything else is secondary to parsing accuracy and data integrity.
-**Current focus:** Phase 2 - Convey 640 Processing
+**Current focus:** Phase 3 - Merge and Export
 
 ## Current Position
 
-Phase: 2 of 4 (Convey 640 Processing)
+Phase: 3 of 4 (Merge and Export)
 Plan: 1 of 1 in current phase (COMPLETE)
-Status: Phase 2 complete
-Last activity: 2026-03-12 — Completed Plan 02-01
+Status: Plan 03-01 complete
+Last activity: 2026-03-12 — Completed Plan 03-01
 
-Progress: [███████░░░] 71%
+Progress: [████████░░] 86%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
-- Average duration: 8 min
-- Total execution time: 0.68 hours
+- Total plans completed: 6
+- Average duration: 7 min
+- Total execution time: 0.75 hours
 
 **By Phase:**
 
@@ -46,6 +46,7 @@ Progress: [███████░░░] 71%
 | 04-frontend-integration | 2 | 17 min | 9 min |
 | 01-ecf-pdf-parsing | 2 | 18 min | 9 min |
 | 02-convey-640-processing | 1 | 6 min | 6 min |
+| 03-merge-and-export | 1 | 4 min | 4 min |
 
 ## Accumulated Context
 
@@ -68,6 +69,9 @@ Progress: [███████░░░] 71%
 - [02-01]: Trust grantor extraction: AS TRUSTEE OF pattern takes priority over keyword-based extraction
 - [02-01]: Entity type detection runs before joint name splitting to prevent splitting LLC/Corp names on &
 - [02-01]: DECEASED marker overrides entity type to ESTATE regardless of other entity indicators
+- [03-01]: Fallback threshold at 50% match rate -- below this, per-entry merge skipped but metadata still merged
+- [03-01]: CSV-only entries included with flagged=True rather than silently dropped
+- [03-01]: well_name always from PDF only (CSV does not have it)
 
 ### Pending Todos
 
@@ -84,6 +88,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-12T14:42:57.947Z
-Stopped at: Phase 3 context gathered
-Resume file: .planning/phases/03-merge-and-export/03-CONTEXT.md
+Last session: 2026-03-12T15:12:09Z
+Stopped at: Completed 03-01-PLAN.md
+Resume file: .planning/phases/03-merge-and-export/03-01-SUMMARY.md
