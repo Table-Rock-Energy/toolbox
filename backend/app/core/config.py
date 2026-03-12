@@ -108,7 +108,7 @@ class Settings(BaseSettings):
     @property
     def use_places(self) -> bool:
         """Check if Google Places API should be used."""
-        return self.places_enabled and bool(self.google_api_key)
+        return self.places_enabled and bool(self.google_api_key or self.google_maps_api_key)
 
     @property
     def use_enrichment(self) -> bool:

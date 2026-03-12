@@ -1,14 +1,14 @@
 """Data enrichment service for Extract and Title tools.
 
 Orchestrates multi-step processing:
-1. Address validation (Google Maps Geocoding API)
-2. Property lookup (Zillow value + type confirmation)
-3. Name validation (Gemini AI)
-4. Name splitting (multiple names → individual entries)
+1. Programmatic fixes (name casing, entity type detection)
+2. Address validation (Google Maps Geocoding API) — skips if address_verified
+3. Places lookup (Google Places API) — flags institutional addresses
+4. Data enrichment (PDL + SearchBug) — phones, emails, public records
+5. AI QA (Gemini) — final quality review
 
-Also provides `auto_enrich()` — a non-streaming pipeline that runs
-programmatic fixes + optional AI verification during upload, returning
-a PostProcessResult with corrections and suggestions.
+Also provides `enrich_entries()` — a streaming pipeline that yields
+progress events as JSON-serializable dicts.
 
 Yields progress events as JSON-serializable dicts for streaming.
 """
@@ -275,7 +275,13 @@ async def auto_enrich(
 ) -> PostProcessResult:
     """Automatic post-processing pipeline run during upload.
 
-    Applies programmatic fixes first, then optional AI verification.
+    Pipeline order:
+    1. Programmatic fixes (name casing, entity type)
+    2. Address verification (skip if address_verified=True)
+    3. Places lookup (flag institutional addresses)
+    4. Data enrichment (PDL + SearchBug contact data)
+    5. AI QA (Gemini — final quality review)
+
     High-confidence AI suggestions are auto-applied; medium/low go to
     ai_suggestions for manual review in the AiReviewPanel.
 
@@ -315,7 +321,7 @@ async def auto_enrich(
     else:
         steps_skipped.append("entity_type")
 
-    # ── Step 3: Address validation (Extract, Title) ──
+    # ── Step 3: Address validation (Extract, Title) — skip verified ──
     if tool in ("extract", "title") and settings.use_google_maps:
         field_map = FIELD_MAPS.get(tool)
         if field_map:
@@ -324,7 +330,13 @@ async def auto_enrich(
 
                 addr_fields = field_map
                 corrected = 0
+                skipped_verified = 0
                 for i, entry in enumerate(entries):
+                    # Skip already-verified addresses
+                    if entry.get("address_verified"):
+                        skipped_verified += 1
+                        continue
+
                     street = entry.get(addr_fields["street"]) or ""
                     if not street:
                         continue
@@ -336,27 +348,42 @@ async def auto_enrich(
                         state=entry.get(addr_fields["state"]) or "",
                         zip_code=entry.get(addr_fields["zip"]) or "",
                     )
-                    if result.confidence in ("high", "partial") and result.changed:
-                        for src_field, entry_field in [
-                            ("validated_street", addr_fields["street"]),
-                            ("validated_street_2", addr_fields["street_2"]),
-                            ("validated_city", addr_fields["city"]),
-                            ("validated_state", addr_fields["state"]),
-                            ("validated_zip", addr_fields["zip"]),
-                        ]:
-                            new_val = getattr(result, src_field, None)
-                            old_val = entry.get(entry_field) or ""
-                            if new_val and new_val != old_val:
-                                all_corrections.append(AutoCorrection(
-                                    entry_index=i,
-                                    field=entry_field,
-                                    original_value=old_val,
-                                    corrected_value=new_val,
-                                    source="google_maps",
-                                    confidence=ConfidenceLevel.HIGH,
-                                ))
-                                entry[entry_field] = new_val
-                        corrected += 1
+                    if result.confidence in ("high", "partial"):
+                        # Store coordinates and property type from geocoding
+                        if result.property_type:
+                            entry["property_type"] = result.property_type
+                        if result.latitude is not None:
+                            entry["latitude"] = result.latitude
+                        if result.longitude is not None:
+                            entry["longitude"] = result.longitude
+
+                        if result.changed:
+                            for src_field, entry_field in [
+                                ("validated_street", addr_fields["street"]),
+                                ("validated_street_2", addr_fields["street_2"]),
+                                ("validated_city", addr_fields["city"]),
+                                ("validated_state", addr_fields["state"]),
+                                ("validated_zip", addr_fields["zip"]),
+                            ]:
+                                new_val = getattr(result, src_field, None)
+                                old_val = entry.get(entry_field) or ""
+                                if new_val and new_val != old_val:
+                                    all_corrections.append(AutoCorrection(
+                                        entry_index=i,
+                                        field=entry_field,
+                                        original_value=old_val,
+                                        corrected_value=new_val,
+                                        source="google_maps",
+                                        confidence=ConfidenceLevel.HIGH,
+                                    ))
+                                    entry[entry_field] = new_val
+                            corrected += 1
+
+                        # Mark address as verified
+                        entry["address_verified"] = True
+
+                if skipped_verified:
+                    logger.info("Skipped %d already-verified addresses", skipped_verified)
                 steps_completed.append("address_validation")
             except Exception as e:
                 logger.warning("Address validation step failed: %s", e)
@@ -366,7 +393,140 @@ async def auto_enrich(
     else:
         steps_skipped.append("address_validation")
 
-    # ── Step 4: Revenue-specific programmatic fixes ──
+    # ── Step 4: Places lookup (Extract, Title) — flag institutional addresses ──
+    if tool in ("extract", "title") and settings.use_places:
+        try:
+            from app.services.property_lookup_service import lookup_place
+
+            flagged = 0
+            skipped_checked = 0
+            for i, entry in enumerate(entries):
+                # Skip already-checked entries
+                if entry.get("places_checked"):
+                    skipped_checked += 1
+                    continue
+
+                lat = entry.get("latitude")
+                lng = entry.get("longitude")
+                if lat is None or lng is None:
+                    continue
+
+                field_map = FIELD_MAPS.get(tool, {})
+                street = entry.get(field_map.get("street", "")) or ""
+                city = entry.get(field_map.get("city", "")) or ""
+                state = entry.get(field_map.get("state", "")) or ""
+                addr_str = ", ".join(p for p in [street, city, state] if p)
+
+                result = await asyncio.to_thread(
+                    lookup_place,
+                    latitude=lat,
+                    longitude=lng,
+                    address=addr_str,
+                )
+
+                entry["places_checked"] = True
+
+                if result.found:
+                    entry["place_type"] = result.place_type
+                    entry["place_name"] = result.place_name
+                    entry["place_flag"] = result.place_flag
+                    flagged += 1
+
+            if skipped_checked:
+                logger.info("Skipped %d already-checked places", skipped_checked)
+            if flagged:
+                logger.info("Flagged %d entries at institutional addresses", flagged)
+            steps_completed.append("places_lookup")
+        except Exception as e:
+            logger.warning("Places lookup step failed: %s", e)
+            steps_skipped.append("places_lookup")
+    else:
+        steps_skipped.append("places_lookup")
+
+    # ── Step 5: Data enrichment — PDL + SearchBug (Extract, Title) ──
+    if tool in ("extract", "title") and settings.use_enrichment:
+        try:
+            from app.services.enrichment.enrichment_service import (
+                enrich_person,
+                is_enrichment_enabled,
+            )
+
+            if is_enrichment_enabled():
+                field_map = FIELD_MAPS.get(tool, {})
+                enriched_count = 0
+                skipped_enriched = 0
+
+                for i, entry in enumerate(entries):
+                    # Skip already-enriched entries
+                    if entry.get("enrichment_completed"):
+                        skipped_enriched += 1
+                        continue
+
+                    # Only enrich individuals (not entities)
+                    entity_type = entry.get(field_map.get("entity_type", "entity_type")) or ""
+                    if entity_type.upper() not in ("INDIVIDUAL", "UNKNOWN", ""):
+                        continue
+
+                    name = entry.get(field_map.get("name", "")) or ""
+                    if not name:
+                        continue
+
+                    street = entry.get(field_map.get("street", "")) or ""
+                    city = entry.get(field_map.get("city", "")) or ""
+                    state = entry.get(field_map.get("state", "")) or ""
+                    zip_code = entry.get(field_map.get("zip", "")) or ""
+
+                    result = await enrich_person(
+                        name=name,
+                        address=street,
+                        city=city,
+                        state=state,
+                        zip_code=zip_code,
+                    )
+
+                    entry["enrichment_completed"] = True
+
+                    if result.enrichment_sources:
+                        enriched_count += 1
+                        # Store enrichment data on the entry
+                        if result.phones:
+                            entry["enrichment_phones"] = [
+                                {"number": p.number, "type": p.type}
+                                for p in result.phones
+                            ]
+                        if result.emails:
+                            entry["enrichment_emails"] = result.emails
+                        if result.social_profiles:
+                            entry["enrichment_social"] = [
+                                {"platform": s.platform, "url": s.url}
+                                for s in result.social_profiles
+                            ]
+                        if result.public_records:
+                            pr = result.public_records
+                            if pr.is_deceased or pr.has_bankruptcy or pr.has_liens:
+                                entry["enrichment_flags"] = {
+                                    "is_deceased": pr.is_deceased,
+                                    "deceased_date": pr.deceased_date,
+                                    "has_bankruptcy": pr.has_bankruptcy,
+                                    "has_liens": pr.has_liens,
+                                }
+                        entry["enrichment_sources"] = result.enrichment_sources
+                        entry["enrichment_confidence"] = result.match_confidence
+
+                if skipped_enriched:
+                    logger.info("Skipped %d already-enriched entries", skipped_enriched)
+                if enriched_count:
+                    logger.info("Enriched %d entries with contact data", enriched_count)
+                steps_completed.append("data_enrichment")
+            else:
+                steps_skipped.append("data_enrichment")
+        except Exception as e:
+            logger.warning("Data enrichment step failed: %s", e)
+            steps_skipped.append("data_enrichment")
+    else:
+        steps_skipped.append("data_enrichment")
+
+    # ── Step 6: Revenue-specific programmatic fixes ──
     if tool == "revenue":
         code_fixes = _infer_product_code(entries)
         all_corrections.extend(code_fixes)
@@ -381,7 +541,7 @@ async def auto_enrich(
     else:
         steps_skipped.append("revenue_inference")
 
-    # ── Step 5: AI verification (all tools, when Gemini enabled) ──
+    # ── Step 7: AI QA (all tools, when Gemini enabled) — final review ──
     if settings.use_gemini:
         try:
             if tool == "revenue":
@@ -410,6 +570,11 @@ async def auto_enrich(
                         else:
                             # Medium/low → manual review
                             ai_suggestions.append(suggestion)
+
+                # Mark entries as AI-reviewed
+                for entry in entries:
+                    entry["ai_reviewed"] = True
+
             steps_completed.append("ai_verification")
         except Exception as e:
             logger.warning("AI verification step failed: %s", e)
@@ -437,7 +602,7 @@ async def _validate_addresses_step(
 
     has_address = [
         i for i, e in enumerate(entries)
-        if any([
+        if not e.get("address_verified") and any([
             e.get(field_map["street"]),
             e.get(field_map["city"]),
             e.get(field_map["state"]),
@@ -446,7 +611,11 @@ async def _validate_addresses_step(
     ]
 
     if not has_address:
-        yield {"step": "addresses", "status": "skipped", "message": "No addresses to validate"}
+        already_verified = sum(1 for e in entries if e.get("address_verified"))
+        msg = "No addresses to validate"
+        if already_verified:
+            msg = f"All {already_verified} addresses already verified"
+        yield {"step": "addresses", "status": "skipped", "message": msg}
         return
 
     yield {
@@ -495,6 +664,9 @@ async def _validate_addresses_step(
                 if result.validated_zip:
                     entries[idx][field_map["zip"]] = result.validated_zip
                 addresses_corrected += 1
+
+            # Mark as verified
+            entries[idx]["address_verified"] = True
         elif result.error:
             addresses_failed += 1
 
@@ -519,82 +691,184 @@ async def _validate_addresses_step(
     }
 
 
-async def _property_lookup_step(
+async def _places_lookup_step(
     entries: list[dict],
     tool: str,
     field_map: dict,
 ) -> AsyncGenerator[dict, None]:
-    """Step 2: Look up property values and confirm property type via Zillow."""
-    # Only run if Google Maps is enabled (we need validated addresses)
-    if not settings.use_google_maps:
-        yield {"step": "property", "status": "skipped", "message": "Address validation not configured"}
+    """Step 2: Look up institutional places near geocoded addresses."""
+    if not settings.use_places:
+        yield {"step": "places", "status": "skipped", "message": "Places API not configured"}
         return
 
-    # Find entries that have a validated address with property_type
-    has_property = [
+    has_coords = [
         i for i, e in enumerate(entries)
-        if e.get("property_type") and e.get(field_map["street"])
+        if not e.get("places_checked")
+        and e.get("latitude") is not None
+        and e.get("longitude") is not None
     ]
 
-    if not has_property:
-        yield {"step": "property", "status": "skipped", "message": "No validated addresses to look up"}
+    if not has_coords:
+        already_checked = sum(1 for e in entries if e.get("places_checked"))
+        msg = "No geocoded addresses to check"
+        if already_checked:
+            msg = f"All {already_checked} addresses already checked"
+        yield {"step": "places", "status": "skipped", "message": msg}
         return
 
     yield {
-        "step": "property",
+        "step": "places",
         "status": "started",
-        "total": len(has_property),
-        "message": f"Looking up {len(has_property)} properties...",
+        "total": len(has_coords),
+        "message": f"Checking {len(has_coords)} addresses for institutional places...",
     }
 
-    from app.services.property_lookup_service import lookup_property
+    from app.services.property_lookup_service import lookup_place
 
-    looked_up = 0
-    values_found = 0
-
-    for count, idx in enumerate(has_property):
+    flagged = 0
+    for count, idx in enumerate(has_coords):
         entry = entries[idx]
 
-        try:
-            result = await asyncio.to_thread(
-                lookup_property,
-                street=entry.get(field_map["street"]) or "",
-                city=entry.get(field_map["city"]) or "",
-                state=entry.get(field_map["state"]) or "",
-                zip_code=entry.get(field_map["zip"]) or "",
-            )
+        street = entry.get(field_map["street"]) or ""
+        city = entry.get(field_map["city"]) or ""
+        state = entry.get(field_map["state"]) or ""
+        addr_str = ", ".join(p for p in [street, city, state] if p)
 
-            if result.found:
-                looked_up += 1
-                # Update property type from Zillow (more specific than Google Maps)
-                if result.property_type:
-                    entries[idx]["property_type"] = result.property_type
-                if result.estimated_value:
-                    entries[idx]["property_value"] = result.estimated_value
-                    values_found += 1
-                if result.zillow_url:
-                    entries[idx]["zillow_url"] = result.zillow_url
-        except Exception as e:
-            logger.warning(f"Property lookup failed for entry {idx}: {e}")
+        result = await asyncio.to_thread(
+            lookup_place,
+            latitude=entry["latitude"],
+            longitude=entry["longitude"],
+            address=addr_str,
+        )
 
-        # Progress every 3 entries or on last entry
-        if (count + 1) % 3 == 0 or count + 1 == len(has_property):
+        entry["places_checked"] = True
+
+        if result.found:
+            entry["place_type"] = result.place_type
+            entry["place_name"] = result.place_name
+            entry["place_flag"] = result.place_flag
+            flagged += 1
+
+        if (count + 1) % 3 == 0 or count + 1 == len(has_coords):
             yield {
-                "step": "property",
+                "step": "places",
                 "status": "progress",
                 "progress": count + 1,
-                "total": len(has_property),
-                "values_found": values_found,
-                "message": f"Looking up properties... ({count + 1}/{len(has_property)})",
+                "total": len(has_coords),
+                "flagged": flagged,
+                "message": f"Checking places... ({count + 1}/{len(has_coords)})",
             }
 
     yield {
-        "step": "property",
+        "step": "places",
         "status": "completed",
-        "looked_up": looked_up,
-        "values_found": values_found,
-        "total": len(has_property),
-        "message": f"Property lookup complete: {values_found} values found",
+        "flagged": flagged,
+        "total": len(has_coords),
+        "message": f"Places check complete: {flagged} institutional addresses flagged",
+    }
+
+
+async def _enrich_contacts_step(
+    entries: list[dict],
+    tool: str,
+    field_map: dict,
+) -> AsyncGenerator[dict, None]:
+    """Step 3: Enrich contacts with PDL + SearchBug data."""
+    from app.services.enrichment.enrichment_service import (
+        enrich_person,
+        is_enrichment_enabled,
+    )
+
+    if not is_enrichment_enabled():
+        yield {"step": "enrichment", "status": "skipped", "message": "Data enrichment not configured"}
+        return
+
+    # Only enrich individuals
+    eligible = [
+        i for i, e in enumerate(entries)
+        if not e.get("enrichment_completed")
+        and (e.get(field_map.get("entity_type", "entity_type")) or "").upper()
+            in ("INDIVIDUAL", "UNKNOWN", "")
+        and e.get(field_map.get("name", ""))
+    ]
+
+    if not eligible:
+        already_enriched = sum(1 for e in entries if e.get("enrichment_completed"))
+        msg = "No eligible entries to enrich"
+        if already_enriched:
+            msg = f"All {already_enriched} entries already enriched"
+        yield {"step": "enrichment", "status": "skipped", "message": msg}
+        return
+
+    yield {
+        "step": "enrichment",
+        "status": "started",
+        "total": len(eligible),
+        "message": f"Enriching {len(eligible)} contacts...",
+    }
+
+    enriched_count = 0
+    for count, idx in enumerate(eligible):
+        entry = entries[idx]
+
+        name = entry.get(field_map.get("name", "")) or ""
+        street = entry.get(field_map.get("street", "")) or ""
+        city = entry.get(field_map.get("city", "")) or ""
+        state = entry.get(field_map.get("state", "")) or ""
+        zip_code = entry.get(field_map.get("zip", "")) or ""
+
+        result = await enrich_person(
+            name=name,
+            address=street,
+            city=city,
+            state=state,
+            zip_code=zip_code,
+        )
+
+        entry["enrichment_completed"] = True
+
+        if result.enrichment_sources:
+            enriched_count += 1
+            if result.phones:
+                entry["enrichment_phones"] = [
+                    {"number": p.number, "type": p.type}
+                    for p in result.phones
+                ]
+            if result.emails:
+                entry["enrichment_emails"] = result.emails
+            if result.social_profiles:
+                entry["enrichment_social"] = [
+                    {"platform": s.platform, "url": s.url}
+                    for s in result.social_profiles
+                ]
+            if result.public_records:
+                pr = result.public_records
+                if pr.is_deceased or pr.has_bankruptcy or pr.has_liens:
+                    entry["enrichment_flags"] = {
+                        "is_deceased": pr.is_deceased,
+                        "deceased_date": pr.deceased_date,
+                        "has_bankruptcy": pr.has_bankruptcy,
+                        "has_liens": pr.has_liens,
+                    }
+            entry["enrichment_sources"] = result.enrichment_sources
+            entry["enrichment_confidence"] = result.match_confidence
+
+        if (count + 1) % 3 == 0 or count + 1 == len(eligible):
+            yield {
+                "step": "enrichment",
+                "status": "progress",
+                "progress": count + 1,
+                "total": len(eligible),
+                "enriched": enriched_count,
+                "message": f"Enriching contacts... ({count + 1}/{len(eligible)})",
+            }
+
+    yield {
+        "step": "enrichment",
+        "status": "completed",
+        "enriched": enriched_count,
+        "total": len(eligible),
+        "message": f"Enrichment complete: {enriched_count} contacts enriched",
     }
 
 
@@ -603,7 +877,7 @@ async def _validate_names_step(
     tool: str,
     field_map: dict,
 ) -> AsyncGenerator[dict, None]:
-    """Step 3: Validate names using Gemini AI."""
+    """Step 4: Validate names using Gemini AI."""
     if not settings.use_gemini:
         yield {"step": "names", "status": "skipped", "message": "Gemini AI not configured"}
         return
@@ -663,7 +937,7 @@ async def _split_names_step(
     tool: str,
     field_map: dict,
 ) -> AsyncGenerator[dict, None]:
-    """Step 4: Split entries with multiple names into individual entries."""
+    """Step 5: Split entries with multiple names into individual entries."""
     from app.services.extract.name_parser import split_multiple_names, parse_person_name
 
     name_field = field_map["name"]
@@ -743,10 +1017,11 @@ async def enrich_entries(
     """Main enrichment pipeline. Yields newline-delimited JSON progress events.
 
     Steps:
-    1. Validate addresses (Google Maps)
-    2. Property lookup (Zillow values + type)
-    3. Validate names (Gemini AI)
-    4. Split multiple names
+    1. Validate addresses (Google Maps) — skips verified
+    2. Places lookup (Google Places) — flags institutional
+    3. Enrich contacts (PDL + SearchBug) — skips enriched
+    4. Validate names (Gemini AI)
+    5. Split multiple names
 
     Args:
         tool: Tool name ("extract" or "title").
@@ -766,6 +1041,8 @@ async def enrich_entries(
         "total": total,
         "message": f"Starting enrichment for {total} entries...",
         "google_maps_enabled": settings.use_google_maps,
+        "places_enabled": settings.use_places,
+        "enrichment_enabled": settings.use_enrichment,
         "gemini_enabled": settings.use_gemini,
     }) + "\n"
 
@@ -773,14 +1050,19 @@ async def enrich_entries(
     async for event in _validate_addresses_step(entries, tool, field_map):
         yield json.dumps(event) + "\n"
 
-    # Step 2: Property lookup — skipped (stub, no API configured)
-    yield json.dumps({"step": "property", "status": "skipped", "message": "Property lookup not available"}) + "\n"
+    # Step 2: Places lookup
+    async for event in _places_lookup_step(entries, tool, field_map):
+        yield json.dumps(event) + "\n"
 
-    # Step 3: Name validation
+    # Step 3: Data enrichment
+    async for event in _enrich_contacts_step(entries, tool, field_map):
+        yield json.dumps(event) + "\n"
+
+    # Step 4: Name validation (AI)
     async for event in _validate_names_step(entries, tool, field_map):
         yield json.dumps(event) + "\n"
 
-    # Step 4: Split names
+    # Step 5: Split names
     async for event in _split_names_step(entries, tool, field_map):
         yield json.dumps(event) + "\n"
 
