@@ -45,6 +45,9 @@ async def upload_pdf(
     format_hint: Optional[str] = Query(
         None, description="Manual format hint (e.g., TABLE_ATTENTION, FREE_TEXT_LIST)"
     ),
+    csv_file: Optional[UploadFile] = File(
+        None, description="Optional Convey 640 CSV/Excel file for merge"
+    ),
 ) -> UploadResponse:
     """Upload a PDF file and extract party entries from Exhibit A."""
     file_bytes = await validate_upload(file, allowed_extensions=[".pdf"])
@@ -79,6 +82,7 @@ async def upload_pdf(
 
         # Route to correct parser based on format
         case_metadata = None
+        merge_warnings = None
         if fmt in (ExhibitFormat.TABLE_ATTENTION, ExhibitFormat.TABLE_SPLIT_ADDR):
             entries = parse_table_pdf(file_bytes, fmt)
             # Fallback: if table parser found nothing, try free-text parser
@@ -100,6 +104,19 @@ async def upload_pdf(
             ecf_result = parse_ecf_filing(full_text)
             entries = ecf_result.entries
             case_metadata = ecf_result.metadata
+
+            # Merge with optional CSV file
+            merge_warnings = None
+            if csv_file:
+                csv_bytes = await csv_file.read()
+                from app.services.extract.convey640_parser import parse_convey640
+                from app.services.extract.merge_service import merge_entries
+
+                csv_result = parse_convey640(csv_bytes, csv_file.filename or "upload.csv")
+                merge_result = merge_entries(ecf_result, csv_result)
+                entries = merge_result.entries
+                case_metadata = merge_result.metadata
+                merge_warnings = merge_result.warnings or None
         elif fmt == ExhibitFormat.FREE_TEXT_LIST:
             # Re-extract with 2-column layout for Coterra-style
             two_col_text = extract_text_from_pdf(file_bytes, num_columns=2)
@@ -181,6 +198,7 @@ async def upload_pdf(
             quality_score=quality,
             format_warning=format_warning,
             case_metadata=case_metadata,
+            merge_warnings=merge_warnings,
             post_process=pp_result,
         )
 
@@ -229,6 +247,7 @@ async def export_csv(request: ExportRequest):
             request.entries,
             county=request.county or "",
             campaign_name=request.campaign_name or "",
+            case_metadata=request.case_metadata,
         )
         filename = f"{request.filename or 'exhibit_a_export'}.csv"
         return file_response(csv_bytes, filename)
@@ -248,6 +267,7 @@ async def export_excel(request: ExportRequest):
             request.entries,
             county=request.county or "",
             campaign_name=request.campaign_name or "",
+            case_metadata=request.case_metadata,
         )
         filename = f"{request.filename or 'exhibit_a_export'}.xlsx"
         return file_response(excel_bytes, filename)
