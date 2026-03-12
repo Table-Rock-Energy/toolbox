@@ -275,3 +275,144 @@ class TestEdgeCases:
         merge_entries(pdf, csv)
         # Original PDF entry should be unchanged
         assert pdf_entry.mailing_address is None
+
+
+# ---------------------------------------------------------------------------
+# Export tests: case_metadata -> Notes/Comments
+# ---------------------------------------------------------------------------
+
+import csv as csv_mod
+import io
+
+from app.services.extract.export_service import to_csv, to_excel
+
+
+def _parse_csv_rows(csv_bytes: bytes) -> list[dict[str, str]]:
+    """Parse CSV bytes into list of dicts."""
+    text = csv_bytes.decode("utf-8-sig")
+    reader = csv_mod.DictReader(io.StringIO(text))
+    return list(reader)
+
+
+def _parse_excel_rows(excel_bytes: bytes) -> list[dict[str, str]]:
+    """Parse Excel bytes into list of dicts."""
+    import pandas as pd
+
+    df = pd.read_excel(io.BytesIO(excel_bytes))
+    return df.fillna("").to_dict("records")
+
+
+class TestMergeExport:
+    """Export functions accept case_metadata and produce correct Notes/Comments."""
+
+    def test_csv_with_case_metadata_produces_notes(self):
+        entries = [_entry("1", name="JOHN SMITH")]
+        meta = CaseMetadata(
+            legal_description="S19 T10N R11W",
+            applicant="Coterra",
+            well_name="Diana Prince 1H",
+        )
+        result = to_csv(entries, case_metadata=meta)
+        rows = _parse_csv_rows(result)
+        assert len(rows) == 1
+        notes = rows[0]["Notes/Comments"]
+        assert "Legal: S19 T10N R11W" in notes
+        assert "Applicant: Coterra" in notes
+        assert "Well: Diana Prince 1H" in notes
+
+    def test_csv_with_existing_notes_appends_metadata(self):
+        entries = [_entry("1", name="JOHN SMITH", notes="c/o Jane Smith")]
+        meta = CaseMetadata(
+            legal_description="S19 T10N R11W",
+            applicant="Coterra",
+            well_name="Diana Prince 1H",
+        )
+        result = to_csv(entries, case_metadata=meta)
+        rows = _parse_csv_rows(result)
+        notes = rows[0]["Notes/Comments"]
+        assert notes.startswith("c/o Jane Smith; ")
+        assert "Legal: S19 T10N R11W" in notes
+
+    def test_csv_county_only_metadata_no_metadata_note(self):
+        """County goes in County column, not Notes/Comments."""
+        entries = [_entry("1", name="JOHN SMITH")]
+        meta = CaseMetadata(county="CADDO")
+        result = to_csv(entries, county="CADDO", case_metadata=meta)
+        rows = _parse_csv_rows(result)
+        assert rows[0]["County"] == "CADDO"
+        assert rows[0]["Notes/Comments"] == ""
+
+    def test_csv_without_case_metadata_unchanged(self):
+        entries = [_entry("1", name="JOHN SMITH", notes="existing note")]
+        result = to_csv(entries, case_metadata=None)
+        rows = _parse_csv_rows(result)
+        assert rows[0]["Notes/Comments"] == "existing note"
+
+    def test_excel_with_case_metadata_same_as_csv(self):
+        entries = [_entry("1", name="JOHN SMITH")]
+        meta = CaseMetadata(
+            legal_description="S19 T10N R11W",
+            applicant="Coterra",
+            well_name="Diana Prince 1H",
+        )
+        result = to_excel(entries, case_metadata=meta)
+        rows = _parse_excel_rows(result)
+        notes = str(rows[0]["Notes/Comments"])
+        assert "Legal: S19 T10N R11W" in notes
+        assert "Applicant: Coterra" in notes
+        assert "Well: Diana Prince 1H" in notes
+
+
+class TestMetadataNotes:
+    """_format_metadata_note helper produces correct pipe-separated strings."""
+
+    def test_all_fields_populated(self):
+        from app.services.extract.export_service import _format_metadata_note
+
+        meta = CaseMetadata(
+            legal_description="S19 T10N R11W",
+            applicant="Coterra",
+            well_name="Diana Prince 1H",
+            county="CADDO",  # should NOT appear in note
+            case_number="CD-2024-001",  # should NOT appear in note
+        )
+        note = _format_metadata_note(meta)
+        assert "Legal: S19 T10N R11W" in note
+        assert "Applicant: Coterra" in note
+        assert "Well: Diana Prince 1H" in note
+        assert "CADDO" not in note
+        assert "CD-2024-001" not in note
+
+    def test_partial_fields(self):
+        from app.services.extract.export_service import _format_metadata_note
+
+        meta = CaseMetadata(applicant="Coterra")
+        note = _format_metadata_note(meta)
+        assert note == "Applicant: Coterra"
+
+    def test_no_relevant_fields_returns_empty(self):
+        from app.services.extract.export_service import _format_metadata_note
+
+        meta = CaseMetadata(county="CADDO", case_number="CD-2024-001")
+        note = _format_metadata_note(meta)
+        assert note == ""
+
+
+class TestExportRequestModel:
+    """ExportRequest accepts case_metadata field."""
+
+    def test_export_request_with_case_metadata(self):
+        from app.models.extract import ExportRequest
+
+        req = ExportRequest(
+            entries=[_entry("1", name="TEST")],
+            case_metadata=CaseMetadata(county="CADDO", applicant="Coterra"),
+        )
+        assert req.case_metadata is not None
+        assert req.case_metadata.county == "CADDO"
+
+    def test_export_request_without_case_metadata(self):
+        from app.models.extract import ExportRequest
+
+        req = ExportRequest(entries=[_entry("1", name="TEST")])
+        assert req.case_metadata is None
