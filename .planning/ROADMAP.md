@@ -41,11 +41,11 @@ See: `.planning/milestones/v1.3-ROADMAP.md` for full details
   3. Case metadata (county, legal description, applicant name, case number, well name) is extracted from the PDF header and returned in the response
   4. Each respondent has an entity type assigned (Individual, Trust, LLC, Estate, Corporation, etc.) with deceased parties classified as Estate
   5. Format detector identifies ECF filings distinctly from existing OCC Exhibit A format and routes to the ECF parser
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: ECF format detection, PDF parser, and metadata extractor
-- [ ] 01-02: Entity type detection enhancements and API endpoint wiring
+- [ ] 01-01-PLAN.md -- ECF parser module, CaseMetadata model, format enum, and test suite
+- [ ] 01-02-PLAN.md -- API endpoint routing, export address filtering, and integration tests
 
 ### Phase 2: Convey 640 Processing
 **Goal**: Users can upload a Convey 640 CSV or Excel file and get clean, normalized respondent and metadata records
