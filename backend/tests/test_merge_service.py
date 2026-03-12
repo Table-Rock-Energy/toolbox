@@ -158,10 +158,11 @@ class TestEntryNumberMatching:
         assert not any(e.flagged for e in result.entries)
 
     def test_exact_string_match(self):
-        pdf = ECFParseResult(entries=[_entry("1A")])
-        csv = Convey640ParseResult(entries=[_entry("1a")])  # different case
+        # Need enough matched entries to stay above 50% threshold
+        pdf = ECFParseResult(entries=[_entry("1"), _entry("2"), _entry("1A")])
+        csv = Convey640ParseResult(entries=[_entry("1"), _entry("2"), _entry("1a")])
         result = merge_entries(pdf, csv)
-        # "1A" != "1a" so CSV entry is unmatched
+        # "1A" != "1a" so "1a" CSV entry is unmatched (flagged)
         csv_only = [e for e in result.entries if e.flagged]
         assert len(csv_only) == 1
         assert csv_only[0].entry_number == "1a"
@@ -198,7 +199,7 @@ class TestMismatchWarnings:
         result = merge_entries(pdf, csv)
         # In fallback mode: PDF entries returned unchanged, no CSV-only entries added
         assert len(result.entries) == 10
-        assert any("fallback" in w.lower() for w in result.warnings)
+        assert any("falling back" in w.lower() for w in result.warnings)
 
     def test_fallback_still_merges_metadata(self):
         pdf_entries = [_entry(str(i)) for i in range(1, 11)]
