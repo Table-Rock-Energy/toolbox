@@ -404,7 +404,6 @@ export default function Title() {
                 if (event.status === 'progress') return { ...s, progress: event.progress, total: event.total, message: event.message }
                 if (event.status === 'completed') {
                   if (event.step === 'addresses') summary.addressesCorrected = event.corrected || 0
-                  if (event.step === 'property') summary.propertiesFound = event.values_found || 0
                   if (event.step === 'names') summary.namesCorrected = event.applied || 0
                   if (event.step === 'splitting') summary.entriesSplit = event.split_count || 0
                   return { ...s, status: 'completed', detail: event.message }
