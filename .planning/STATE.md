@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: ECF Extraction
-status: completed
-stopped_at: Phase 2 context gathered
-last_updated: "2026-03-12T12:28:58.230Z"
-last_activity: 2026-03-12 — Completed Plan 01-02
+status: in_progress
+stopped_at: Completed Plan 02-01
+last_updated: "2026-03-12T12:54:51Z"
+last_activity: 2026-03-12 — Completed Plan 02-01
 progress:
   total_phases: 4
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
-  percent: 57
+  completed_phases: 3
+  total_plans: 5
+  completed_plans: 5
+  percent: 71
 ---
 
 # Project State
@@ -21,23 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results. Everything else is secondary to parsing accuracy and data integrity.
-**Current focus:** Phase 1 - ECF PDF Parsing
+**Current focus:** Phase 2 - Convey 640 Processing
 
 ## Current Position
 
-Phase: 1 of 4 (ECF PDF Parsing)
-Plan: 2 of 2 in current phase (COMPLETE)
-Status: Phase 1 complete
-Last activity: 2026-03-12 — Completed Plan 01-02
+Phase: 2 of 4 (Convey 640 Processing)
+Plan: 1 of 1 in current phase (COMPLETE)
+Status: Phase 2 complete
+Last activity: 2026-03-12 — Completed Plan 02-01
 
-Progress: [██████░░░░] 57%
+Progress: [███████░░░] 71%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: 9 min
-- Total execution time: 0.58 hours
+- Total plans completed: 5
+- Average duration: 8 min
+- Total execution time: 0.68 hours
 
 **By Phase:**
 
@@ -45,6 +45,7 @@ Progress: [██████░░░░] 57%
 |-------|-------|-------|----------|
 | 04-frontend-integration | 2 | 17 min | 9 min |
 | 01-ecf-pdf-parsing | 2 | 18 min | 9 min |
+| 02-convey-640-processing | 1 | 6 min | 6 min |
 
 ## Accumulated Context
 
@@ -63,6 +64,10 @@ Progress: [██████░░░░] 57%
 - [01-01]: Entry number regex requires uppercase letter after number-dot to distinguish from street addresses
 - [01-02]: ECF parser skips post-processing name parse loop since it handles parse_name internally
 - [01-02]: Export filtering uses section_type presence as guard -- only activates when entries have section_type set
+- [02-01]: Single parser module (convey640_parser.py) following ECF parser pattern
+- [02-01]: Trust grantor extraction: AS TRUSTEE OF pattern takes priority over keyword-based extraction
+- [02-01]: Entity type detection runs before joint name splitting to prevent splitting LLC/Corp names on &
+- [02-01]: DECEASED marker overrides entity type to ESTATE regardless of other entity indicators
 
 ### Pending Todos
 
@@ -70,7 +75,6 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Research]: Convey 640 schema is unknown (MEDIUM risk) — need sample files to validate column mapping in Phase 2
 - [Research]: Fuzzy matching deferred to v2 — Phase 3 merge uses entry-number matching only
 
 ### Quick Tasks Completed
@@ -80,6 +84,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-12T12:28:58.228Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-convey-640-processing/02-CONTEXT.md
+Last session: 2026-03-12T12:54:51Z
+Stopped at: Completed 02-01-PLAN.md
+Resume file: .planning/phases/02-convey-640-processing/02-01-SUMMARY.md

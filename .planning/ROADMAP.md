@@ -25,7 +25,7 @@ See: `.planning/milestones/v1.3-ROADMAP.md` for full details
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
 - [ ] **Phase 1: ECF PDF Parsing** - Parse ECF Exhibit A respondent lists from OCC multiunit well application PDFs with entity detection and case metadata
-- [ ] **Phase 2: Convey 640 Processing** - Parse optional Convey 640 CSV/Excel files with name normalization and ZIP code preservation
+- [x] **Phase 2: Convey 640 Processing** - Parse optional Convey 640 CSV/Excel files with name normalization and ZIP code preservation
 - [ ] **Phase 3: Merge and Export** - Combine PDF-authoritative respondent data with CSV metadata and export to mineral format
 - [x] **Phase 4: Frontend Integration** - Dual-file upload UI in Extract page with metadata display and mineral export (completed 2026-03-11)
 
@@ -58,7 +58,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 02-01-PLAN.md -- Convey 640 parser with name normalization pipeline, ZIP preservation, metadata extraction, and TDD test suite
+- [x] 02-01-PLAN.md -- Convey 640 parser with name normalization pipeline, ZIP preservation, metadata extraction, and TDD test suite
 
 ### Phase 3: Merge and Export
 **Goal**: When both PDF and CSV are provided, the system merges them with PDF as source of truth and exports to mineral format with maximum field coverage
@@ -100,6 +100,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. ECF PDF Parsing | 0/2 | Not started | - |
-| 2. Convey 640 Processing | 0/1 | Not started | - |
+| 2. Convey 640 Processing | 1/1 | Complete | 2026-03-12 |
 | 3. Merge and Export | 0/2 | Not started | - |
 | 4. Frontend Integration | 2/2 | Complete   | 2026-03-11 |

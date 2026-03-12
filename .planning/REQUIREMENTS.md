@@ -17,10 +17,10 @@ Requirements for ECF/Convey 640 extraction. Each maps to roadmap phases.
 
 ### Convey 640 Processing
 
-- [ ] **CSV-01**: User can optionally upload a Convey 640 CSV or Excel file alongside the ECF PDF
-- [ ] **CSV-02**: Parser strips entry line numbers from the name column and normalizes respondent names
-- [ ] **CSV-03**: Parser preserves ZIP codes as strings (prevents float/NaN loss of leading zeros)
-- [ ] **CSV-04**: Parser extracts metadata columns (county, STR, applicant, case number, classification)
+- [x] **CSV-01**: User can optionally upload a Convey 640 CSV or Excel file alongside the ECF PDF
+- [x] **CSV-02**: Parser strips entry line numbers from the name column and normalizes respondent names
+- [x] **CSV-03**: Parser preserves ZIP codes as strings (prevents float/NaN loss of leading zeros)
+- [x] **CSV-04**: Parser extracts metadata columns (county, STR, applicant, case number, classification)
 
 ### Merge Logic
 
@@ -79,10 +79,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ECF-03 | Phase 1 | Complete |
 | ECF-04 | Phase 1 | Complete |
 | ECF-05 | Phase 1 | Complete |
-| CSV-01 | Phase 2 | Pending |
-| CSV-02 | Phase 2 | Pending |
-| CSV-03 | Phase 2 | Pending |
-| CSV-04 | Phase 2 | Pending |
+| CSV-01 | Phase 2 | Complete |
+| CSV-02 | Phase 2 | Complete |
+| CSV-03 | Phase 2 | Complete |
+| CSV-04 | Phase 2 | Complete |
 | MRG-01 | Phase 3 | Pending |
 | MRG-02 | Phase 3 | Pending |
 | MRG-03 | Phase 3 | Pending |
