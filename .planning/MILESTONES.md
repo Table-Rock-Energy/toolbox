@@ -1,5 +1,29 @@
 # Milestones
 
+## v1.4 ECF Extraction (Shipped: 2026-03-12)
+
+**Phases completed:** 4 phases, 7 plans
+**Commits:** 26 (14e841a..58224e9)
+**Files changed:** 126 (+21,787 / -275)
+**Timeline:** 2 days (2026-03-11 → 2026-03-12)
+
+**Key accomplishments:**
+- ECF PDF parser with section-aware entry parsing, entity detection, and case metadata extraction
+- Convey 640 CSV/Excel parser with name normalization pipeline and ZIP preservation
+- PDF-authoritative merge service with entry-number matching and mismatch warnings
+- Mineral export with case metadata flowing to Notes/Comments column
+- Dual-file upload UI in Extract page with metadata panel and auto-populated mineral export
+
+**Known gaps (from audit):**
+- Phase 4 missing VERIFICATION.md (visual verification only)
+- All 4 VALIDATION.md files are draft (Nyquist non-compliant)
+
+**Tech debt carried forward:**
+- Frontend PartyEntry interface missing section_type field (works at runtime)
+- Fuzzy name matching between PDF/CSV deferred to future release
+
+---
+
 ## v1.3 Security Hardening (Shipped: 2026-03-11)
 
 **Phases completed:** 3 phases, 6 plans, 13 tasks

@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Consolidated internal web application for Table Rock Energy's land and revenue teams. Provides five document-processing tools (Extract, Title, Proration, Revenue, GHL Prep) plus integrations with GoHighLevel, RRC data, and optional AI validation. React 19 SPA frontend with FastAPI backend, deployed to Google Cloud Run. All endpoints authenticated via Firebase Auth with encrypted settings storage.
+Consolidated internal web application for Table Rock Energy's land and revenue teams. Provides five document-processing tools (Extract, Title, Proration, Revenue, GHL Prep) plus integrations with GoHighLevel, RRC data, and optional AI validation. Extract tool now supports three format modes: standard OCC Exhibit A, ECF multiunit well filings, and Convey 640 CSV/Excel. React 19 SPA frontend with FastAPI backend, deployed to Google Cloud Run. All endpoints authenticated via Firebase Auth with encrypted settings storage.
 
 ## Core Value
 
@@ -35,42 +35,31 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - ✓ App fails fast if ENCRYPTION_KEY missing in production — v1.3
 - ✓ Sensitive settings encrypted before Firestore persistence — v1.3
 - ✓ Backend test suite: auth smoke tests + parser regression tests + CI — v1.3
+- ✓ ECF PDF parsing with section-aware entry extraction and entity detection — v1.4
+- ✓ Case metadata extraction from ECF PDF headers (county, legal description, applicant, case number, well name) — v1.4
+- ✓ Convey 640 CSV/Excel parsing with name normalization and ZIP preservation — v1.4
+- ✓ PDF-authoritative merge when both PDF and CSV are provided — v1.4
+- ✓ Mineral export with case metadata populating Notes/Comments — v1.4
+- ✓ Dual-file upload UI in Extract page (PDF required, CSV optional) — v1.4
+- ✓ Entity type detection for ECF respondents (Individual, Trust, LLC, Estate, etc.) — v1.4
+- ✓ Merged results export to mineral CSV/Excel format — v1.4
 
 ### Active
 
-<!-- Current scope: ECF/Convey 640 extraction — new format mode in Extract tool. -->
+<!-- Empty — ready for next milestone requirements. -->
 
-- [ ] Parse ECF PDF Exhibit A respondent list (names, addresses, entity types)
-- [ ] Extract case metadata from ECF PDF header (county, legal description, applicant, case number)
-- [ ] Parse Convey 640 CSV/Excel as optional accelerator data source
-- [ ] Merge Convey 640 data with PDF-authoritative respondent data (PDF is source of truth)
-- [ ] Map merged data to mineral export format with maximum field coverage
-- [ ] Detect entity types from respondent names (Individual, Trust, LLC, Estate, etc.)
-- [ ] Support dual-file upload in Extract UI (PDF required, CSV/Excel optional)
-- [ ] Export merged results as mineral export CSV/Excel
+(None — use `/gsd:new-milestone` to define next scope)
 
 ### Out of Scope
 
-- AI-powered OCR correction — PDF text extraction via PyMuPDF is sufficient for these filings
+- AI-powered OCR correction — PDF text extraction via PyMuPDF is sufficient for born-digital filings
 - Automatic Convey 640 download/scraping — user provides the file manually
 - Batch processing of multiple ECF filings at once — one filing per upload
 - GoHighLevel direct send from ECF results — use existing GHL Prep workflow after export
+- Fuzzy name matching between PDF/CSV respondents — entry-number matching is sufficient for now
 - Frontend test suite — defer
 - Rate limiting — defer
 - Structured logging / request tracing — defer
-
-## Current Milestone: v1.4 ECF Extraction
-
-**Goal:** Add ECF/Convey 640 as a new extraction format within the Extract tool, enabling users to upload OCC multiunit well application PDFs (with optional Convey 640 CSV/Excel) and export respondent data as a mineral export.
-
-**Target features:**
-- ECF PDF Exhibit A parsing (respondent names, addresses, entity types)
-- Case metadata extraction from PDF header (county, legal description, applicant, case number)
-- Convey 640 CSV/Excel parsing as optional data accelerator
-- PDF-authoritative merge with Convey 640 data (correct OCR errors, fill gaps)
-- Mineral export output with maximum field coverage
-- Dual-file upload UI in Extract tool (PDF required, CSV/Excel optional)
-- Entity type detection (Individual, Trust, LLC, Estate, Corporation, etc.)
 
 ## Context
 
@@ -79,16 +68,14 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - **Deployment:** Google Cloud Run, us-central1, `--allow-unauthenticated` (network-level access open, auth enforced at app level)
 - **Primary admin:** james@tablerocktx.com
 - **Auth model:** Firebase Auth tokens verified server-side, JSON allowlist for authorization
-- **Test suite:** 50+ pytest tests (auth smoke, CORS, extract parser, revenue parser), CI via GitHub Actions
-- **ECF PDFs:** OCC multiunit horizontal well applications with Exhibit A respondent lists (numbered entries with names, addresses)
-- **Convey 640:** Third-party tool that scrapes OCC filing data into CSV/Excel with county, STR, applicant, case info, and respondent data (often has OCR errors)
-- **Existing Extract infrastructure:** Format detection, PDF extraction (PyMuPDF), party parsing, name parsing, entity type detection, mineral export — all reusable
+- **Codebase:** ~476K LOC (TypeScript + Python), React 19 + FastAPI + Firestore
+- **Test suite:** 50+ pytest tests (auth smoke, CORS, extract parsers, revenue parser), CI via GitHub Actions
+- **Extract formats:** Standard OCC Exhibit A, ECF multiunit well filings (with optional Convey 640 CSV/Excel)
+- **Shipped:** v1.3 Security Hardening (2026-03-11), v1.4 ECF Extraction (2026-03-12)
 
 ## Constraints
 
 - **Stack:** React 19 + FastAPI + Firestore + Firebase Auth — no changes to core stack
-- **Extract tool integration:** New format must integrate into existing Extract tool flow, not a separate tool
-- **PDF is source of truth:** When PDF and CSV disagree on respondent data, PDF wins
 - **No new dependencies:** Use existing PyMuPDF for PDF text extraction, pandas for CSV/Excel processing
 - **Mineral export format:** Output must match existing MINERAL_EXPORT_COLUMNS (shared across Extract/Title tools)
 - **Memory:** 1Gi Cloud Run instances
@@ -105,10 +92,12 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Storage-boundary encryption (encrypt before write, decrypt after read) | Clean separation, all write paths covered | ✓ Good — v1.3 |
 | Inline text fixtures for parser tests (no PDF files) | Self-contained, fast, no binary fixtures | ✓ Good — v1.3 |
 | Backend tests first, frontend tests later | Security and parsing accuracy are highest risk | ✓ Good — v1.3 |
-| ECF extraction as new mode in Extract tool | Reuses existing infrastructure (format detection, name parsing, export) | — Pending |
-| PDF required, CSV optional | PDF has authoritative data; CSV just accelerates processing | — Pending |
-| PDF is source of truth for respondent data | Convey 640 has OCR errors; PDF text is cleaner | — Pending |
-| Map Convey 640 metadata (county, STR, case#) to mineral export | Maximizes field coverage in output | — Pending |
+| ECF extraction as new mode in Extract tool | Reuses existing infrastructure (format detection, name parsing, export) | ✓ Good — v1.4 |
+| PDF required, CSV optional | PDF has authoritative data; CSV just accelerates processing | ✓ Good — v1.4 |
+| PDF is source of truth for respondent data | Convey 640 has OCR errors; PDF text is cleaner | ✓ Good — v1.4 |
+| Map Convey 640 metadata (county, STR, case#) to mineral export | Maximizes field coverage in output | ✓ Good — v1.4 |
+| Entry-number matching (not fuzzy) for PDF/CSV merge | Simple, reliable, covers the common case | ✓ Good — v1.4 |
+| Dedicated ecf_parser.py module (not extending parser.py) | Clean separation, ECF has distinct parsing logic | ✓ Good — v1.4 |
 
 ---
-*Last updated: 2026-03-11 after v1.3 milestone completion and v1.4 start*
+*Last updated: 2026-03-12 after v1.4 milestone completion*

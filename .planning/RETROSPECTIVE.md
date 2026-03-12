@@ -46,6 +46,49 @@
 
 ---
 
+## Milestone: v1.4 — ECF Extraction
+
+**Shipped:** 2026-03-12
+**Phases:** 4 | **Plans:** 7 | **Timeline:** 2 days
+
+### What Was Built
+- ECF PDF parser with section-aware entry parsing, entity detection, and case metadata extraction
+- Convey 640 CSV/Excel parser with name normalization pipeline and ZIP preservation
+- PDF-authoritative merge service with entry-number matching and mismatch warnings
+- Export enhancement: case metadata flows to Notes/Comments in mineral export
+- Dual-file upload UI with metadata panel and auto-populated mineral export modal
+
+### What Worked
+- Independent phases (1 & 2) enabled parallel-capable development — CSV parser built without waiting for PDF parser
+- TDD pattern from v1.3 carried forward — all three backend phases had tests before implementation
+- Dedicated parser modules (ecf_parser.py, convey640_parser.py, merge_service.py) kept logic isolated and testable
+- Reusing existing Extract infrastructure (format detection, entity types, mineral export columns) avoided rework
+- 7 plans completed in ~1 hour total execution time (avg 8 min/plan)
+
+### What Was Inefficient
+- Phase 4 (frontend) executed before Phases 1-3 (backend) due to parallel session work — caused integration issues discovered only during audit
+- Milestone audit found case_metadata not sent in export request (EXP-03) — a boundary that TDD didn't catch because frontend has no test suite
+- Phase 4 missing VERIFICATION.md — the only phase without formal verification documentation
+- 04-02-SUMMARY missing FE-02/03/04 in requirements-completed frontmatter — documentation hygiene gap
+
+### Patterns Established
+- Dedicated parser module per format (ecf_parser.py, convey640_parser.py) following consistent parse_X() API
+- Name normalization pipeline with ordered transformations (strip numbers → clean suffixes → handle markers)
+- Entry-number matching for cross-source merge (simple, reliable, avoids fuzzy matching complexity)
+- Section-aware parsing with section_type tags on entries for downstream filtering
+
+### Key Lessons
+1. Milestone audit catches integration boundary bugs that unit tests miss — the frontend→backend export boundary was broken despite all backend tests passing
+2. When phases can run in parallel, ensure integration tests cover the seams between them before declaring complete
+3. Documentation hygiene (VERIFICATION.md, SUMMARY frontmatter) should be part of the plan, not an afterthought
+
+### Cost Observations
+- Model mix: ~70% opus, ~30% sonnet
+- Sessions: ~4
+- Notable: Fastest per-plan velocity (8 min avg), total execution under 1 hour
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -53,14 +96,17 @@
 | Milestone | Sessions | Phases | Key Change |
 |-----------|----------|--------|------------|
 | v1.3 | ~5 | 3 | First milestone with GSD workflow, audit-before-complete |
+| v1.4 | ~4 | 4 | TDD carried forward, parallel phases, audit caught integration gap |
 
 ### Cumulative Quality
 
 | Milestone | Tests | Coverage | Key Addition |
 |-----------|-------|----------|-------------|
 | v1.3 | 50+ | Auth + parsers | CI workflow, auth smoke tests |
+| v1.4 | 60+ | + ECF/Convey640/merge parsers | ECF parser tests, merge service tests, Convey 640 tests |
 
 ### Top Lessons (Verified Across Milestones)
 
 1. Phase ordering matters — build features before testing them
 2. Router-level auth is safer than per-endpoint auth (prevents accidental exposure)
+3. Milestone audits catch integration boundary bugs that per-phase TDD misses — run before completing
