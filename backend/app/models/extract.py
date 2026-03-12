@@ -19,6 +19,18 @@ class EntityType(str, Enum):
     UNKNOWN_HEIRS = "Unknown Heirs"
 
 
+class CaseMetadata(BaseModel):
+    """Metadata extracted from ECF filing header."""
+
+    county: Optional[str] = Field(None, description="County name (e.g., 'CADDO')")
+    legal_description: Optional[str] = Field(
+        None, description="Section/Township/Range legal description"
+    )
+    applicant: Optional[str] = Field(None, description="Applicant company name")
+    case_number: Optional[str] = Field(None, description="OCC cause number")
+    well_name: Optional[str] = Field(None, description="Well name from application")
+
+
 class PartyEntry(BaseModel):
     """A single party/stakeholder entry extracted from Exhibit A."""
 
@@ -56,6 +68,10 @@ class PartyEntry(BaseModel):
         default=False, description="True if parsing confidence is low"
     )
     flag_reason: Optional[str] = Field(None, description="Why entry was flagged")
+    section_type: Optional[str] = Field(
+        None,
+        description="ECF section: regular, curative, address_unknown, curative_unknown, informational",
+    )
 
 
 class ExtractionResult(BaseModel):
@@ -80,6 +96,12 @@ class ExtractionResult(BaseModel):
     )
     format_warning: Optional[str] = Field(
         None, description="Warning if quality is low or format uncertain"
+    )
+    case_metadata: Optional[CaseMetadata] = Field(
+        None, description="Case metadata from ECF filing header"
+    )
+    merge_warnings: Optional[list[str]] = Field(
+        None, description="Warnings from merge process"
     )
 
 

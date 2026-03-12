@@ -25,6 +25,7 @@ class ExhibitFormat(str, Enum):
     TABLE_ATTENTION = "TABLE_ATTENTION"
     TABLE_SPLIT_ADDR = "TABLE_SPLIT_ADDR"
     FREE_TEXT_LIST = "FREE_TEXT_LIST"
+    ECF = "ECF"
     UNKNOWN = "UNKNOWN"
 
 
