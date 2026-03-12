@@ -10,7 +10,14 @@ import {
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Settings() {
-  const { user } = useAuth()
+  const { user, getIdToken } = useAuth()
+
+  const authHeaders = async (): Promise<Record<string, string>> => {
+    const token = await getIdToken()
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    return headers
+  }
 
   // Section refs for scroll navigation
   const profileRef = useRef<HTMLDivElement>(null)
@@ -55,7 +62,7 @@ export default function Settings() {
     if (!user?.email) return
     const loadPreferences = async () => {
       try {
-        const res = await fetch(`${API_BASE}/admin/preferences/${encodeURIComponent(user.email!)}`)
+        const res = await fetch(`${API_BASE}/admin/preferences/${encodeURIComponent(user.email!)}`, { headers: await authHeaders() })
         if (res.ok) {
           const data = await res.json()
           setNotifications({
@@ -77,9 +84,10 @@ export default function Settings() {
     setIsSavingNotifications(true)
     setNotificationSuccess('')
     try {
+      const hdrs = await authHeaders()
       const res = await fetch(`${API_BASE}/admin/preferences/${encodeURIComponent(user.email)}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...hdrs },
         body: JSON.stringify({
           email_notifications: notifications.email,
           browser_notifications: notifications.browser,
@@ -168,6 +176,7 @@ export default function Settings() {
 
       const response = await fetch(`${API_BASE}/admin/upload-profile-image`, {
         method: 'POST',
+        headers: await authHeaders(),
         body: formData,
       })
 

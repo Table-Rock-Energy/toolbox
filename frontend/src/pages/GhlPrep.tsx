@@ -34,7 +34,15 @@ interface UploadResponse {
 type ViewMode = 'normal' | 'flagged' | 'failed-contacts'
 
 export default function GhlPrep() {
-  const { user, userName } = useAuth()
+  const { user, userName, getIdToken } = useAuth()
+
+  const authHeaders = async (): Promise<Record<string, string>> => {
+    const token = await getIdToken()
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    return headers
+  }
+
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<TransformResult | null>(null)
@@ -249,9 +257,11 @@ export default function GhlPrep() {
       const formData = new FormData()
       formData.append('file', file)
 
+      const hdrs = await authHeaders()
       const response = await fetch(`${API_BASE}/ghl-prep/upload`, {
         method: 'POST',
         headers: {
+          ...hdrs,
           'X-User-Email': user?.email || '',
           'X-User-Name': userName || user?.displayName || '',
         },
@@ -289,9 +299,11 @@ export default function GhlPrep() {
       )
 
     try {
+      const hdrs = await authHeaders()
       const response = await fetch(`${API_BASE}/ghl-prep/export/csv`, {
         method: 'POST',
         headers: {
+          ...hdrs,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -325,9 +337,10 @@ export default function GhlPrep() {
     }
 
     try {
+      const hdrs = await authHeaders()
       const response = await fetch(`${API_BASE}/ghl-prep/export/flagged-csv`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...hdrs, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           rows: result.flagged_rows,
           filename: result.source_filename?.replace(/\.[^.]+$/, '') || 'mineral_export',

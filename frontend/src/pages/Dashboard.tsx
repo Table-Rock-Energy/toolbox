@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
 import {
   FileSearch,
   FileText,
@@ -98,13 +99,24 @@ const toolPaths: Record<string, string> = {
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const { getIdToken } = useAuth()
+
+  const authHeaders = async (): Promise<Record<string, string>> => {
+    const token = await getIdToken()
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    return headers
+  }
+
   const [recentJobs, setRecentJobs] = useState<RecentJob[]>([])
   const [toolCounts, setToolCounts] = useState<Record<string, number>>({})
 
   useEffect(() => {
     const fetchJobs = async () => {
       try {
-        const response = await fetch(`${API_BASE}/history/jobs?limit=50`)
+        const response = await fetch(`${API_BASE}/history/jobs?limit=50`, {
+          headers: await authHeaders(),
+        })
         if (!response.ok) return
         const data = await response.json()
         const jobs: RecentJob[] = data.jobs || []

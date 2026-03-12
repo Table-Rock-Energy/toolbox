@@ -143,7 +143,14 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 
 export default function Proration() {
-  const { user, userName } = useAuth()
+  const { user, userName, getIdToken } = useAuth()
+
+  const authHeaders = async (): Promise<Record<string, string>> => {
+    const token = await getIdToken()
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    return headers
+  }
   const { panelCollapsed, togglePanel, activeStorageKey } = useToolLayout('proration', user?.uid, STORAGE_KEY_PREFIX)
   const [jobs, setJobs] = useState<ProrationJob[]>([])
   const [activeJob, setActiveJob] = useState<ProrationJob | null>(null)
@@ -245,7 +252,9 @@ export default function Proration() {
   useEffect(() => {
     const checkActiveJob = async () => {
       try {
-        const response = await fetch(`${API_BASE}/proration/rrc/download/active`)
+        const response = await fetch(`${API_BASE}/proration/rrc/download/active`, {
+          headers: await authHeaders(),
+        })
         if (response.ok) {
           const data = await response.json()
           // Check if data is a job object or has a job property
@@ -279,7 +288,9 @@ export default function Proration() {
   useEffect(() => {
     const loadRecentJobs = async () => {
       try {
-        const response = await fetch(`${API_BASE}/history/jobs?tool=proration&limit=20`)
+        const response = await fetch(`${API_BASE}/history/jobs?tool=proration&limit=20`, {
+          headers: await authHeaders(),
+        })
         if (response.ok) {
           const data = await response.json()
           const loadedJobs: ProrationJob[] = (data.jobs || []).map((j: Record<string, unknown>) => ({
@@ -335,7 +346,9 @@ export default function Proration() {
     // Poll every 3 seconds
     rrcPollRef.current = setInterval(async () => {
       try {
-        const response = await fetch(`${API_BASE}/proration/rrc/download/${jobId}/status`)
+        const response = await fetch(`${API_BASE}/proration/rrc/download/${jobId}/status`, {
+          headers: await authHeaders(),
+        })
         if (response.ok) {
           const job: RRCSyncJob = await response.json()
           setRrcSyncJob(job)
@@ -368,7 +381,9 @@ export default function Proration() {
 
   const checkRRCStatus = async () => {
     try {
-      const response = await fetch(`${API_BASE}/proration/rrc/status`)
+      const response = await fetch(`${API_BASE}/proration/rrc/status`, {
+        headers: await authHeaders(),
+      })
       if (response.ok) {
         const data = await response.json()
         setRrcStatus(data)
@@ -415,9 +430,11 @@ export default function Proration() {
       formData.append('min_appraisal_value', String(minAppraisalValue))
       formData.append('well_type_override', wellTypeOverride)
 
+      const hdrs = await authHeaders()
       const response = await fetch(`${API_BASE}/proration/upload`, {
         method: 'POST',
         headers: {
+          ...hdrs,
           'X-User-Email': user?.email || '',
           'X-User-Name': userName || user?.displayName || '',
         },
@@ -460,9 +477,11 @@ export default function Proration() {
     if (!activeJob?.result?.rows) return
 
     try {
+      const hdrs = await authHeaders()
       const response = await fetch(`${API_BASE}/proration/export/${format}`, {
         method: 'POST',
         headers: {
+          ...hdrs,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -497,7 +516,9 @@ export default function Proration() {
     if (!job.result?.rows && job.job_id) {
       setIsLoadingEntries(true)
       try {
-        const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}/entries`)
+        const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}/entries`, {
+          headers: await authHeaders(),
+        })
         if (response.ok) {
           const data = await response.json()
           const updatedJob = {
@@ -529,7 +550,10 @@ export default function Proration() {
       return
     }
     try {
-      await fetch(`${API_BASE}/history/jobs/${job.job_id}`, { method: 'DELETE' })
+      await fetch(`${API_BASE}/history/jobs/${job.job_id}`, {
+        method: 'DELETE',
+        headers: await authHeaders(),
+      })
     } catch { /* best-effort */ }
     setJobs((prev) => prev.filter((j) => j.id !== job.id))
     if (activeJob?.id === job.id) setActiveJob(null)
@@ -568,9 +592,10 @@ export default function Proration() {
     if (!editingRow || !editingRow.district || !editingRow.lease_number) return
     setIsRetryingRrc(true)
     try {
+      const hdrs = await authHeaders()
       const response = await fetch(`${API_BASE}/proration/rrc/fetch-missing`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...hdrs, 'Content-Type': 'application/json' },
         body: JSON.stringify({ rows: [editingRow] }),
       })
       if (!response.ok) throw new Error('RRC lookup failed')
@@ -602,9 +627,10 @@ export default function Proration() {
     setError(null)
 
     try {
+      const hdrs = await authHeaders()
       const response = await fetch(`${API_BASE}/proration/rrc/fetch-missing`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...hdrs, 'Content-Type': 'application/json' },
         body: JSON.stringify({ rows: unmatchedRows }),
       })
 

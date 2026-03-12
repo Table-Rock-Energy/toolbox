@@ -113,8 +113,15 @@ const ENTITY_TYPE_OPTIONS = [
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Title() {
-  const { user, userName } = useAuth()
+  const { user, userName, getIdToken } = useAuth()
   const { panelCollapsed, togglePanel, activeStorageKey } = useToolLayout('title', user?.uid, STORAGE_KEY_PREFIX)
+
+  const authHeaders = async (): Promise<Record<string, string>> => {
+    const token = await getIdToken()
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    return headers
+  }
   const [jobs, setJobs] = useState<TitleJob[]>([])
   const [activeJob, setActiveJob] = useState<TitleJob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -203,7 +210,7 @@ export default function Title() {
   useEffect(() => {
     const loadRecentJobs = async () => {
       try {
-        const response = await fetch(`${API_BASE}/history/jobs?tool=title&limit=20`)
+        const response = await fetch(`${API_BASE}/history/jobs?tool=title&limit=20`, { headers: await authHeaders() })
         if (!response.ok) return
         const data = await response.json()
         const jobsArray = data.jobs || (Array.isArray(data) ? data : [])
@@ -364,9 +371,10 @@ export default function Title() {
     setEnrichSteps(DEFAULT_STEPS.map(s => ({ ...s, status: 'pending' as const })))
 
     try {
+      const hdrs = await authHeaders()
       const response = await fetch(`${API_BASE}/title/enrich`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...hdrs },
         body: JSON.stringify({ entries: activeJob.result.entries }),
       })
 
@@ -449,11 +457,13 @@ export default function Title() {
       const formData = new FormData()
       formData.append('file', file)
 
+      const hdrs = await authHeaders()
       const response = await fetch(`${API_BASE}/title/upload`, {
         method: 'POST',
         headers: {
           'X-User-Email': user?.email || '',
           'X-User-Name': userName || user?.displayName || '',
+          ...hdrs,
         },
         body: formData,
       })
@@ -495,10 +505,12 @@ export default function Title() {
         ? `${API_BASE}/title/export/csv`
         : `${API_BASE}/title/export/${format}`
 
+      const hdrs = await authHeaders()
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...hdrs,
         },
         body: JSON.stringify({
           entries: entriesToExport,
@@ -541,7 +553,7 @@ export default function Title() {
     if (job.job_id && (!job.result?.entries || job.result.entries.length === 0)) {
       setIsLoadingEntries(true)
       try {
-        const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}/entries`)
+        const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}/entries`, { headers: await authHeaders() })
         if (response.ok) {
           const data = await response.json()
           const entries = Array.isArray(data) ? data : data.entries || []
@@ -575,7 +587,7 @@ export default function Title() {
       return
     }
     try {
-      await fetch(`${API_BASE}/history/jobs/${job.job_id}`, { method: 'DELETE' })
+      await fetch(`${API_BASE}/history/jobs/${job.job_id}`, { method: 'DELETE', headers: await authHeaders() })
     } catch { /* best-effort */ }
     setJobs((prev) => prev.filter((j) => j.id !== job.id))
     if (activeJob?.id === job.id) setActiveJob(null)

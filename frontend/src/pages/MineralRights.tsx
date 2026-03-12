@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useAuth } from '../contexts/AuthContext'
 import {
   Search,
   Users,
@@ -98,6 +99,15 @@ const verificationBadge = (status: string) => {
 }
 
 export default function MineralRights() {
+  const { getIdToken } = useAuth()
+
+  const authHeaders = async (): Promise<Record<string, string>> => {
+    const token = await getIdToken()
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    return headers
+  }
+
   const [status, setStatus] = useState<PipelineStatus | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
@@ -114,7 +124,9 @@ export default function MineralRights() {
 
   const fetchStatus = async () => {
     try {
-      const res = await fetch(`${API_BASE}/etl/status`)
+      const res = await fetch(`${API_BASE}/etl/status`, {
+        headers: await authHeaders(),
+      })
       if (res.ok) {
         setStatus(await res.json())
       }
@@ -127,9 +139,10 @@ export default function MineralRights() {
     if (!searchQuery.trim()) return
     setSearchLoading(true)
     try {
+      const hdrs = await authHeaders()
       const res = await fetch(`${API_BASE}/etl/search`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...hdrs },
         body: JSON.stringify({ query: searchQuery, limit: 20 }),
       })
       if (res.ok) {
@@ -147,7 +160,9 @@ export default function MineralRights() {
   const selectEntity = async (entityId: string) => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/etl/entities/${entityId}`)
+      const res = await fetch(`${API_BASE}/etl/entities/${entityId}`, {
+        headers: await authHeaders(),
+      })
       if (res.ok) {
         const data = await res.json()
         setSelectedEntity(data.entity)

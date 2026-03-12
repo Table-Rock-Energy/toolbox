@@ -192,7 +192,7 @@ export default function AdminSettings() {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/users`)
+      const res = await fetch(`${API_BASE}/admin/users`, { headers: await authHeaders() })
       if (res.ok) {
         const data = await res.json()
         setUsers(data.users)
@@ -206,7 +206,7 @@ export default function AdminSettings() {
 
   const fetchOptions = async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/options`)
+      const res = await fetch(`${API_BASE}/admin/options`, { headers: await authHeaders() })
       if (res.ok) {
         const data = await res.json()
         setOptions(data)
@@ -218,7 +218,7 @@ export default function AdminSettings() {
 
   const fetchGoogleCloudSettings = async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/settings/google-cloud`)
+      const res = await fetch(`${API_BASE}/admin/settings/google-cloud`, { headers: await authHeaders() })
       if (res.ok) {
         const data = await res.json()
         setGoogleCloud(data)

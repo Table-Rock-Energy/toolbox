@@ -172,8 +172,16 @@ const STORAGE_KEY_PREFIX = 'revenue-visible-columns'
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Revenue() {
-  const { user, userName } = useAuth()
+  const { user, userName, getIdToken } = useAuth()
   const { panelCollapsed, togglePanel, activeStorageKey } = useToolLayout('revenue', user?.uid, STORAGE_KEY_PREFIX)
+
+  const authHeaders = async (): Promise<Record<string, string>> => {
+    const token = await getIdToken()
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    return headers
+  }
+
   const [jobs, setJobs] = useState<RevenueJob[]>([])
   const [activeJob, setActiveJob] = useState<RevenueJob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -247,7 +255,9 @@ export default function Revenue() {
   useEffect(() => {
     const loadJobs = async () => {
       try {
-        const response = await fetch(`${API_BASE}/history/jobs?tool=revenue&limit=20`)
+        const response = await fetch(`${API_BASE}/history/jobs?tool=revenue&limit=20`, {
+          headers: await authHeaders(),
+        })
         if (!response.ok) return
         const data = await response.json()
         if (data.jobs?.length) {
@@ -402,9 +412,11 @@ export default function Revenue() {
       const formData = new FormData()
       formData.append('files', file)
 
+      const hdrs = await authHeaders()
       const response = await fetch(`${API_BASE}/revenue/upload`, {
         method: 'POST',
         headers: {
+          ...hdrs,
           'X-User-Email': user?.email || '',
           'X-User-Name': userName || user?.displayName || '',
         },
@@ -451,9 +463,11 @@ export default function Revenue() {
     }
 
     try {
+      const hdrs = await authHeaders()
       const response = await fetch(`${API_BASE}/revenue/export/csv`, {
         method: 'POST',
         headers: {
+          ...hdrs,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -487,7 +501,9 @@ export default function Revenue() {
     if (!job.result && job.job_id) {
       setIsLoadingEntries(true)
       try {
-        const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}/entries`)
+        const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}/entries`, {
+          headers: await authHeaders(),
+        })
         if (response.ok) {
           const data = await response.json()
           const statements = data.entries as RevenueStatement[]
@@ -518,7 +534,10 @@ export default function Revenue() {
       return
     }
     try {
-      await fetch(`${API_BASE}/history/jobs/${job.job_id}`, { method: 'DELETE' })
+      await fetch(`${API_BASE}/history/jobs/${job.job_id}`, {
+        method: 'DELETE',
+        headers: await authHeaders(),
+      })
     } catch { /* best-effort */ }
     setJobs((prev) => prev.filter((j) => j.id !== job.id))
     if (activeJob?.id === job.id) setActiveJob(null)
@@ -534,6 +553,7 @@ export default function Revenue() {
       formData.append('file', file)
       const response = await fetch(`${API_BASE}/revenue/debug/extract-text`, {
         method: 'POST',
+        headers: await authHeaders(),
         body: formData,
       })
       const data = await response.json()
