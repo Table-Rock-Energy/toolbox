@@ -312,7 +312,7 @@ async def get_current_user(
     """Get the current authenticated user from the request.
 
     Returns user info if authenticated and authorized, None otherwise.
-    For now, returns None to allow unauthenticated access during development.
+    Requires a valid Firebase ID token — no dev-mode bypass.
     """
     if credentials is None:
         return None
@@ -321,12 +321,6 @@ async def get_current_user(
     decoded = await verify_firebase_token(token)
 
     if decoded is None:
-        # Check if Firebase is configured (dev-mode bypass)
-        if get_firebase_app() is None:
-            # Dev mode: Firebase not configured, return synthetic user
-            logger.warning("Dev-mode auth bypass: returning synthetic user (Firebase not configured)")
-            return {"email": "dev@localhost", "uid": "dev-mode"}
-        # Firebase is configured but token is invalid
         return None
 
     # Check if user is in allowlist
