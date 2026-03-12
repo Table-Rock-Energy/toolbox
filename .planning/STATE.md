@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: ECF Extraction
 status: executing
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-03-12T11:33:00Z"
-last_activity: 2026-03-12 — Completed Plan 01-01
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-03-12T11:43:49Z"
+last_activity: 2026-03-12 — Completed Plan 01-02
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 7
-  completed_plans: 3
-  percent: 43
+  completed_plans: 4
+  percent: 57
 ---
 
 # Project State
@@ -26,25 +26,25 @@ See: .planning/PROJECT.md (updated 2026-03-11)
 ## Current Position
 
 Phase: 1 of 4 (ECF PDF Parsing)
-Plan: 1 of 2 in current phase
-Status: Executing
-Last activity: 2026-03-12 — Completed Plan 01-01
+Plan: 2 of 2 in current phase (COMPLETE)
+Status: Phase 1 complete
+Last activity: 2026-03-12 — Completed Plan 01-02
 
-Progress: [████░░░░░░] 43%
+Progress: [██████░░░░] 57%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
+- Total plans completed: 4
 - Average duration: 9 min
-- Total execution time: 0.47 hours
+- Total execution time: 0.58 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 04-frontend-integration | 2 | 17 min | 9 min |
-| 01-ecf-pdf-parsing | 1 | 11 min | 11 min |
+| 01-ecf-pdf-parsing | 2 | 18 min | 9 min |
 
 ## Accumulated Context
 
@@ -61,6 +61,8 @@ Progress: [████░░░░░░] 43%
 - [01-01]: Built dedicated ecf_parser.py module rather than extending existing parser.py
 - [01-01]: ECF entity classification handles "deceased" case-insensitively (existing ESTATE_PATTERN requires comma prefix)
 - [01-01]: Entry number regex requires uppercase letter after number-dot to distinguish from street addresses
+- [01-02]: ECF parser skips post-processing name parse loop since it handles parse_name internally
+- [01-02]: Export filtering uses section_type presence as guard -- only activates when entries have section_type set
 
 ### Pending Todos
 
@@ -78,6 +80,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-12T11:33:00Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-03-12T11:43:49Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None
