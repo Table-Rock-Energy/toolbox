@@ -70,11 +70,11 @@ Plans:
   3. Entries are matched by entry number, and mismatched counts or unmatched entries are flagged with warnings in the response
   4. Merged results export to mineral export CSV and Excel formats with county, case number, applicant, and legal description populating the appropriate columns
   5. PDF-only mode (no CSV) still produces a valid mineral export with whatever metadata the PDF header provides
-**Plans**: 1 plan
+**Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: Merge service with entry-number matching and PDF precedence rules
-- [ ] 03-02: Mineral export mapping for ECF metadata fields
+- [ ] 03-01-PLAN.md -- TDD merge service with entry-number matching, PDF precedence, metadata merging, and mismatch warnings
+- [ ] 03-02-PLAN.md -- Export metadata-to-notes enhancement, upload endpoint CSV wiring, and ExportRequest model update
 
 ### Phase 4: Frontend Integration
 **Goal**: Users can upload ECF PDFs (with optional CSV) through the Extract UI and view, review, and export respondent data
