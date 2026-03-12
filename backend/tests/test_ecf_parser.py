@@ -607,3 +607,171 @@ class TestPartyEntrySectionType:
     def test_section_type_default_none(self):
         p = PartyEntry(entry_number="1", primary_name="Test")
         assert p.section_type is None
+
+
+# ===========================================================================
+# Integration: ECF upload routing
+# ===========================================================================
+
+
+class TestECFUploadRouting:
+    """Integration test: parse_ecf_filing -> ExtractionResult with case_metadata."""
+
+    def test_ecf_parse_produces_extraction_result_with_metadata(self):
+        """Calling parse_ecf_filing and building ExtractionResult includes case_metadata."""
+        ecf_result = parse_ecf_filing(SAMPLE_ECF_TEXT)
+        result = ExtractionResult(
+            success=True,
+            entries=ecf_result.entries,
+            total_count=len(ecf_result.entries),
+            case_metadata=ecf_result.metadata,
+            format_detected="ECF",
+        )
+        assert result.case_metadata is not None
+        assert result.case_metadata.county == "CADDO"
+        assert result.format_detected == "ECF"
+
+    def test_ecf_parse_result_has_entries_and_metadata(self):
+        """ECFParseResult has both entries and metadata populated."""
+        ecf_result = parse_ecf_filing(SAMPLE_ECF_TEXT)
+        assert len(ecf_result.entries) > 0
+        assert ecf_result.metadata is not None
+        assert ecf_result.metadata.county is not None
+        assert ecf_result.metadata.case_number is not None
+
+    def test_ecf_entries_have_name_fields_parsed(self):
+        """ECF parser populates first/last name fields for individuals."""
+        ecf_result = parse_ecf_filing(SAMPLE_ECF_TEXT)
+        entry1 = next(e for e in ecf_result.entries if e.entry_number == "1")
+        assert entry1.entity_type == EntityType.INDIVIDUAL
+        assert entry1.first_name is not None
+        assert entry1.last_name is not None
+
+    def test_ecf_format_hint_recognized(self):
+        """ExhibitFormat.ECF can be constructed from string 'ECF'."""
+        fmt = ExhibitFormat("ECF")
+        assert fmt == ExhibitFormat.ECF
+
+
+# ===========================================================================
+# Integration: ECF export filtering
+# ===========================================================================
+
+
+class TestECFExportFiltering:
+    """Integration test: export CSV excludes address-unknown entries without addresses."""
+
+    def test_address_unknown_without_address_excluded(self):
+        """Entries in address_unknown section with no address are excluded from export."""
+        from app.services.extract.export_service import to_csv
+
+        entries = [
+            PartyEntry(
+                entry_number="1", primary_name="John Smith",
+                mailing_address="123 Main", city="OKC", state="OK",
+                zip_code="73101", section_type="regular",
+            ),
+            PartyEntry(
+                entry_number="2", primary_name="Unknown Person",
+                section_type="address_unknown",
+            ),
+        ]
+        csv_text = to_csv(entries, county="CADDO").decode("utf-8")
+        assert "John Smith" in csv_text
+        assert "Unknown Person" not in csv_text
+
+    def test_curative_unknown_without_address_excluded(self):
+        """Entries in curative_unknown section with no address are excluded."""
+        from app.services.extract.export_service import to_csv
+
+        entries = [
+            PartyEntry(
+                entry_number="1", primary_name="Jane Doe",
+                mailing_address="456 Oak", city="Tulsa", state="OK",
+                zip_code="74101", section_type="curative",
+            ),
+            PartyEntry(
+                entry_number="2", primary_name="Curative Unknown",
+                section_type="curative_unknown",
+            ),
+        ]
+        csv_text = to_csv(entries, county="CADDO").decode("utf-8")
+        assert "Jane Doe" in csv_text
+        assert "Curative Unknown" not in csv_text
+
+    def test_regular_and_curative_entries_included(self):
+        """Regular and curative entries with addresses are always included."""
+        from app.services.extract.export_service import to_csv
+
+        entries = [
+            PartyEntry(
+                entry_number="1", primary_name="Regular Person",
+                mailing_address="100 Main", city="OKC", state="OK",
+                zip_code="73101", section_type="regular",
+            ),
+            PartyEntry(
+                entry_number="2", primary_name="Curative Person",
+                mailing_address="200 Oak", city="Tulsa", state="OK",
+                zip_code="74101", section_type="curative",
+            ),
+        ]
+        csv_text = to_csv(entries, county="CADDO").decode("utf-8")
+        assert "Regular Person" in csv_text
+        assert "Curative Person" in csv_text
+
+    def test_non_ecf_entries_never_filtered(self):
+        """Entries without section_type (non-ECF) pass through unfiltered."""
+        from app.services.extract.export_service import to_csv
+
+        entries = [
+            PartyEntry(
+                entry_number="1", primary_name="Person With Address",
+                mailing_address="100 Main", city="OKC", state="OK",
+                zip_code="73101",
+            ),
+            PartyEntry(
+                entry_number="2", primary_name="Person Without Address",
+            ),
+        ]
+        csv_text = to_csv(entries).decode("utf-8")
+        assert "Person With Address" in csv_text
+        assert "Person Without Address" in csv_text
+
+    def test_address_unknown_with_address_still_included(self):
+        """Edge case: address_unknown entry that HAS an address (from merge) is kept."""
+        from app.services.extract.export_service import to_csv
+
+        entries = [
+            PartyEntry(
+                entry_number="1", primary_name="Regular Person",
+                mailing_address="100 Main", city="OKC", state="OK",
+                zip_code="73101", section_type="regular",
+            ),
+            PartyEntry(
+                entry_number="2", primary_name="Merged Person",
+                mailing_address="200 Oak", city="Tulsa", state="OK",
+                zip_code="74101", section_type="address_unknown",
+            ),
+        ]
+        csv_text = to_csv(entries, county="CADDO").decode("utf-8")
+        assert "Regular Person" in csv_text
+        assert "Merged Person" in csv_text
+
+    def test_informational_entries_included(self):
+        """Informational entries are not filtered (they are not address_unknown)."""
+        from app.services.extract.export_service import to_csv
+
+        entries = [
+            PartyEntry(
+                entry_number="1", primary_name="Info Corp",
+                section_type="informational",
+            ),
+            PartyEntry(
+                entry_number="2", primary_name="Regular Person",
+                mailing_address="100 Main", city="OKC", state="OK",
+                zip_code="73101", section_type="regular",
+            ),
+        ]
+        csv_text = to_csv(entries, county="CADDO").decode("utf-8")
+        assert "Info Corp" in csv_text
+        assert "Regular Person" in csv_text
