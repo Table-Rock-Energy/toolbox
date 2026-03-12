@@ -35,6 +35,7 @@ const statusIcons: Record<string, string> = {
   error: 'text-red-500',
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const DEFAULT_STEPS: EnrichmentStep[] = [
   { id: 'addresses', label: 'Validate Addresses', icon: MapPin, status: 'pending' },
   { id: 'names', label: 'Clean Names', icon: Bot, status: 'pending' },

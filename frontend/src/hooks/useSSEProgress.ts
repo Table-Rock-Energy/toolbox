@@ -59,6 +59,7 @@ export function useSSEProgress(jobId: string | null, authToken?: string | null):
     if (!jobId) return
 
     // Reset state for new job
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting state before SSE subscription, not cascading renders
     setProgress(null)
     setCompletionData(null)
     setIsComplete(false)

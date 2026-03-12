@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { Sparkles, Check, X, CheckCircle, XCircle, AlertCircle, Loader2 } from 'lucide-react'
 import { aiApi } from '../utils/api'
 import type { AiSuggestion, AiValidationResult } from '../utils/api'
@@ -22,31 +22,33 @@ export default function AiReviewPanel({ tool, entries, onApplySuggestions, onClo
   const [error, setError] = useState<string | null>(null)
   const [decisions, setDecisions] = useState<Record<number, 'accept' | 'reject'>>({})
 
-  const runValidation = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-
-    const response = await aiApi.validate(tool, entries)
-
-    if (response.error) {
-      setError(response.error)
-      setLoading(false)
-      return
-    }
-
-    if (response.data) {
-      if (!response.data.success) {
-        setError(response.data.error_message || 'Validation failed')
-      }
-      setResult(response.data)
-    }
-
-    setLoading(false)
-  }, [tool, entries])
-
   useEffect(() => {
-    runValidation()
-  }, [runValidation])
+    let cancelled = false
+    async function validate() {
+      setLoading(true)
+      setError(null)
+
+      const response = await aiApi.validate(tool, entries)
+      if (cancelled) return
+
+      if (response.error) {
+        setError(response.error)
+        setLoading(false)
+        return
+      }
+
+      if (response.data) {
+        if (!response.data.success) {
+          setError(response.data.error_message || 'Validation failed')
+        }
+        setResult(response.data)
+      }
+
+      setLoading(false)
+    }
+    validate()
+    return () => { cancelled = true }
+  }, [tool, entries])
 
   const handleDecision = (index: number, decision: 'accept' | 'reject') => {
     setDecisions(prev => ({ ...prev, [index]: decision }))

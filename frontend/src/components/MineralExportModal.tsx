@@ -13,12 +13,14 @@ export default function MineralExportModal({ isOpen, onClose, onExport, initialC
   const [county, setCounty] = useState('')
   const [campaignName, setCampaignName] = useState('')
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (isOpen) {
       setCounty(initialCounty || '')
       setCampaignName('')
     }
   }, [isOpen, initialCounty])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleSubmit = () => {
     onExport(county, campaignName)

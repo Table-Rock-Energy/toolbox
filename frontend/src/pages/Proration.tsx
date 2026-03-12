@@ -171,9 +171,9 @@ export default function Proration() {
     return null
   })
   const [rrcLoading, setRrcLoading] = useState(!rrcStatus)
-  const [_isDownloadingRRC, setIsDownloadingRRC] = useState(false)
-  const [_rrcMessage, setRrcMessage] = useState<string | null>(null)
-  const [_rrcSyncJob, setRrcSyncJob] = useState<RRCSyncJob | null>(null)
+  const [, setIsDownloadingRRC] = useState(false)
+  const [, setRrcMessage] = useState<string | null>(null)
+  const [, setRrcSyncJob] = useState<RRCSyncJob | null>(null)
   const rrcPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Processing Options State
@@ -609,7 +609,7 @@ export default function Proration() {
           setFetchMissingMessage('No RRC data found for this lease')
         }
       }
-    } catch (err) {
+    } catch {
       setFetchMissingMessage('RRC lookup failed')
     } finally {
       setIsRetryingRrc(false)

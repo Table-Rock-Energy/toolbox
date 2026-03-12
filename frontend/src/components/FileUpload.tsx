@@ -38,7 +38,7 @@ export default function FileUpload({
     setIsDragging(false)
   }, [])
 
-  const validateFiles = (files: File[]): File[] => {
+  const validateFiles = useCallback((files: File[]): File[] => {
     return files.filter((file) => {
       if (file.size > maxSize * 1024 * 1024) {
         console.warn(`File ${file.name} exceeds ${maxSize}MB limit`)
@@ -46,7 +46,7 @@ export default function FileUpload({
       }
       return true
     })
-  }
+  }, [maxSize])
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -63,7 +63,7 @@ export default function FileUpload({
         onFilesSelected(validFiles)
       }
     },
-    [onFilesSelected, maxSize]
+    [onFilesSelected, validateFiles]
   )
 
   const handleFileSelect = useCallback(
@@ -79,7 +79,7 @@ export default function FileUpload({
         onFilesSelected(validFiles)
       }
     },
-    [onFilesSelected, maxSize]
+    [onFilesSelected, validateFiles]
   )
 
   const removeFile = (index: number) => {
