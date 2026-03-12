@@ -457,6 +457,7 @@ export default function Extract() {
           filename: activeJob?.documentName?.replace(/\.[^.]+$/, '') || 'extract',
           county,
           campaign_name: campaignName,
+          case_metadata: activeJob?.result?.case_metadata,
         }),
       })
 
