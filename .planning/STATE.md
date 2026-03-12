@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: ECF Extraction
 status: executing
-stopped_at: Completed 04-02-PLAN.md
-last_updated: "2026-03-11T19:50:07.006Z"
-last_activity: 2026-03-11 — Completed Plan 04-02
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-03-12T11:33:00Z"
+last_activity: 2026-03-12 — Completed Plan 01-01
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 7
-  completed_plans: 2
-  percent: 29
+  completed_plans: 3
+  percent: 43
 ---
 
 # Project State
@@ -21,29 +21,30 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results. Everything else is secondary to parsing accuracy and data integrity.
-**Current focus:** Phase 4 - Frontend Integration
+**Current focus:** Phase 1 - ECF PDF Parsing
 
 ## Current Position
 
-Phase: 4 of 4 (Frontend Integration)
-Plan: 2 of 2 in current phase
+Phase: 1 of 4 (ECF PDF Parsing)
+Plan: 1 of 2 in current phase
 Status: Executing
-Last activity: 2026-03-11 — Completed Plan 04-02
+Last activity: 2026-03-12 — Completed Plan 01-01
 
-Progress: [██░░░░░░░░] 29%
+Progress: [████░░░░░░] 43%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2
+- Total plans completed: 3
 - Average duration: 9 min
-- Total execution time: 0.28 hours
+- Total execution time: 0.47 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 04-frontend-integration | 2 | 17 min | 9 min |
+| 01-ecf-pdf-parsing | 1 | 11 min | 11 min |
 
 ## Accumulated Context
 
@@ -57,6 +58,9 @@ Progress: [██░░░░░░░░] 29%
 - [04-01]: CSV file cleared via useEffect on formatHint change rather than inline handler
 - [Phase 04-02]: Case metadata panel uses subtle blue background to distinguish from results table
 - [Phase 04-02]: Mineral export modal auto-populates county for ECF, starts empty for other formats
+- [01-01]: Built dedicated ecf_parser.py module rather than extending existing parser.py
+- [01-01]: ECF entity classification handles "deceased" case-insensitively (existing ESTATE_PATTERN requires comma prefix)
+- [01-01]: Entry number regex requires uppercase letter after number-dot to distinguish from street addresses
 
 ### Pending Todos
 
@@ -74,6 +78,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T19:50:07.002Z
-Stopped at: Completed 04-02-PLAN.md
+Last session: 2026-03-12T11:33:00Z
+Stopped at: Completed 01-01-PLAN.md
 Resume file: None

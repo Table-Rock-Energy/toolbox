@@ -9,11 +9,11 @@ Requirements for ECF/Convey 640 extraction. Each maps to roadmap phases.
 
 ### ECF PDF Parsing
 
-- [ ] **ECF-01**: User can upload an ECF PDF and extract numbered respondent entries (name + address)
-- [ ] **ECF-02**: Parser correctly handles multi-line respondent names and addresses from PDF text
-- [ ] **ECF-03**: Parser extracts case metadata from PDF header (county, legal description, applicant name, case number, well name)
-- [ ] **ECF-04**: Entity type is detected for each respondent (Individual, Trust, LLC, Estate, Corporation, etc.)
-- [ ] **ECF-05**: Format detector identifies ECF filings and routes to the correct parser
+- [x] **ECF-01**: User can upload an ECF PDF and extract numbered respondent entries (name + address)
+- [x] **ECF-02**: Parser correctly handles multi-line respondent names and addresses from PDF text
+- [x] **ECF-03**: Parser extracts case metadata from PDF header (county, legal description, applicant name, case number, well name)
+- [x] **ECF-04**: Entity type is detected for each respondent (Individual, Trust, LLC, Estate, Corporation, etc.)
+- [x] **ECF-05**: Format detector identifies ECF filings and routes to the correct parser
 
 ### Convey 640 Processing
 
@@ -74,11 +74,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ECF-01 | Phase 1 | Pending |
-| ECF-02 | Phase 1 | Pending |
-| ECF-03 | Phase 1 | Pending |
-| ECF-04 | Phase 1 | Pending |
-| ECF-05 | Phase 1 | Pending |
+| ECF-01 | Phase 1 | Complete |
+| ECF-02 | Phase 1 | Complete |
+| ECF-03 | Phase 1 | Complete |
+| ECF-04 | Phase 1 | Complete |
+| ECF-05 | Phase 1 | Complete |
 | CSV-01 | Phase 2 | Pending |
 | CSV-02 | Phase 2 | Pending |
 | CSV-03 | Phase 2 | Pending |
