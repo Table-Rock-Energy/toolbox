@@ -1,9 +1,14 @@
 """Pydantic models for Title Processing Tool."""
 
+from __future__ import annotations
+
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from app.models.ai_validation import PostProcessResult
 
 
 class EntityType(str, Enum):
@@ -83,6 +88,9 @@ class ProcessingResult(BaseModel):
     )
     source_filename: Optional[str] = Field(None, description="Original filename")
     job_id: Optional[str] = Field(None, description="Firestore job ID")
+    post_process: Optional[PostProcessResult] = Field(
+        None, description="Auto-correction results from post-processing pipeline"
+    )
 
 
 class UploadResponse(BaseModel):

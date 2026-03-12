@@ -14,6 +14,7 @@ from app.models.proration import (
     ExportRequest,
     FetchMissingRequest,
     FetchMissingResult,
+    MineralHolderRow,
     ProcessingOptions,
     RRCBackgroundDownloadResponse,
     RRCDownloadResponse,
@@ -276,6 +277,17 @@ async def upload_csv(
 
         if not result.success:
             return UploadResponse(message="Processing failed", result=result)
+
+        # Post-process: programmatic fixes (name casing) + AI verification
+        try:
+            from app.services.data_enrichment_pipeline import auto_enrich
+
+            row_dicts = [r.model_dump() for r in result.rows]
+            pp_result = await auto_enrich("proration", row_dicts)
+            result.rows = [MineralHolderRow(**d) for d in row_dicts]
+            result.post_process = pp_result
+        except Exception as e:
+            logger.warning("Post-processing failed, returning raw results: %s", e)
 
         logger.info(
             "Processed %d rows (%d matched, %d failed) from %s",

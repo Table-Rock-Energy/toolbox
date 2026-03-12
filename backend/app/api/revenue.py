@@ -9,10 +9,12 @@ from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
 from app.core.config import settings
 from app.core.ingestion import file_response, persist_job_result
+from app.models.ai_validation import PostProcessResult
 from app.models.revenue import (
     ExportRequest,
     ExportResponse,
     HealthResponse,
+    RevenueRow,
     UploadResponse,
 )
 from app.services.revenue.export_service import export_to_csv, generate_summary_report, to_mineral_csv
@@ -107,11 +109,46 @@ async def upload_pdfs(request: Request, files: list[UploadFile] = File(...)):
         except Exception as e:
             errors.append(f"Error processing {file.filename}: {e!s}")
 
+    # Post-process: programmatic fixes + AI verification
+    aggregated_pp = None
+    if statements:
+        try:
+            from app.services.data_enrichment_pipeline import auto_enrich
+
+            all_corrections = []
+            all_ai_suggestions = []
+            all_steps_completed: set[str] = set()
+            all_steps_skipped: set[str] = set()
+
+            for statement in statements:
+                row_dicts = [r.model_dump(mode="json") for r in statement.rows]
+                pp_result = await auto_enrich("revenue", row_dicts, context={
+                    "payor": statement.payor,
+                    "operator_name": statement.operator_name,
+                    "filename": statement.filename,
+                })
+                # Rebuild rows from corrected dicts
+                statement.rows = [RevenueRow(**d) for d in row_dicts]
+                all_corrections.extend(pp_result.corrections)
+                all_ai_suggestions.extend(pp_result.ai_suggestions)
+                all_steps_completed.update(pp_result.steps_completed)
+                all_steps_skipped.update(pp_result.steps_skipped)
+
+            aggregated_pp = PostProcessResult(
+                corrections=all_corrections,
+                ai_suggestions=all_ai_suggestions,
+                steps_completed=sorted(all_steps_completed),
+                steps_skipped=sorted(all_steps_skipped - all_steps_completed),
+            )
+        except Exception as e:
+            logger.warning("Post-processing failed, returning raw results: %s", e)
+
     result = UploadResponse(
         success=len(statements) > 0,
         statements=statements,
         total_rows=total_rows,
         errors=errors,
+        post_process=aggregated_pp,
     )
 
     # Persist to Firestore (non-blocking)

@@ -1,9 +1,14 @@
 """Pydantic models for OCC Exhibit A extraction (extract tool)."""
 
+from __future__ import annotations
+
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from app.models.ai_validation import PostProcessResult
 
 
 class EntityType(str, Enum):
@@ -102,6 +107,9 @@ class ExtractionResult(BaseModel):
     )
     merge_warnings: Optional[list[str]] = Field(
         None, description="Warnings from merge process"
+    )
+    post_process: Optional[PostProcessResult] = Field(
+        None, description="Auto-correction results from post-processing pipeline"
     )
 
 

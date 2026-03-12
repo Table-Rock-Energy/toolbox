@@ -50,6 +50,41 @@ class AiValidationResult(BaseModel):
     )
 
 
+class AutoCorrection(BaseModel):
+    """A single auto-applied correction from post-processing."""
+
+    entry_index: int = Field(description="Index of the entry that was corrected")
+    field: str = Field(description="Field name that was corrected")
+    original_value: str = Field(description="Value before correction")
+    corrected_value: str = Field(description="Value after correction")
+    source: str = Field(description="Correction source: programmatic, google_maps, or ai")
+    confidence: ConfidenceLevel = Field(
+        default=ConfidenceLevel.HIGH,
+        description="Confidence level of the correction",
+    )
+
+
+class PostProcessResult(BaseModel):
+    """Result of automatic post-processing applied during upload."""
+
+    corrections: list[AutoCorrection] = Field(
+        default_factory=list,
+        description="Auto-applied corrections (high confidence)",
+    )
+    ai_suggestions: list[AiSuggestion] = Field(
+        default_factory=list,
+        description="AI suggestions for manual review (medium/low confidence)",
+    )
+    steps_completed: list[str] = Field(
+        default_factory=list,
+        description="Post-processing steps that ran successfully",
+    )
+    steps_skipped: list[str] = Field(
+        default_factory=list,
+        description="Post-processing steps that were skipped",
+    )
+
+
 class AiStatusResponse(BaseModel):
     """Response for AI service status check."""
 

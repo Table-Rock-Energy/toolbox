@@ -6,6 +6,10 @@ Orchestrates multi-step processing:
 3. Name validation (Gemini AI)
 4. Name splitting (multiple names → individual entries)
 
+Also provides `auto_enrich()` — a non-streaming pipeline that runs
+programmatic fixes + optional AI verification during upload, returning
+a PostProcessResult with corrections and suggestions.
+
 Yields progress events as JSON-serializable dicts for streaming.
 """
 
@@ -17,8 +21,33 @@ import logging
 from typing import AsyncGenerator
 
 from app.core.config import settings
+from app.models.ai_validation import (
+    AiSuggestion,
+    AutoCorrection,
+    ConfidenceLevel,
+    PostProcessResult,
+)
 
 logger = logging.getLogger(__name__)
+
+# ── Preserved entity abbreviations for name casing ──
+_PRESERVE_UPPER = {
+    "LLC", "LP", "LLP", "INC", "CO", "CORP", "LTD", "PC", "PA", "NA",
+    "II", "III", "IV", "JR", "SR", "MD", "DDS", "PHD", "ESQ",
+    "NRA", "NGL", "OIL", "GAS",
+}
+
+# Revenue product code inference mapping
+_PRODUCT_CODE_MAP = {
+    "oil": "OIL",
+    "crude": "OIL",
+    "gas": "GAS",
+    "natural gas": "GAS",
+    "ngl": "NGL",
+    "condensate": "COND",
+    "cond": "COND",
+    "plant products": "NGL",
+}
 
 # Tool-specific field mappings
 FIELD_MAPS = {
@@ -61,6 +90,339 @@ For each entry, check:
 
 Only suggest changes you are highly confident about. Do NOT change unusual but valid names.
 Return suggestions as JSON array with: entry_index, field, current_value, suggested_value, reason, confidence (high/medium/low)."""
+
+
+def _title_case_word(word: str) -> str:
+    """Title-case a single word, preserving known abbreviations."""
+    upper = word.upper().rstrip(".,")
+    if upper in _PRESERVE_UPPER:
+        return word.upper()
+    # Preserve words that are already mixed case (e.g., "McDonald")
+    if not word.isupper() and not word.islower():
+        return word
+    return word.capitalize()
+
+
+def _fix_name_casing(
+    entries: list[dict],
+    name_fields: list[str],
+) -> list[AutoCorrection]:
+    """Convert ALL CAPS names to Title Case, preserving entity abbreviations."""
+    corrections: list[AutoCorrection] = []
+    for i, entry in enumerate(entries):
+        for field in name_fields:
+            value = entry.get(field)
+            if not value or not isinstance(value, str):
+                continue
+            # Only fix if the name is predominantly uppercase (>60% uppercase letters)
+            alpha_chars = [c for c in value if c.isalpha()]
+            if not alpha_chars:
+                continue
+            upper_ratio = sum(1 for c in alpha_chars if c.isupper()) / len(alpha_chars)
+            if upper_ratio < 0.6:
+                continue
+
+            fixed = " ".join(_title_case_word(w) for w in value.split())
+            if fixed != value:
+                corrections.append(AutoCorrection(
+                    entry_index=i,
+                    field=field,
+                    original_value=value,
+                    corrected_value=fixed,
+                    source="programmatic",
+                    confidence=ConfidenceLevel.HIGH,
+                ))
+                entry[field] = fixed
+    return corrections
+
+
+def _fix_entity_type(
+    entries: list[dict],
+    name_field: str,
+    entity_type_field: str,
+) -> list[AutoCorrection]:
+    """Re-run entity detection on corrected names to fix mismatched entity types."""
+    from app.services.title.entity_detector import detect_entity_type
+
+    corrections: list[AutoCorrection] = []
+    for i, entry in enumerate(entries):
+        name = entry.get(name_field)
+        current_type = entry.get(entity_type_field)
+        if not name:
+            continue
+
+        detected = detect_entity_type(name)
+        detected_val = detected.value
+
+        # Normalize comparison — extract and title use different enum value casing
+        if current_type and str(current_type).upper() != detected_val.upper() and detected_val.upper() != "INDIVIDUAL":
+            corrections.append(AutoCorrection(
+                entry_index=i,
+                field=entity_type_field,
+                original_value=str(current_type),
+                corrected_value=detected_val,
+                source="programmatic",
+                confidence=ConfidenceLevel.HIGH,
+            ))
+            entry[entity_type_field] = detected_val
+    return corrections
+
+
+def _infer_product_code(entries: list[dict]) -> list[AutoCorrection]:
+    """Infer missing product_code from product_description."""
+    corrections: list[AutoCorrection] = []
+    for i, entry in enumerate(entries):
+        code = entry.get("product_code")
+        if code and str(code).strip():
+            continue
+        desc = entry.get("product_description") or ""
+        desc_lower = desc.lower().strip()
+        if not desc_lower:
+            continue
+
+        for keyword, mapped_code in _PRODUCT_CODE_MAP.items():
+            if keyword in desc_lower:
+                corrections.append(AutoCorrection(
+                    entry_index=i,
+                    field="product_code",
+                    original_value=str(code) if code else "",
+                    corrected_value=mapped_code,
+                    source="programmatic",
+                    confidence=ConfidenceLevel.HIGH,
+                ))
+                entry["product_code"] = mapped_code
+                break
+    return corrections
+
+
+def _calculate_net_revenue(entries: list[dict]) -> list[AutoCorrection]:
+    """Calculate owner_net_revenue when components exist but total is missing."""
+    corrections: list[AutoCorrection] = []
+    for i, entry in enumerate(entries):
+        net = entry.get("owner_net_revenue")
+        if net is not None:
+            continue
+
+        owner_value = entry.get("owner_value")
+        if owner_value is None:
+            continue
+
+        tax = entry.get("owner_tax_amount") or 0
+        deduct = entry.get("owner_deduct_amount") or 0
+
+        try:
+            calculated = float(owner_value) - float(tax) - float(deduct)
+            calculated = round(calculated, 2)
+            corrections.append(AutoCorrection(
+                entry_index=i,
+                field="owner_net_revenue",
+                original_value="",
+                corrected_value=str(calculated),
+                source="programmatic",
+                confidence=ConfidenceLevel.HIGH,
+            ))
+            entry["owner_net_revenue"] = calculated
+        except (ValueError, TypeError):
+            continue
+    return corrections
+
+
+def _propagate_statement_fields(
+    entries: list[dict],
+    context: dict | None = None,
+) -> list[AutoCorrection]:
+    """Copy property_name and interest_type from context or adjacent rows when missing."""
+    corrections: list[AutoCorrection] = []
+
+    # Propagate from context (statement-level fields)
+    if context:
+        for i, entry in enumerate(entries):
+            for field in ("property_name", "interest_type"):
+                if not entry.get(field) and context.get(field):
+                    corrections.append(AutoCorrection(
+                        entry_index=i,
+                        field=field,
+                        original_value="",
+                        corrected_value=str(context[field]),
+                        source="programmatic",
+                        confidence=ConfidenceLevel.MEDIUM,
+                    ))
+                    entry[field] = context[field]
+
+    # Forward-fill property_name from previous row
+    last_property = None
+    for i, entry in enumerate(entries):
+        if entry.get("property_name"):
+            last_property = entry["property_name"]
+        elif last_property and not entry.get("property_name"):
+            corrections.append(AutoCorrection(
+                entry_index=i,
+                field="property_name",
+                original_value="",
+                corrected_value=last_property,
+                source="programmatic",
+                confidence=ConfidenceLevel.MEDIUM,
+            ))
+            entry["property_name"] = last_property
+
+    return corrections
+
+
+async def auto_enrich(
+    tool: str,
+    entries: list[dict],
+    context: dict | None = None,
+) -> PostProcessResult:
+    """Automatic post-processing pipeline run during upload.
+
+    Applies programmatic fixes first, then optional AI verification.
+    High-confidence AI suggestions are auto-applied; medium/low go to
+    ai_suggestions for manual review in the AiReviewPanel.
+
+    Args:
+        tool: Tool name (extract, title, proration, revenue).
+        entries: List of entry dicts (modified in-place).
+        context: Optional context dict (e.g., statement-level info for revenue).
+
+    Returns:
+        PostProcessResult with corrections and remaining suggestions.
+    """
+    all_corrections: list[AutoCorrection] = []
+    ai_suggestions: list[AiSuggestion] = []
+    steps_completed: list[str] = []
+    steps_skipped: list[str] = []
+
+    # ── Step 1: Name casing (Extract, Title, Proration) ──
+    if tool in ("extract", "title", "proration"):
+        name_fields_map = {
+            "extract": ["primary_name", "first_name", "middle_name", "last_name"],
+            "title": ["full_name", "first_name", "middle_name", "last_name"],
+            "proration": ["owner"],
+        }
+        name_fields = name_fields_map[tool]
+        casing_fixes = _fix_name_casing(entries, name_fields)
+        all_corrections.extend(casing_fixes)
+        steps_completed.append("name_casing")
+    else:
+        steps_skipped.append("name_casing")
+
+    # ── Step 2: Entity type re-detection (Extract, Title) ──
+    if tool in ("extract", "title"):
+        name_field = "primary_name" if tool == "extract" else "full_name"
+        entity_fixes = _fix_entity_type(entries, name_field, "entity_type")
+        all_corrections.extend(entity_fixes)
+        steps_completed.append("entity_type")
+    else:
+        steps_skipped.append("entity_type")
+
+    # ── Step 3: Address validation (Extract, Title) ──
+    if tool in ("extract", "title") and settings.use_google_maps:
+        field_map = FIELD_MAPS.get(tool)
+        if field_map:
+            try:
+                from app.services.address_validation_service import validate_address
+
+                addr_fields = field_map
+                corrected = 0
+                for i, entry in enumerate(entries):
+                    street = entry.get(addr_fields["street"]) or ""
+                    if not street:
+                        continue
+                    result = await asyncio.to_thread(
+                        validate_address,
+                        street=street,
+                        street_2=entry.get(addr_fields["street_2"]) or "",
+                        city=entry.get(addr_fields["city"]) or "",
+                        state=entry.get(addr_fields["state"]) or "",
+                        zip_code=entry.get(addr_fields["zip"]) or "",
+                    )
+                    if result.confidence in ("high", "partial") and result.changed:
+                        for src_field, entry_field in [
+                            ("validated_street", addr_fields["street"]),
+                            ("validated_street_2", addr_fields["street_2"]),
+                            ("validated_city", addr_fields["city"]),
+                            ("validated_state", addr_fields["state"]),
+                            ("validated_zip", addr_fields["zip"]),
+                        ]:
+                            new_val = getattr(result, src_field, None)
+                            old_val = entry.get(entry_field) or ""
+                            if new_val and new_val != old_val:
+                                all_corrections.append(AutoCorrection(
+                                    entry_index=i,
+                                    field=entry_field,
+                                    original_value=old_val,
+                                    corrected_value=new_val,
+                                    source="google_maps",
+                                    confidence=ConfidenceLevel.HIGH,
+                                ))
+                                entry[entry_field] = new_val
+                        corrected += 1
+                steps_completed.append("address_validation")
+            except Exception as e:
+                logger.warning("Address validation step failed: %s", e)
+                steps_skipped.append("address_validation")
+        else:
+            steps_skipped.append("address_validation")
+    else:
+        steps_skipped.append("address_validation")
+
+    # ── Step 4: Revenue-specific programmatic fixes ──
+    if tool == "revenue":
+        code_fixes = _infer_product_code(entries)
+        all_corrections.extend(code_fixes)
+
+        net_fixes = _calculate_net_revenue(entries)
+        all_corrections.extend(net_fixes)
+
+        prop_fixes = _propagate_statement_fields(entries, context)
+        all_corrections.extend(prop_fixes)
+
+        steps_completed.append("revenue_inference")
+    else:
+        steps_skipped.append("revenue_inference")
+
+    # ── Step 5: AI verification (all tools, when Gemini enabled) ──
+    if settings.use_gemini:
+        try:
+            if tool == "revenue":
+                from app.services.gemini_service import verify_revenue_entries
+                ai_result = await verify_revenue_entries(entries, context)
+            else:
+                from app.services.gemini_service import validate_entries
+                ai_result = await validate_entries(tool, entries)
+
+            if ai_result.success:
+                for suggestion in ai_result.suggestions:
+                    idx = suggestion.entry_index
+                    if 0 <= idx < len(entries):
+                        if suggestion.confidence == ConfidenceLevel.HIGH:
+                            # Auto-apply high confidence
+                            old_val = str(entries[idx].get(suggestion.field, ""))
+                            entries[idx][suggestion.field] = suggestion.suggested_value
+                            all_corrections.append(AutoCorrection(
+                                entry_index=idx,
+                                field=suggestion.field,
+                                original_value=old_val,
+                                corrected_value=suggestion.suggested_value,
+                                source="ai",
+                                confidence=ConfidenceLevel.HIGH,
+                            ))
+                        else:
+                            # Medium/low → manual review
+                            ai_suggestions.append(suggestion)
+            steps_completed.append("ai_verification")
+        except Exception as e:
+            logger.warning("AI verification step failed: %s", e)
+            steps_skipped.append("ai_verification")
+    else:
+        steps_skipped.append("ai_verification")
+
+    return PostProcessResult(
+        corrections=all_corrections,
+        ai_suggestions=ai_suggestions,
+        steps_completed=steps_completed,
+        steps_skipped=steps_skipped,
+    )
 
 
 async def _validate_addresses_step(

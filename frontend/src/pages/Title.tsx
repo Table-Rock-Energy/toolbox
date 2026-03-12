@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Filter, RotateCcw, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Wand2 } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel, MineralExportModal } from '../components'
+import { FileUpload, Modal, AiReviewPanel, MineralExportModal, AutoCorrectionsBanner } from '../components'
 import EnrichmentProgress, { DEFAULT_STEPS, type EnrichmentStep, type EnrichmentSummary } from '../components/EnrichmentProgress'
 import { aiApi } from '../utils/api'
-import type { AiSuggestion } from '../utils/api'
+import type { AiSuggestion, PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
 
@@ -42,6 +42,7 @@ interface ProcessingResult {
   county?: string
   source_filename?: string
   error_message?: string
+  post_process?: PostProcessResult | null
 }
 
 interface UploadResponse {
@@ -359,6 +360,24 @@ export default function Title() {
     setActiveJob(updatedJob)
     setJobs(prev => prev.map(j => j.id === activeJob.id ? updatedJob : j))
     setShowAiReview(false)
+  }
+
+  const handleUndoCorrections = () => {
+    if (!activeJob?.result?.entries || !activeJob.result.post_process?.corrections) return
+
+    const updatedEntries = [...activeJob.result.entries]
+    const corrections = [...activeJob.result.post_process.corrections].reverse()
+    for (const correction of corrections) {
+      const entry = updatedEntries[correction.entry_index]
+      if (entry && correction.field in entry) {
+        (entry as unknown as Record<string, unknown>)[correction.field] = correction.original_value
+      }
+    }
+
+    const updatedResult = { ...activeJob.result, entries: updatedEntries, post_process: null }
+    const updatedJob = { ...activeJob, result: updatedResult }
+    setActiveJob(updatedJob)
+    setJobs(prev => prev.map(j => j.id === activeJob.id ? updatedJob : j))
   }
 
   const handleEnrich = async () => {
@@ -783,7 +802,7 @@ export default function Title() {
                     {aiEnabled && (
                       <button
                         onClick={() => setShowAiReview(!showAiReview)}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
+                        className={`relative flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
                           showAiReview
                             ? 'bg-purple-100 text-purple-700 border border-purple-300'
                             : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
@@ -791,6 +810,11 @@ export default function Title() {
                       >
                         <Sparkles className="w-4 h-4" />
                         AI Review
+                        {(activeJob?.result?.post_process?.ai_suggestions?.length ?? 0) > 0 && (
+                          <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-purple-600 text-white text-[10px] font-medium rounded-full flex items-center justify-center">
+                            {activeJob!.result!.post_process!.ai_suggestions.length}
+                          </span>
+                        )}
                       </button>
                     )}
                     <button
@@ -1210,6 +1234,14 @@ export default function Title() {
                 </div>
               </div>
             </div>
+
+            {/* Auto-Corrections Banner */}
+            {(activeJob?.result?.post_process?.corrections?.length ?? 0) > 0 && (
+              <AutoCorrectionsBanner
+                postProcess={activeJob!.result!.post_process!}
+                onUndo={handleUndoCorrections}
+              />
+            )}
 
             {/* AI Review Panel */}
             {showAiReview && activeJob?.result?.entries && (

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { DollarSign, Download, Upload, AlertCircle, CheckCircle, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Edit2, Bug, ChevronDown, ChevronRight, RotateCcw, Filter } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel, MineralExportModal } from '../components'
+import { FileUpload, Modal, AiReviewPanel, MineralExportModal, AutoCorrectionsBanner } from '../components'
 import { aiApi } from '../utils/api'
 import type { AiSuggestion } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
@@ -40,12 +40,20 @@ interface RevenueStatement {
   errors: string[]
 }
 
+interface PostProcessResult {
+  corrections: { entry_index: number; field: string; original_value: string; corrected_value: string; source: string; confidence: string }[]
+  ai_suggestions: { entry_index: number; field: string; current_value: string; suggested_value: string; reason: string; confidence: string }[]
+  steps_completed: string[]
+  steps_skipped: string[]
+}
+
 interface UploadResponse {
   success: boolean
   statements?: RevenueStatement[]
   total_rows?: number
   errors?: string[]
   job_id?: string
+  post_process?: PostProcessResult | null
 }
 
 interface RevenueJob {
@@ -392,6 +400,17 @@ export default function Revenue() {
       },
     })
     setShowAiReview(false)
+  }
+
+  const handleUndoCorrections = () => {
+    if (!activeJob?.result) return
+    setActiveJob({
+      ...activeJob,
+      result: {
+        ...activeJob.result,
+        post_process: null,
+      },
+    })
   }
 
   const handleFilesSelected = async (files: File[]) => {
@@ -776,7 +795,7 @@ export default function Revenue() {
                     {aiEnabled && (
                       <button
                         onClick={() => setShowAiReview(!showAiReview)}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
+                        className={`relative flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
                           showAiReview
                             ? 'bg-purple-100 text-purple-700 border border-purple-300'
                             : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
@@ -784,6 +803,11 @@ export default function Revenue() {
                       >
                         <Sparkles className="w-4 h-4" />
                         AI Review
+                        {(activeJob?.result?.post_process?.ai_suggestions?.length ?? 0) > 0 && (
+                          <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-purple-600 text-white text-[10px] font-medium rounded-full flex items-center justify-center">
+                            {activeJob!.result!.post_process!.ai_suggestions!.length}
+                          </span>
+                        )}
                       </button>
                     )}
                     <button
@@ -1035,6 +1059,14 @@ export default function Revenue() {
                 </div>
               </div>
             </div>
+
+            {/* Auto-corrections Banner */}
+            {(activeJob?.result?.post_process?.corrections?.length ?? 0) > 0 && (
+              <AutoCorrectionsBanner
+                postProcess={activeJob!.result!.post_process!}
+                onUndo={handleUndoCorrections}
+              />
+            )}
 
             {/* AI Review Panel */}
             {showAiReview && activeJob?.result?.statements && (

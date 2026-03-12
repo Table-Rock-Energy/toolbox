@@ -165,6 +165,19 @@ Review each entry and suggest corrections for:
 Only suggest changes where you are confident there is an actual error.""",
 }
 
+REVENUE_VERIFY_PROMPT = """You are verifying revenue statement data that has already been extracted from PDFs.
+Your job is to find and fix gaps, NOT re-extract. The data has already been parsed.
+
+Focus on:
+1. Missing product_code: Infer from context (property name containing "oil"/"gas", adjacent rows, operator type). Common codes: OIL, GAS, NGL, COND.
+2. Missing interest_type: Infer from decimal_interest magnitude (RI typically 0.001-0.25, WI typically 0.25-1.0, ORRI typically 0.001-0.05).
+3. Financial math verification: owner_value should approximately equal owner_volume * avg_price (within 10%). Flag large discrepancies.
+4. Net revenue check: owner_net_revenue should approximately equal owner_value - owner_tax_amount - owner_deduct_amount. Calculate if missing.
+5. Suspicious values: Flag zero or negative owner_value when volume exists, or unreasonably large values (>$1M per row).
+
+Only suggest changes where you are confident. For math verification, use "medium" confidence.
+Return suggestions as JSON with: entry_index, field, current_value, suggested_value, reason, confidence (high/medium/low)."""
+
 RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -370,3 +383,129 @@ async def validate_entries(tool: str, entries: list[dict]) -> AiValidationResult
         entries_reviewed=entries_reviewed,
         issues_found=issues_found,
     )
+
+
+async def verify_revenue_entries(
+    entries: list[dict],
+    context: dict | None = None,
+) -> AiValidationResult:
+    """Verify revenue entries using the revenue-specific prompt.
+
+    Uses a focused prompt for gap-filling and math verification,
+    distinct from the general revenue validation prompt.
+    """
+    if not settings.use_gemini:
+        return AiValidationResult(
+            success=False,
+            error_message="AI validation is not enabled.",
+        )
+
+    # Build context string for the prompt
+    context_str = ""
+    if context:
+        parts = []
+        for key in ("payor", "operator_name", "filename"):
+            if context.get(key):
+                parts.append(f"{key}: {context[key]}")
+        if parts:
+            context_str = f"\n\nStatement context: {', '.join(parts)}"
+
+    client = _get_client()
+    all_suggestions: list[AiSuggestion] = []
+    total_batches = (len(entries) + BATCH_SIZE - 1) // BATCH_SIZE
+
+    for batch_idx in range(total_batches):
+        allowed, _, _ = _check_rate_limit()
+        if not allowed:
+            break
+
+        start = batch_idx * BATCH_SIZE
+        end = min(start + BATCH_SIZE, len(entries))
+        batch = entries[start:end]
+
+        # Use the revenue verify prompt instead of TOOL_PROMPTS
+        batch_suggestions = await asyncio.to_thread(
+            _verify_revenue_batch_sync,
+            client,
+            batch,
+            start,
+            context_str,
+        )
+        all_suggestions.extend(batch_suggestions)
+
+        if batch_idx < total_batches - 1:
+            await asyncio.sleep(BATCH_DELAY_SECONDS)
+
+    return AiValidationResult(
+        success=True,
+        suggestions=all_suggestions,
+        summary=f"Verified {len(entries)} revenue rows. Found {len(all_suggestions)} issues.",
+        entries_reviewed=len(entries),
+        issues_found=len(all_suggestions),
+    )
+
+
+def _verify_revenue_batch_sync(
+    client: Client,
+    entries: list[dict],
+    batch_offset: int,
+    context_str: str,
+) -> list[AiSuggestion]:
+    """Verify a batch of revenue entries synchronously."""
+    from google.genai import types
+
+    entries_text = json.dumps(
+        [{"index": batch_offset + i, **e} for i, e in enumerate(entries)],
+        indent=2,
+        default=str,
+    )
+
+    user_prompt = f"""Verify the following {len(entries)} revenue rows (indices {batch_offset}-{batch_offset + len(entries) - 1}).{context_str}
+
+Return a JSON object with a "suggestions" array. Each suggestion must have: entry_index, field, current_value, suggested_value, reason, confidence.
+
+If all entries look correct, return {{"suggestions": []}}.
+
+Entries:
+{entries_text}"""
+
+    try:
+        _record_request()
+        response = client.models.generate_content(
+            model=settings.gemini_model,
+            contents=user_prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=REVENUE_VERIFY_PROMPT,
+                response_mime_type="application/json",
+                response_json_schema=RESPONSE_SCHEMA,
+                temperature=0.1,
+            ),
+        )
+
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            _record_spend(
+                response.usage_metadata.prompt_token_count or 0,
+                response.usage_metadata.candidates_token_count or 0,
+            )
+
+        data = json.loads(response.text)
+        suggestions = []
+        for s in data.get("suggestions", []):
+            try:
+                suggestions.append(
+                    AiSuggestion(
+                        entry_index=s["entry_index"],
+                        field=s["field"],
+                        current_value=str(s.get("current_value", "")),
+                        suggested_value=str(s.get("suggested_value", "")),
+                        reason=s.get("reason", ""),
+                        confidence=ConfidenceLevel(s.get("confidence", "medium")),
+                    )
+                )
+            except (ValueError, KeyError) as e:
+                logger.warning("Skipping malformed revenue suggestion: %s", e)
+        return suggestions
+
+    except Exception as e:
+        logger.error("Gemini revenue verification error at offset %d: %s", batch_offset, e)
+        return []

@@ -6,6 +6,7 @@ import type { AiSuggestion, AiValidationResult } from '../utils/api'
 interface AiReviewPanelProps {
   tool: string
   entries: unknown[]
+  initialSuggestions?: AiSuggestion[]
   onApplySuggestions: (accepted: AiSuggestion[]) => void
   onClose: () => void
 }
@@ -16,13 +17,18 @@ const CONFIDENCE_STYLES: Record<string, string> = {
   low: 'bg-gray-100 text-gray-600',
 }
 
-export default function AiReviewPanel({ tool, entries, onApplySuggestions, onClose }: AiReviewPanelProps) {
-  const [loading, setLoading] = useState(true)
-  const [result, setResult] = useState<AiValidationResult | null>(null)
+export default function AiReviewPanel({ tool, entries, initialSuggestions, onApplySuggestions, onClose }: AiReviewPanelProps) {
+  const [loading, setLoading] = useState(!initialSuggestions)
+  const [result, setResult] = useState<AiValidationResult | null>(
+    initialSuggestions
+      ? { success: true, suggestions: initialSuggestions, summary: `${initialSuggestions.length} suggestion${initialSuggestions.length !== 1 ? 's' : ''} from upload`, entries_reviewed: entries.length, issues_found: initialSuggestions.length }
+      : null
+  )
   const [error, setError] = useState<string | null>(null)
   const [decisions, setDecisions] = useState<Record<number, 'accept' | 'reject'>>({})
 
   useEffect(() => {
+    if (initialSuggestions) return
     let cancelled = false
     async function validate() {
       setLoading(true)
@@ -48,7 +54,7 @@ export default function AiReviewPanel({ tool, entries, onApplySuggestions, onClo
     }
     validate()
     return () => { cancelled = true }
-  }, [tool, entries])
+  }, [tool, entries, initialSuggestions])
 
   const handleDecision = (index: number, decision: 'accept' | 'reject') => {
     setDecisions(prev => ({ ...prev, [index]: decision }))

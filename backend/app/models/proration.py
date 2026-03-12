@@ -1,9 +1,14 @@
 """Pydantic models for Proration tool."""
 
+from __future__ import annotations
+
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from app.models.ai_validation import PostProcessResult
 
 
 class WellType(str, Enum):
@@ -116,6 +121,9 @@ class ProcessingResult(BaseModel):
     job_id: Optional[str] = Field(None, description="Firestore job ID")
     county_downloads: Optional[list[CountyDownloadInfo]] = Field(
         None, description="On-demand county download statuses"
+    )
+    post_process: Optional[PostProcessResult] = Field(
+        None, description="Auto-correction results from post-processing pipeline"
     )
 
 

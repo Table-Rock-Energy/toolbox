@@ -159,6 +159,18 @@ async def upload_pdf(
             len(entries), flagged_count, quality, fmt.value, file.filename,
         )
 
+        # Post-process: programmatic fixes + AI verification
+        pp_result = None
+        try:
+            from app.services.data_enrichment_pipeline import auto_enrich
+
+            entry_dicts = [e.model_dump() for e in entries]
+            pp_result = await auto_enrich("extract", entry_dicts)
+            entries = [PartyEntry(**d) for d in entry_dicts]
+            flagged_count = sum(1 for e in entries if e.flagged)
+        except Exception as e:
+            logger.warning("Post-processing failed, returning raw results: %s", e)
+
         result = ExtractionResult(
             success=True,
             entries=entries,
@@ -169,6 +181,7 @@ async def upload_pdf(
             quality_score=quality,
             format_warning=format_warning,
             case_metadata=case_metadata,
+            post_process=pp_result,
         )
 
         # Persist to Firestore (non-blocking)

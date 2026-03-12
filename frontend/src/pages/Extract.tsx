@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Wand2, Search } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel, EnrichmentPanel } from '../components'
+import { FileUpload, Modal, AiReviewPanel, AutoCorrectionsBanner, EnrichmentPanel } from '../components'
 import MineralExportModal from '../components/MineralExportModal'
 import EnrichmentProgress, { DEFAULT_STEPS, type EnrichmentStep, type EnrichmentSummary } from '../components/EnrichmentProgress'
 import { aiApi, enrichmentApi, extractApi } from '../utils/api'
-import type { AiSuggestion } from '../utils/api'
+import type { AiSuggestion, PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
 
@@ -49,6 +49,7 @@ interface ExtractionResult {
   format_warning?: string
   case_metadata?: CaseMetadata
   merge_warnings?: string[]
+  post_process?: PostProcessResult
 }
 
 interface UploadResponse {
@@ -133,6 +134,10 @@ export default function Extract() {
   // AI Review state
   const [showAiReview, setShowAiReview] = useState(false)
   const [aiEnabled, setAiEnabled] = useState(false)
+
+  // Post-process corrections state
+  const [postProcess, setPostProcess] = useState<PostProcessResult | null>(null)
+  const [preCorrectionEntries, setPreCorrectionEntries] = useState<PartyEntry[] | null>(null)
 
   // Data validation pipeline state (Google Maps + Gemini)
   const [isValidating, setIsValidating] = useState(false)
@@ -263,6 +268,20 @@ export default function Extract() {
     setShowAiReview(false)
   }
 
+  const handleUndoCorrections = () => {
+    if (!preCorrectionEntries || !activeJob?.result) return
+
+    setActiveJob({
+      ...activeJob,
+      result: {
+        ...activeJob.result,
+        entries: preCorrectionEntries,
+      },
+    })
+    setPostProcess(null)
+    setPreCorrectionEntries(null)
+  }
+
   const handleValidate = async () => {
     if (!activeJob?.result?.entries || activeJob.result.entries.length === 0) return
 
@@ -381,6 +400,29 @@ export default function Extract() {
       const data: UploadResponse = await response.json()
       newJob.result = data.result
       newJob.job_id = data.result?.job_id
+
+      // Capture post-process corrections from the result
+      if (data.result?.post_process) {
+        setPostProcess(data.result.post_process)
+        // Store a snapshot of entries before corrections so we can undo
+        if (data.result.entries && data.result.post_process.corrections.length > 0) {
+          const snapshot = data.result.entries.map((entry) => {
+            const entryWithCorrections: Record<string, unknown> = { ...entry }
+            for (const correction of data.result!.post_process!.corrections) {
+              if (correction.entry_index === data.result!.entries!.indexOf(entry)) {
+                entryWithCorrections[correction.field] = correction.original_value
+              }
+            }
+            return entryWithCorrections as unknown as PartyEntry
+          })
+          setPreCorrectionEntries(snapshot)
+        } else {
+          setPreCorrectionEntries(null)
+        }
+      } else {
+        setPostProcess(null)
+        setPreCorrectionEntries(null)
+      }
 
       setJobs((prev) => [newJob, ...prev])
       setActiveJob(newJob)
@@ -795,7 +837,7 @@ export default function Extract() {
                     {aiEnabled && (
                       <button
                         onClick={() => setShowAiReview(!showAiReview)}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
+                        className={`relative flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
                           showAiReview
                             ? 'bg-purple-100 text-purple-700 border border-purple-300'
                             : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
@@ -803,6 +845,11 @@ export default function Extract() {
                       >
                         <Sparkles className="w-4 h-4" />
                         AI Review
+                        {postProcess && postProcess.ai_suggestions.length > 0 && (
+                          <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-purple-600 text-white text-[10px] font-semibold rounded-full leading-none">
+                            {postProcess.ai_suggestions.length}
+                          </span>
+                        )}
                       </button>
                     )}
                     {enrichmentEnabled && (
@@ -1160,11 +1207,19 @@ export default function Extract() {
                 </div>
               </div>
             </div>
+            {/* Auto-Corrections Banner */}
+            {postProcess && postProcess.corrections.length > 0 && (
+              <AutoCorrectionsBanner
+                postProcess={postProcess}
+                onUndo={handleUndoCorrections}
+              />
+            )}
             {/* AI Review Panel */}
             {showAiReview && activeJob?.result?.entries && (
               <AiReviewPanel
                 tool="extract"
                 entries={activeJob.result.entries}
+                initialSuggestions={postProcess?.ai_suggestions}
                 onApplySuggestions={handleApplySuggestions}
                 onClose={() => setShowAiReview(false)}
               />

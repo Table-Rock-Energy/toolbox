@@ -1,10 +1,15 @@
 """Pydantic models for Revenue PDF extraction tool."""
 
+from __future__ import annotations
+
 from datetime import date
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from app.models.ai_validation import PostProcessResult
 
 
 class StatementFormat(str, Enum):
@@ -129,6 +134,9 @@ class UploadResponse(BaseModel):
     total_rows: int = 0
     errors: list[str] = Field(default_factory=list)
     job_id: Optional[str] = Field(None, description="Firestore job ID")
+    post_process: Optional[PostProcessResult] = Field(
+        None, description="Auto-correction results from post-processing pipeline"
+    )
 
 
 class ExportRequest(BaseModel):

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw, Filter, Settings, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel } from '../components'
+import { FileUpload, Modal, AiReviewPanel, AutoCorrectionsBanner } from '../components'
 import { aiApi } from '../utils/api'
-import type { AiSuggestion } from '../utils/api'
+import type { AiSuggestion, PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
 
@@ -54,6 +54,7 @@ interface ProcessingResult {
   source_filename?: string
   job_id?: string
   county_downloads?: CountyDownloadInfo[]
+  post_process?: PostProcessResult | null
 }
 
 interface UploadResponse {
@@ -337,6 +338,24 @@ export default function Proration() {
       },
     })
     setShowAiReview(false)
+  }
+
+  const handleUndoCorrections = () => {
+    if (!activeJob?.result?.rows || !activeJob.result.post_process?.corrections) return
+
+    const updatedRows = [...activeJob.result.rows]
+    const corrections = [...activeJob.result.post_process.corrections].reverse()
+    for (const correction of corrections) {
+      const row = updatedRows[correction.entry_index]
+      if (row && correction.field in row) {
+        (row as unknown as Record<string, unknown>)[correction.field] = correction.original_value
+      }
+    }
+
+    const updatedResult = { ...activeJob.result, rows: updatedRows, post_process: null }
+    const updatedJob = { ...activeJob, result: updatedResult }
+    setActiveJob(updatedJob)
+    setJobs(prev => prev.map(j => j.id === activeJob.id ? updatedJob : j))
   }
 
   const startPolling = (jobId: string) => {
@@ -1060,7 +1079,7 @@ export default function Proration() {
                     {aiEnabled && (
                       <button
                         onClick={() => setShowAiReview(!showAiReview)}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
+                        className={`relative flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
                           showAiReview
                             ? 'bg-purple-100 text-purple-700 border border-purple-300'
                             : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
@@ -1068,6 +1087,11 @@ export default function Proration() {
                       >
                         <Sparkles className="w-4 h-4" />
                         AI Review
+                        {(activeJob?.result?.post_process?.ai_suggestions?.length ?? 0) > 0 && (
+                          <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-purple-600 text-white text-[10px] font-medium rounded-full flex items-center justify-center">
+                            {activeJob!.result!.post_process!.ai_suggestions.length}
+                          </span>
+                        )}
                       </button>
                     )}
                     <button
@@ -1350,6 +1374,14 @@ export default function Proration() {
                 </div>
               </div>
             </div>
+
+            {/* Auto-Corrections Banner */}
+            {(activeJob?.result?.post_process?.corrections?.length ?? 0) > 0 && (
+              <AutoCorrectionsBanner
+                postProcess={activeJob!.result!.post_process!}
+                onUndo={handleUndoCorrections}
+              />
+            )}
 
             {/* AI Review Panel */}
             {showAiReview && activeJob?.result?.rows && (

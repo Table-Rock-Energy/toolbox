@@ -94,6 +94,19 @@ async def upload_file(
         # Generate job_id locally so we can return it immediately
         job_id = str(uuid4())
 
+        # Post-process: programmatic fixes + AI verification
+        pp_result = None
+        try:
+            from app.services.data_enrichment_pipeline import auto_enrich
+
+            entry_dicts = [e.model_dump() for e in entries]
+            pp_result = await auto_enrich("title", entry_dicts)
+            entries = [OwnerEntry(**d) for d in entry_dicts]
+            duplicate_count = sum(1 for e in entries if e.duplicate_flag)
+            no_address_count = sum(1 for e in entries if not e.has_address)
+        except Exception as e:
+            logger.warning("Post-processing failed, returning raw results: %s", e)
+
         result = ProcessingResult(
             success=True,
             entries=entries,
@@ -104,6 +117,7 @@ async def upload_file(
             county=county,
             source_filename=file.filename,
             job_id=job_id,
+            post_process=pp_result,
         )
 
         # Extract user info from headers

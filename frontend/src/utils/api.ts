@@ -271,6 +271,22 @@ export interface AiValidationResult {
   error_message?: string | null
 }
 
+export interface AutoCorrection {
+  entry_index: number
+  field: string
+  original_value: string
+  corrected_value: string
+  source: string
+  confidence: 'high' | 'medium' | 'low'
+}
+
+export interface PostProcessResult {
+  corrections: AutoCorrection[]
+  ai_suggestions: AiSuggestion[]
+  steps_completed: string[]
+  steps_skipped: string[]
+}
+
 export interface AiStatusResponse {
   enabled: boolean
   model: string
