@@ -1,5 +1,5 @@
 ---
-status: awaiting_human_verify
+status: resolved
 trigger: "ghl-prep-export-excludes-unchecked-rows"
 created: 2026-03-04T00:00:00Z
 updated: 2026-03-04T00:00:00Z

@@ -1,5 +1,5 @@
 ---
-status: awaiting_human_verify
+status: resolved
 trigger: "rrc-oil-download-timeout"
 created: 2026-03-03T00:00:00Z
 updated: 2026-03-03T00:00:04Z

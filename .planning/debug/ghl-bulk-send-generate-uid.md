@@ -1,5 +1,5 @@
 ---
-status: awaiting_human_verify
+status: resolved
 trigger: "When trying to send the sync to GHL via bulk-send, a 500 error occurs because `generate_uid()` is called without its 3 required positional arguments: 'check_number', 'property_number', and 'line_number'."
 created: 2026-02-27T00:00:00Z
 updated: 2026-02-27T00:00:00Z
