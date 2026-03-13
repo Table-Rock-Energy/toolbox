@@ -67,11 +67,11 @@ Plans:
   2. Lease numbers containing slashes or commas (e.g., "02-12345/02-12346") are split and each lease is looked up individually
   3. After fetch-missing, user sees clear feedback per row: found, not found, or multiple matches
   4. The GHL send modal shows "Campaign Tag" (not "SmartList Name") with a tooltip explaining that SmartLists are created manually in GHL filtered by this tag
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 06-01: TBD
-- [ ] 06-02: TBD
+- [ ] 06-01-PLAN.md -- Fix RRC fetch-missing pipeline: direct data use, compound lease splitting, per-row status (RRC-01, RRC-02, RRC-03)
+- [ ] 06-02-PLAN.md -- Rename GHL Campaign Tag label with tooltip, deprecate smart_list_name (GHL-01, GHL-02)
 
 ### Phase 7: Enrichment UI & Preview State
 **Goal**: Users see three conditional enrichment buttons across all tool pages, and the preview table becomes the single source of truth for exports
@@ -132,7 +132,7 @@ Plans:
 | 3. Merge and Export | v1.4 | 2/2 | Complete | 2026-03-12 |
 | 4. Frontend Integration | v1.4 | 2/2 | Complete | 2026-03-11 |
 | 5. ECF Upload Flow Fix | v1.5 | 0/2 | Planning complete | - |
-| 6. RRC & GHL Fixes | v1.5 | 0/? | Not started | - |
+| 6. RRC & GHL Fixes | v1.5 | 0/2 | Planning complete | - |
 | 7. Enrichment UI & Preview State | v1.5 | 0/? | Not started | - |
 | 8. Enrichment Pipeline Features | v1.5 | 0/? | Not started | - |
 | 9. Tool-Specific AI Prompts | v1.5 | 0/? | Not started | - |
