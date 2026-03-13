@@ -29,7 +29,7 @@ export interface PreviewState<T> {
   isExcluded: (key: string) => boolean
 }
 
-export function usePreviewState<T extends Record<string, unknown>>(
+export function usePreviewState<T extends object>(
   options: UsePreviewStateOptions<T>
 ): PreviewState<T> {
   const { entries: sourceEntries, keyField, flagField = 'flagged' as keyof T } = options

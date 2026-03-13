@@ -143,7 +143,7 @@ export default function Title() {
 
   // Enrichment feature flags
   const featureFlags = useFeatureFlags()
-  const [isEnrichmentProcessing, setIsEnrichmentProcessing] = useState(false)
+  const [isEnrichmentProcessing] = useState(false)
 
   // AI Review state
   const [showAiReview, setShowAiReview] = useState(false)

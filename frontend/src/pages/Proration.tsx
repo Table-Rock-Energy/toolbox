@@ -192,7 +192,7 @@ export default function Proration() {
 
   // Enrichment feature flags
   const featureFlags = useFeatureFlags()
-  const [isEnrichmentProcessing, setIsEnrichmentProcessing] = useState(false)
+  const [isEnrichmentProcessing] = useState(false)
 
   // AI Review state
   const [showAiReview, setShowAiReview] = useState(false)
@@ -517,7 +517,7 @@ export default function Proration() {
   }
 
   const handleExport = async (format: 'csv' | 'excel' | 'pdf') => {
-    if (preview.entriesToExport.length === 0) return
+    if (preview.entriesToExport.length === 0 || !activeJob) return
 
     try {
       const hdrs = await authHeaders()

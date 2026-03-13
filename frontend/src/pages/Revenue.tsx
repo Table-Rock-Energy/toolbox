@@ -204,7 +204,7 @@ export default function Revenue() {
 
   // Enrichment feature flags
   const featureFlags = useFeatureFlags()
-  const [isEnrichmentProcessing, setIsEnrichmentProcessing] = useState(false)
+  const [isEnrichmentProcessing] = useState(false)
 
   // Mineral export modal state
   const [showMineralExport, setShowMineralExport] = useState(false)
