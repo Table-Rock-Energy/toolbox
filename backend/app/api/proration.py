@@ -38,6 +38,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def split_lease_number(rrc_lease: str) -> list[str]:
+    """Split compound lease numbers separated by / or , into individual leases."""
+    import re
+
+    if not rrc_lease:
+        return []
+    parts = re.split(r"[/,]", rrc_lease)
+    return [p.strip() for p in parts if p.strip()]
+
+
 @router.get("/health")
 async def health_check() -> dict:
     """Health check endpoint for proration tool."""
@@ -400,6 +410,7 @@ async def fetch_missing_rrc_data(request: FetchMissingRequest, background_tasks:
         if rrc_info:
             logger.info("fetch-missing: MATCHED district=%s lease=%s -> acres=%s", district, lease_number, rrc_info.get("acres"))
             _apply_rrc_info(row, rrc_info, WellType)
+            row.fetch_status = "found"
             matched += 1
         elif district and lease_number:
             missing_leases.append((i, district, lease_number, county_code))
@@ -431,15 +442,16 @@ async def fetch_missing_rrc_data(request: FetchMissingRequest, background_tasks:
             logger.warning("Individual lease fetch failed: %s", e)
             individual_results = {}
 
-        if individual_results:
-            for row_idx, district, lease_number, _cc in missing_leases:
-                row = updated_rows[row_idx]
-                rrc_info = await lookup_rrc_acres(district, lease_number)
-                if rrc_info is None:
-                    rrc_info = await lookup_rrc_by_lease_number(lease_number)
-                if rrc_info:
-                    _apply_rrc_info(row, rrc_info, WellType)
-                    matched += 1
+        # RRC-01 fix: Use individual_results directly instead of re-querying Firestore
+        for row_idx, district, lease_number, _cc in missing_leases:
+            row = updated_rows[row_idx]
+            rrc_info = individual_results.get((district, lease_number))
+            if rrc_info:
+                _apply_rrc_info(row, rrc_info, WellType)
+                row.fetch_status = "found"
+                matched += 1
+            else:
+                row.fetch_status = "not_found"
 
     # Mark rows that are still missing after full fetch attempt
     RRC_SEARCH_URL = "https://webapps2.rrc.texas.gov/EWA/oilProQueryAction.do"
