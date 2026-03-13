@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Wand2, Search } from 'lucide-react'
+import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Wand2, Search, Play } from 'lucide-react'
 import { FileUpload, Modal, AiReviewPanel, AutoCorrectionsBanner, EnrichmentPanel } from '../components'
 import MineralExportModal from '../components/MineralExportModal'
 import EnrichmentProgress, { DEFAULT_STEPS, type EnrichmentStep, type EnrichmentSummary } from '../components/EnrichmentProgress'
@@ -119,6 +119,8 @@ export default function Extract() {
   const [error, setError] = useState<string | null>(null)
   const [formatHint, setFormatHint] = useState<string>('')
   const [csvFile, setCsvFile] = useState<File | null>(null)
+  const [stagedFile, setStagedFile] = useState<File | null>(null)
+  const [isDetecting, setIsDetecting] = useState(false)
 
   // Filter states
   const [showIndividualsOnly, setShowIndividualsOnly] = useState(false)
@@ -359,6 +361,47 @@ export default function Extract() {
     }
   }
 
+  const handleFileStaged = async (files: File[]) => {
+    if (files.length === 0) return
+    const file = files[0]
+    setStagedFile(file)
+    setError(null)
+
+    // Auto-detect format via backend
+    setIsDetecting(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const headers = await authHeaders()
+      const response = await fetch(`${API_BASE}/extract/detect-format`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      })
+      if (response.ok) {
+        const data = await response.json()
+        if (data.format) {
+          setFormatHint(data.format) // auto-selects detected format in dropdown
+        }
+      }
+    } catch {
+      // Detection failed silently -- user can still manually select format
+    } finally {
+      setIsDetecting(false)
+    }
+  }
+
+  const handleProcess = () => {
+    if (!stagedFile) return
+    handleFilesSelected([stagedFile])
+  }
+
+  const handleClearStaged = () => {
+    setStagedFile(null)
+    setFormatHint('')
+    setCsvFile(null)
+  }
+
   const handleFilesSelected = async (files: File[]) => {
     if (files.length === 0) return
 
@@ -435,6 +478,7 @@ export default function Extract() {
       setJobs((prev) => [newJob, ...prev])
     } finally {
       setIsProcessing(false)
+      setStagedFile(null)
     }
   }
 
@@ -642,7 +686,7 @@ export default function Extract() {
       {panelCollapsed && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <FileUpload
-            onFilesSelected={handleFilesSelected}
+            onFilesSelected={handleFileStaged}
             accept=".pdf"
             label="Upload OCC Exhibit A"
             description="Drop your PDF file here"
@@ -673,10 +717,44 @@ export default function Extract() {
               />
             </div>
           )}
-          {isProcessing && (
-            <div className="mt-4 flex items-center gap-2 text-tre-teal">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
-              <span className="text-sm">Processing...</span>
+          {stagedFile && (
+            <div className="mt-4 flex items-center gap-3">
+              <button
+                onClick={handleProcess}
+                disabled={isProcessing || isDetecting}
+                className="flex items-center gap-2 px-4 py-2 bg-tre-teal text-white rounded-lg hover:bg-tre-teal/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+              >
+                {isProcessing ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                    Processing...
+                  </>
+                ) : isDetecting ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                    Detecting format...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4" />
+                    Process
+                  </>
+                )}
+              </button>
+              <span className="text-sm text-gray-500 flex items-center gap-1">
+                {stagedFile.name}
+                {formatHint === 'ECF' && (
+                  <span className="text-tre-teal font-medium">(ECF Filing detected)</span>
+                )}
+              </span>
+              <button
+                onClick={handleClearStaged}
+                disabled={isProcessing}
+                className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                title="Clear file"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           )}
         </div>
@@ -688,7 +766,7 @@ export default function Extract() {
         <div className="space-y-6">
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <FileUpload
-              onFilesSelected={handleFilesSelected}
+              onFilesSelected={handleFileStaged}
               accept=".pdf"
               label="Upload OCC Exhibit A"
               description="Drop your PDF file here"
@@ -719,10 +797,44 @@ export default function Extract() {
                 />
               </div>
             )}
-            {isProcessing && (
-              <div className="mt-4 flex items-center gap-2 text-tre-teal">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
-                <span className="text-sm">Processing...</span>
+            {stagedFile && (
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  onClick={handleProcess}
+                  disabled={isProcessing || isDetecting}
+                  className="flex items-center gap-2 px-4 py-2 bg-tre-teal text-white rounded-lg hover:bg-tre-teal/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                >
+                  {isProcessing ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                      Processing...
+                    </>
+                  ) : isDetecting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                      Detecting format...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4" />
+                      Process
+                    </>
+                  )}
+                </button>
+                <span className="text-sm text-gray-500 flex items-center gap-1">
+                  {stagedFile.name}
+                  {formatHint === 'ECF' && (
+                    <span className="text-tre-teal font-medium">(ECF Filing detected)</span>
+                  )}
+                </span>
+                <button
+                  onClick={handleClearStaged}
+                  disabled={isProcessing}
+                  className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                  title="Clear file"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             )}
           </div>
