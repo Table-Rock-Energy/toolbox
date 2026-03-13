@@ -70,32 +70,32 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ECF-01 | — | Pending |
-| ECF-02 | — | Pending |
-| ECF-03 | — | Pending |
-| ECF-04 | — | Pending |
-| GHL-01 | — | Pending |
-| GHL-02 | — | Pending |
-| ENRICH-01 | — | Pending |
-| ENRICH-02 | — | Pending |
-| ENRICH-03 | — | Pending |
-| ENRICH-04 | — | Pending |
-| ENRICH-05 | — | Pending |
-| ENRICH-06 | — | Pending |
-| ENRICH-07 | — | Pending |
-| ENRICH-08 | — | Pending |
-| ENRICH-09 | — | Pending |
-| ENRICH-10 | — | Pending |
-| ENRICH-11 | — | Pending |
-| RRC-01 | — | Pending |
-| RRC-02 | — | Pending |
-| RRC-03 | — | Pending |
+| ECF-01 | Phase 5 | Pending |
+| ECF-02 | Phase 5 | Pending |
+| ECF-03 | Phase 5 | Pending |
+| ECF-04 | Phase 5 | Pending |
+| GHL-01 | Phase 6 | Pending |
+| GHL-02 | Phase 6 | Pending |
+| ENRICH-01 | Phase 7 | Pending |
+| ENRICH-02 | Phase 7 | Pending |
+| ENRICH-03 | Phase 8 | Pending |
+| ENRICH-04 | Phase 8 | Pending |
+| ENRICH-05 | Phase 8 | Pending |
+| ENRICH-06 | Phase 7 | Pending |
+| ENRICH-07 | Phase 7 | Pending |
+| ENRICH-08 | Phase 7 | Pending |
+| ENRICH-09 | Phase 7 | Pending |
+| ENRICH-10 | Phase 8 | Pending |
+| ENRICH-11 | Phase 9 | Pending |
+| RRC-01 | Phase 6 | Pending |
+| RRC-02 | Phase 6 | Pending |
+| RRC-03 | Phase 6 | Pending |
 
 **Coverage:**
 - v1.5 requirements: 20 total
-- Mapped to phases: 0
-- Unmapped: 20 ⚠️
+- Mapped to phases: 20
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-13*
-*Last updated: 2026-03-13 after initial definition*
+*Last updated: 2026-03-13 after roadmap creation*
