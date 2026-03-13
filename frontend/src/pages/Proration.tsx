@@ -33,6 +33,7 @@ interface MineralHolderRow {
   dollars_per_nra?: number
   notes?: string
   well_type?: string
+  fetch_status?: 'found' | 'not_found' | 'multiple_matches' | 'split_lookup' | null
 }
 
 interface CountyDownloadInfo {
@@ -683,23 +684,17 @@ export default function Proration() {
         },
       })
 
-      // Build descriptive message
+      // Build descriptive message with per-status counts
+      const foundCount = result.updated_rows.filter((r: MineralHolderRow) => r.fetch_status === 'found' || r.fetch_status === 'split_lookup').length
+      const notFoundCount = result.updated_rows.filter((r: MineralHolderRow) => r.fetch_status === 'not_found').length
+      const multipleCount = result.updated_rows.filter((r: MineralHolderRow) => r.fetch_status === 'multiple_matches').length
+
       const parts: string[] = []
-      if (result.counties_downloaded?.length) {
-        const downloaded = result.counties_downloaded.filter((c: { status: string }) => c.status === 'downloaded').length
-        const failed = result.counties_downloaded.filter((c: { status: string }) => c.status === 'failed').length
-        if (downloaded > 0) parts.push(`${downloaded} county download${downloaded !== 1 ? 's' : ''}`)
-        if (failed > 0) parts.push(`${failed} county timed out`)
-      }
-      if (result.matched_count > 0) {
-        parts.push(`matched ${result.matched_count} row${result.matched_count !== 1 ? 's' : ''}`)
-      }
+      if (foundCount > 0) parts.push(`found ${foundCount}`)
+      if (notFoundCount > 0) parts.push(`not found ${notFoundCount}`)
+      if (multipleCount > 0) parts.push(`multiple matches ${multipleCount}`)
       const msg = parts.length > 0 ? parts.join(', ') : 'No additional RRC data found'
-      setFetchMissingMessage(
-        result.still_missing_count > 0
-          ? `${msg} (${result.still_missing_count} still missing)`
-          : msg
-      )
+      setFetchMissingMessage(msg)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch missing data')
     } finally {
@@ -1320,7 +1315,13 @@ export default function Proration() {
                           {isColumnVisible('abstract') && <td className="py-2 px-3 text-gray-600 text-xs">{row.abstract || '\u2014'}</td>}
                           {isColumnVisible('rrc_acres') && (
                             <td className="py-2 px-3 text-gray-600 text-right">
-                              {formatNumber(row.rrc_acres, 2)}
+                              <span className="inline-flex items-center gap-1">
+                                {formatNumber(row.rrc_acres, 2)}
+                                {row.fetch_status === 'found' && <CheckCircle className="w-3.5 h-3.5 text-green-500" />}
+                                {row.fetch_status === 'split_lookup' && <CheckCircle className="w-3.5 h-3.5 text-green-500" />}
+                                {row.fetch_status === 'not_found' && <X className="w-3.5 h-3.5 text-red-400" />}
+                                {row.fetch_status === 'multiple_matches' && <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />}
+                              </span>
                             </td>
                           )}
                           {isColumnVisible('est_nra') && (
