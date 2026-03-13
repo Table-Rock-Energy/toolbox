@@ -1,10 +1,12 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { DollarSign, Download, Upload, AlertCircle, CheckCircle, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Edit2, Bug, ChevronDown, ChevronRight, RotateCcw, Filter } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel, MineralExportModal, AutoCorrectionsBanner } from '../components'
+import { FileUpload, Modal, AiReviewPanel, MineralExportModal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar } from '../components'
 import { aiApi } from '../utils/api'
 import type { AiSuggestion } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
+import { useFeatureFlags } from '../hooks/useFeatureFlags'
+import { usePreviewState } from '../hooks/usePreviewState'
 
 interface RevenueRow {
   property_name?: string
@@ -200,8 +202,9 @@ export default function Revenue() {
   const [showAiReview, setShowAiReview] = useState(false)
   const [aiEnabled, setAiEnabled] = useState(false)
 
-  // Row selection state (set of excluded row IDs)
-  const [excludedRows, setExcludedRows] = useState<Set<string>>(new Set())
+  // Enrichment feature flags
+  const featureFlags = useFeatureFlags()
+  const [isEnrichmentProcessing, setIsEnrichmentProcessing] = useState(false)
 
   // Mineral export modal state
   const [showMineralExport, setShowMineralExport] = useState(false)
@@ -327,10 +330,11 @@ export default function Revenue() {
     })
   }, [flatRows, filterProduct, filterProperty])
 
-  // Rows selected for export
-  const rowsToExport = useMemo(() => {
-    return filteredRows.filter((r) => !excludedRows.has(r._id))
-  }, [filteredRows, excludedRows])
+  // Preview state: exclusion, inline editing
+  const preview = usePreviewState({
+    entries: filteredRows,
+    keyField: '_id',
+  })
 
   // Unique product codes for filter dropdown
   const productCodes = useMemo(() => {
@@ -339,32 +343,9 @@ export default function Revenue() {
     return Array.from(codes).sort()
   }, [flatRows])
 
-  // Selection helpers
-  const isAllSelected = filteredRows.length > 0 &&
-    filteredRows.every((r) => !excludedRows.has(r._id))
-  const isSomeSelected = filteredRows.some((r) => !excludedRows.has(r._id)) && !isAllSelected
-
-  const toggleSelectAll = () => {
-    if (isAllSelected) {
-      setExcludedRows(new Set(filteredRows.map((r) => r._id)))
-    } else {
-      const newExcluded = new Set(excludedRows)
-      filteredRows.forEach((r) => newExcluded.delete(r._id))
-      setExcludedRows(newExcluded)
-    }
-  }
-
-  const toggleRow = (id: string) => {
-    const next = new Set(excludedRows)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    setExcludedRows(next)
-  }
-
   const resetFilters = () => {
     setFilterProduct('')
     setFilterProperty('')
-    setExcludedRows(new Set())
   }
 
   const handleApplySuggestions = (accepted: AiSuggestion[]) => {
@@ -453,7 +434,6 @@ export default function Revenue() {
 
       setJobs((prev) => [newJob, ...prev])
       setActiveJob(newJob)
-      setExcludedRows(new Set())
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to process files')
       newJob.result = {
@@ -470,7 +450,7 @@ export default function Revenue() {
     if (!activeJob?.result?.statements) return
 
     // Build filtered statements with only selected rows
-    const selectedIds = new Set(rowsToExport.map((r) => r._id))
+    const selectedIds = new Set(preview.entriesToExport.map((r) => r._id))
     const filteredStatements = activeJob.result.statements.map((stmt, si) => ({
       ...stmt,
       rows: stmt.rows.filter((_row, ri) => selectedIds.has(`${si}-${ri}`)),
@@ -515,7 +495,6 @@ export default function Revenue() {
   const handleSelectJob = async (job: RevenueJob) => {
     setActiveJob(job)
     setError(null)
-    setExcludedRows(new Set())
 
     if (!job.result && job.job_id) {
       setIsLoadingEntries(true)
@@ -601,7 +580,7 @@ export default function Revenue() {
   }
 
   const getTotals = () => {
-    const rows = rowsToExport
+    const rows = preview.entriesToExport
     return {
       gross: rows.reduce((sum, r) => sum + (toNum(r.owner_value) || 0), 0),
       tax: rows.reduce((sum, r) => sum + (toNum(r.owner_tax_amount) || 0), 0),
@@ -810,9 +789,17 @@ export default function Revenue() {
                         )}
                       </button>
                     )}
+                    <EnrichmentToolbar
+                      {...featureFlags}
+                      onCleanUp={() => { /* stub for Phase 8 */ }}
+                      onValidate={() => { /* stub for Phase 8 */ }}
+                      onEnrich={() => { /* stub for Phase 8 */ }}
+                      isProcessing={isEnrichmentProcessing}
+                      entryCount={preview.entriesToExport.length}
+                    />
                     <button
                       onClick={() => setShowMineralExport(true)}
-                      disabled={rowsToExport.length === 0}
+                      disabled={preview.entriesToExport.length === 0}
                       className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm disabled:opacity-50"
                     >
                       <Download className="w-4 h-4" />
@@ -862,7 +849,7 @@ export default function Revenue() {
                 </div>
                 <div className="mt-2 text-xs text-gray-500">
                   Showing {filteredRows.length} of {flatRows.length} rows
-                  ({rowsToExport.length} selected for export)
+                  ({preview.entriesToExport.length} selected for export)
                 </div>
               </div>
 
@@ -870,7 +857,7 @@ export default function Revenue() {
               <div className="grid grid-cols-4 gap-4 p-6 border-b border-gray-100">
                 <div className="text-center">
                   <p className="text-2xl font-oswald font-semibold text-tre-navy">
-                    {rowsToExport.length}
+                    {preview.entriesToExport.length}
                   </p>
                   <p className="text-sm text-gray-500">Selected Rows</p>
                 </div>
@@ -933,11 +920,11 @@ export default function Revenue() {
                         <th className="text-left py-2 px-2 font-medium text-gray-600 w-10">
                           <input
                             type="checkbox"
-                            checked={isAllSelected}
+                            checked={preview.isAllSelected}
                             ref={(el) => {
-                              if (el) el.indeterminate = isSomeSelected
+                              if (el) el.indeterminate = preview.isSomeSelected
                             }}
-                            onChange={toggleSelectAll}
+                            onChange={() => preview.toggleExcludeAll()}
                             className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
                           />
                         </th>
@@ -969,8 +956,8 @@ export default function Revenue() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {filteredRows.map((row) => {
-                        const isExcluded = excludedRows.has(row._id)
+                      {preview.previewEntries.map((row) => {
+                        const isExcluded = preview.isExcluded(row._id)
                         return (
                           <tr
                             key={row._id}
@@ -980,7 +967,7 @@ export default function Revenue() {
                               <input
                                 type="checkbox"
                                 checked={!isExcluded}
-                                onChange={() => toggleRow(row._id)}
+                                onChange={() => preview.toggleExclude(row._id)}
                                 className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
                               />
                             </td>
@@ -988,10 +975,31 @@ export default function Revenue() {
                             {isColVisible('check_number') && <td className="py-2 px-2 text-gray-600 text-xs">{row.check_number || '\u2014'}</td>}
                             {isColVisible('check_amount') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{formatCurrency(row.check_amount)}</td>}
                             {isColVisible('check_date') && <td className="py-2 px-2 text-gray-600 text-xs">{row.check_date || '\u2014'}</td>}
-                            {isColVisible('property_name') && <td className="py-2 px-2 text-gray-900 text-xs whitespace-nowrap">{row.property_name || '\u2014'}</td>}
-                            {isColVisible('property_number') && <td className="py-2 px-2 text-gray-600 text-xs">{row.property_number || '\u2014'}</td>}
+                            {isColVisible('property_name') && (
+                              <td className="py-2 px-2 text-gray-900 text-xs whitespace-nowrap">
+                                <EditableCell
+                                  value={row.property_name}
+                                  onCommit={(val) => preview.editField(row._id, 'property_name', val)}
+                                />
+                              </td>
+                            )}
+                            {isColVisible('property_number') && (
+                              <td className="py-2 px-2 text-gray-600 text-xs">
+                                <EditableCell
+                                  value={row.property_number}
+                                  onCommit={(val) => preview.editField(row._id, 'property_number', val)}
+                                />
+                              </td>
+                            )}
                             {isColVisible('operator_name') && <td className="py-2 px-2 text-gray-600 text-xs whitespace-nowrap">{row.operator_name || '\u2014'}</td>}
-                            {isColVisible('owner_name') && <td className="py-2 px-2 text-gray-600 text-xs whitespace-nowrap">{row.owner_name || '\u2014'}</td>}
+                            {isColVisible('owner_name') && (
+                              <td className="py-2 px-2 text-gray-600 text-xs whitespace-nowrap">
+                                <EditableCell
+                                  value={row.owner_name}
+                                  onCommit={(val) => preview.editField(row._id, 'owner_name', val)}
+                                />
+                              </td>
+                            )}
                             {isColVisible('owner_number') && <td className="py-2 px-2 text-gray-600 text-xs">{row.owner_number || '\u2014'}</td>}
                             {isColVisible('sales_date') && <td className="py-2 px-2 text-gray-600 text-xs">{row.sales_date || '\u2014'}</td>}
                             {isColVisible('product_code') && <td className="py-2 px-2 text-gray-600 text-xs">{row.product_code || '\u2014'}</td>}

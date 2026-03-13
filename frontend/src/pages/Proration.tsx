@@ -1,12 +1,15 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw, Filter, Settings, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel, AutoCorrectionsBanner } from '../components'
+import { FileUpload, Modal, AiReviewPanel, AutoCorrectionsBanner, EnrichmentToolbar } from '../components'
 import { aiApi } from '../utils/api'
 import type { AiSuggestion, PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
+import { useFeatureFlags } from '../hooks/useFeatureFlags'
+import { usePreviewState } from '../hooks/usePreviewState'
 
 interface MineralHolderRow {
+  _uid?: string
   county: string
   state?: string
   year?: number
@@ -112,6 +115,7 @@ interface ColumnConfig {
 }
 
 const COLUMNS: ColumnConfig[] = [
+  { key: 'checkbox', label: '', alwaysVisible: true },
   { key: 'owner', label: 'Owner' },
   { key: 'county', label: 'County' },
   { key: 'year', label: 'Year' },
@@ -186,6 +190,10 @@ export default function Proration() {
   const [wellTypeOverride, setWellTypeOverride] = useState<string>('auto')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
 
+  // Enrichment feature flags
+  const featureFlags = useFeatureFlags()
+  const [isEnrichmentProcessing, setIsEnrichmentProcessing] = useState(false)
+
   // AI Review state
   const [showAiReview, setShowAiReview] = useState(false)
   const [aiEnabled, setAiEnabled] = useState(false)
@@ -196,7 +204,7 @@ export default function Proration() {
 
   // Edit Row Modal State
   const [editingRow, setEditingRow] = useState<MineralHolderRow | null>(null)
-  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const [editingUid, setEditingUid] = useState<string | null>(null)
   const [isRetryingRrc, setIsRetryingRrc] = useState(false)
 
   // Column Visibility State (persisted in localStorage per user, separate keys for narrow/wide)
@@ -319,6 +327,21 @@ export default function Proration() {
       if (res.data?.enabled) setAiEnabled(true)
     })
   }, [])
+
+  // Add stable _uid keys to rows for preview state
+  const rowsWithKeys = useMemo(() => {
+    if (!activeJob?.result?.rows) return []
+    return activeJob.result.rows.map((row, i) => ({
+      ...row,
+      _uid: row._uid ?? `pror-${i}`,
+    }))
+  }, [activeJob?.result?.rows])
+
+  // Preview state: exclusion, row sorting
+  const preview = usePreviewState({
+    entries: rowsWithKeys,
+    keyField: '_uid' as keyof MineralHolderRow,
+  })
 
   const handleApplySuggestions = (accepted: AiSuggestion[]) => {
     if (!activeJob?.result?.rows) return
@@ -494,7 +517,7 @@ export default function Proration() {
   }
 
   const handleExport = async (format: 'csv' | 'excel' | 'pdf') => {
-    if (!activeJob?.result?.rows) return
+    if (preview.entriesToExport.length === 0) return
 
     try {
       const hdrs = await authHeaders()
@@ -505,7 +528,7 @@ export default function Proration() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          rows: activeJob.result.rows,
+          rows: preview.entriesToExport,
           filename: activeJob.documentName.replace(/\.[^.]+$/, ''),
         }),
       })
@@ -579,16 +602,18 @@ export default function Proration() {
     if (activeJob?.id === job.id) setActiveJob(null)
   }
 
-  const handleEditRow = (row: MineralHolderRow, index: number) => {
+  const handleEditRow = (row: MineralHolderRow) => {
     setEditingRow({ ...row })
-    setEditingIndex(index)
+    setEditingUid(row._uid ?? null)
   }
 
   const handleSaveEdit = () => {
-    if (editingRow === null || editingIndex === null || !activeJob?.result?.rows) return
+    if (editingRow === null || editingUid === null || !activeJob?.result?.rows) return
 
-    const updatedRows = [...activeJob.result.rows]
-    updatedRows[editingIndex] = editingRow
+    const updatedRows = activeJob.result.rows.map((r, i) => {
+      const uid = r._uid ?? `pror-${i}`
+      return uid === editingUid ? editingRow : r
+    })
 
     setActiveJob({
       ...activeJob,
@@ -599,12 +624,12 @@ export default function Proration() {
     })
 
     setEditingRow(null)
-    setEditingIndex(null)
+    setEditingUid(null)
   }
 
   const handleCancelEdit = () => {
     setEditingRow(null)
-    setEditingIndex(null)
+    setEditingUid(null)
     setIsRetryingRrc(false)
   }
 
@@ -1089,6 +1114,14 @@ export default function Proration() {
                         )}
                       </button>
                     )}
+                    <EnrichmentToolbar
+                      {...featureFlags}
+                      onCleanUp={() => { /* stub for Phase 8 */ }}
+                      onValidate={() => { /* stub for Phase 8 */ }}
+                      onEnrich={() => { /* stub for Phase 8 */ }}
+                      isProcessing={isEnrichmentProcessing}
+                      entryCount={preview.entriesToExport.length}
+                    />
                     <button
                       onClick={() => handleExport('excel')}
                       className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
@@ -1258,6 +1291,17 @@ export default function Proration() {
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 bg-white z-10">
                       <tr className="border-b border-gray-200">
+                        <th className="text-left py-2 px-3 font-medium text-gray-600 w-10">
+                          <input
+                            type="checkbox"
+                            checked={preview.isAllSelected}
+                            ref={(el) => {
+                              if (el) el.indeterminate = preview.isSomeSelected
+                            }}
+                            onChange={() => preview.toggleExcludeAll()}
+                            className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                          />
+                        </th>
                         {isColumnVisible('owner') && <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Owner</th>}
                         {isColumnVisible('county') && <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">County</th>}
                         {isColumnVisible('year') && <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Year</th>}
@@ -1282,17 +1326,19 @@ export default function Proration() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {(() => {
-                        const rows = activeJob.result.rows || []
-                        // Create indexed array, sort unmatched to top
-                        const indexed = rows.map((row, i) => ({ row, origIndex: i }))
-                        indexed.sort((a, b) => {
-                          const aMatch = a.row.rrc_acres ? 1 : 0
-                          const bMatch = b.row.rrc_acres ? 1 : 0
-                          return aMatch - bMatch // unmatched (0) before matched (1)
-                        })
-                        return indexed.map(({ row, origIndex }) => (
-                        <tr key={origIndex} className={!row.rrc_acres ? 'bg-red-50' : ''}>
+                      {preview.previewEntries.map((row) => {
+                        const rowKey = row._uid ?? ''
+                        const isExcluded = preview.isExcluded(rowKey)
+                        return (
+                        <tr key={rowKey} className={`${!row.rrc_acres ? 'bg-red-50' : ''} ${isExcluded ? 'opacity-50 bg-gray-100' : ''}`}>
+                          <td className="py-2 px-3">
+                            <input
+                              type="checkbox"
+                              checked={!isExcluded}
+                              onChange={() => preview.toggleExclude(rowKey)}
+                              className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                            />
+                          </td>
                           {isColumnVisible('owner') && <td className="py-2 px-3 text-gray-900 whitespace-nowrap">{row.owner}</td>}
                           {isColumnVisible('county') && <td className="py-2 px-3 text-gray-600">{row.county}</td>}
                           {isColumnVisible('year') && <td className="py-2 px-3 text-gray-600 text-xs">{row.year ?? '\u2014'}</td>}
@@ -1360,7 +1406,7 @@ export default function Proration() {
                           )}
                           <td className="py-2 px-3 text-center">
                             <button
-                              onClick={() => handleEditRow(row, origIndex)}
+                              onClick={() => handleEditRow(row)}
                               className="p-1 rounded hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
                               title="Edit row"
                             >
@@ -1368,8 +1414,8 @@ export default function Proration() {
                             </button>
                           </td>
                         </tr>
-                        ))
-                      })()}
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
