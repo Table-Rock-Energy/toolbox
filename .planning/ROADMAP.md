@@ -83,12 +83,12 @@ Plans:
   3. After any enrichment step completes, the preview table immediately reflects the updated data without page reload
   4. Rows flagged during enrichment (e.g., validation mismatches) sort to the top of the preview table for user review
   5. User can uncheck flagged rows to omit them from export, edit cells inline, and export always reflects the current preview state (edits + unchecks + enrichment results)
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 07-01: TBD
-- [ ] 07-02: TBD
-- [ ] 07-03: TBD
+- [ ] 07-01-PLAN.md -- Backend feature status endpoint + EnrichmentToolbar component + useFeatureFlags hook (ENRICH-01, ENRICH-02)
+- [ ] 07-02-PLAN.md -- usePreviewState hook + EditableCell component (ENRICH-06, ENRICH-07, ENRICH-08, ENRICH-09)
+- [ ] 07-03-PLAN.md -- Wire shared components into all 4 tool pages (all requirements)
 
 ### Phase 8: Enrichment Pipeline Features
 **Goal**: Users can run AI cleanup, address validation, and contact enrichment in sequence through the universal enrichment buttons
@@ -133,6 +133,6 @@ Plans:
 | 4. Frontend Integration | v1.4 | 2/2 | Complete | 2026-03-11 |
 | 5. ECF Upload Flow Fix | 1/2 | In Progress|  | - |
 | 6. RRC & GHL Fixes | v1.5 | 0/2 | Planning complete | - |
-| 7. Enrichment UI & Preview State | v1.5 | 0/? | Not started | - |
+| 7. Enrichment UI & Preview State | v1.5 | 0/3 | Planning complete | - |
 | 8. Enrichment Pipeline Features | v1.5 | 0/? | Not started | - |
 | 9. Tool-Specific AI Prompts | v1.5 | 0/? | Not started | - |
