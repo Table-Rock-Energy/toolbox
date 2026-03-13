@@ -134,6 +134,6 @@ Plans:
 | 4. Frontend Integration | v1.4 | 2/2 | Complete | 2026-03-11 |
 | 5. ECF Upload Flow Fix | 1/2 | In Progress|  | - |
 | 6. RRC & GHL Fixes | v1.5 | 0/2 | Planning complete | - |
-| 7. Enrichment UI & Preview State | v1.5 | 0/3 | Planning complete | - |
+| 7. Enrichment UI & Preview State | 2/3 | In Progress|  | - |
 | 8. Enrichment Pipeline Features | v1.5 | 0/? | Not started | - |
 | 9. Tool-Specific AI Prompts | v1.5 | 0/? | Not started | - |

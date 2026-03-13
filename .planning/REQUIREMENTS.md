@@ -21,8 +21,8 @@ Requirements for v1.5 Enrichment Pipeline & Bug Fixes. Each maps to roadmap phas
 
 ### Enrichment Pipeline
 
-- [ ] **ENRICH-01**: Three conditional buttons shown across all tool pages: Clean Up, Validate, Enrich
-- [ ] **ENRICH-02**: Buttons visible only when corresponding API keys are set and feature switches enabled (Google API key + switches for Clean Up and Validate; PDL/SearchBug keys for Enrich)
+- [x] **ENRICH-01**: Three conditional buttons shown across all tool pages: Clean Up, Validate, Enrich
+- [x] **ENRICH-02**: Buttons visible only when corresponding API keys are set and feature switches enabled (Google API key + switches for Clean Up and Validate; PDL/SearchBug keys for Enrich)
 - [ ] **ENRICH-03**: Clean Up (AI) runs first: fix names, strip c/o from addresses, move extras to notes, attempt to complete partial entries
 - [ ] **ENRICH-04**: Validate (Google Maps) runs second: verify cleaned addresses, flag mismatches
 - [ ] **ENRICH-05**: Enrich (PDL/SearchBug) runs third: fill phone/email using clean validated addresses
@@ -76,8 +76,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ECF-04 | Phase 5 | Pending |
 | GHL-01 | Phase 6 | Pending |
 | GHL-02 | Phase 6 | Pending |
-| ENRICH-01 | Phase 7 | Pending |
-| ENRICH-02 | Phase 7 | Pending |
+| ENRICH-01 | Phase 7 | Complete |
+| ENRICH-02 | Phase 7 | Complete |
 | ENRICH-03 | Phase 8 | Pending |
 | ENRICH-04 | Phase 8 | Pending |
 | ENRICH-05 | Phase 8 | Pending |

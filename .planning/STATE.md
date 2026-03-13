@@ -53,6 +53,8 @@ Progress: [███████░░░] 71%
 - (05-01) Detect-format endpoint placed before /upload for correct FastAPI route matching
 - (05-01) Returns null format with error for unreadable PDFs instead of HTTP error
 - (07-02) usePreviewState resets edits/exclusions on sourceEntries change but preserves edits on updateEntries
+- (07-01) Feature flags default to false on fetch error (safe failure -- buttons hidden rather than broken)
+- (07-01) EnrichmentToolbar accepts activeAction prop for granular processing indicator per button
 - (07-02) EditableCell kept as simple leaf component; edit tracking intelligence lives in usePreviewState
 
 ### Pending Todos
