@@ -9,7 +9,7 @@ Requirements for v1.5 Enrichment Pipeline & Bug Fixes. Each maps to roadmap phas
 
 ### Extract (ECF Upload Flow)
 
-- [ ] **ECF-01**: When ECF format is auto-detected from uploaded PDF, system auto-selects ECF filing type in format dropdown
+- [x] **ECF-01**: When ECF format is auto-detected from uploaded PDF, system auto-selects ECF filing type in format dropdown
 - [ ] **ECF-02**: After ECF detection, Convey 640 CSV upload area opens automatically before processing begins
 - [ ] **ECF-03**: Processing waits for explicit "Process" button click (no auto-processing on file upload)
 - [ ] **ECF-04**: CSV provides head-start data; PDF fills remaining fields and corrects inaccuracies from CSV (PDF is authoritative)
@@ -70,7 +70,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ECF-01 | Phase 5 | Pending |
+| ECF-01 | Phase 5 | Complete |
 | ECF-02 | Phase 5 | Pending |
 | ECF-03 | Phase 5 | Pending |
 | ECF-04 | Phase 5 | Pending |
