@@ -1,13 +1,16 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Filter, RotateCcw, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Wand2 } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel, MineralExportModal, AutoCorrectionsBanner } from '../components'
+import { FileUpload, Modal, AiReviewPanel, MineralExportModal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar } from '../components'
 import EnrichmentProgress, { DEFAULT_STEPS, type EnrichmentStep, type EnrichmentSummary } from '../components/EnrichmentProgress'
 import { aiApi } from '../utils/api'
 import type { AiSuggestion, PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
+import { useFeatureFlags } from '../hooks/useFeatureFlags'
+import { usePreviewState } from '../hooks/usePreviewState'
 
 interface OwnerEntry {
+  _uid?: string
   full_name: string
   first_name?: string
   middle_name?: string
@@ -138,8 +141,9 @@ export default function Title() {
   const [filterMinValue, setFilterMinValue] = useState<string>('')
   const [filterMaxValue, setFilterMaxValue] = useState<string>('')
 
-  // Row selection state
-  const [excludedIndices, setExcludedIndices] = useState<Set<number>>(new Set())
+  // Enrichment feature flags
+  const featureFlags = useFeatureFlags()
+  const [isEnrichmentProcessing, setIsEnrichmentProcessing] = useState(false)
 
   // AI Review state
   const [showAiReview, setShowAiReview] = useState(false)
@@ -157,7 +161,7 @@ export default function Title() {
 
   // Edit modal state
   const [editingEntry, setEditingEntry] = useState<OwnerEntry | null>(null)
-  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const [editingUid, setEditingUid] = useState<string | null>(null)
 
   // Column visibility state (persisted in localStorage per user, separate keys for narrow/wide)
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
@@ -250,10 +254,14 @@ export default function Title() {
     setVisibleColumns(newVisible)
   }
 
-  // Apply filters to entries
+  // Apply filters to entries (with stable _uid keys)
   const filteredEntries = useMemo(() => {
     if (!activeJob?.result?.entries) return []
-    let filtered = [...activeJob.result.entries]
+    // Ensure stable _uid on each entry
+    let filtered = activeJob.result.entries.map((e, i) => ({
+      ...e,
+      _uid: e._uid ?? `title-${i}`,
+    }))
 
     if (hideNoAddress) {
       filtered = filtered.filter(e => e.has_address)
@@ -293,35 +301,12 @@ export default function Title() {
     return filtered
   }, [activeJob?.result?.entries, hideNoAddress, hideDuplicates, showIndividualsOnly, selectedSection, filterPropertyType, filterMinValue, filterMaxValue])
 
-  // Get entries to export (filtered + not excluded)
-  const entriesToExport = useMemo(() => {
-    return filteredEntries.filter((_, i) => !excludedIndices.has(i))
-  }, [filteredEntries, excludedIndices])
-
-  // Selection helpers
-  const isAllSelected = filteredEntries.length > 0 &&
-    filteredEntries.every((_, i) => !excludedIndices.has(i))
-  const isSomeSelected = filteredEntries.some((_, i) => !excludedIndices.has(i)) && !isAllSelected
-
-  const toggleSelectAll = () => {
-    if (isAllSelected) {
-      // Exclude all
-      setExcludedIndices(new Set(filteredEntries.map((_, i) => i)))
-    } else {
-      // Include all
-      setExcludedIndices(new Set())
-    }
-  }
-
-  const toggleEntry = (index: number) => {
-    const newExcluded = new Set(excludedIndices)
-    if (newExcluded.has(index)) {
-      newExcluded.delete(index)
-    } else {
-      newExcluded.add(index)
-    }
-    setExcludedIndices(newExcluded)
-  }
+  // Preview state: exclusion, inline editing, flagged-row sorting
+  const preview = usePreviewState({
+    entries: filteredEntries,
+    keyField: '_uid' as keyof OwnerEntry,
+    flagField: 'duplicate_flag',
+  })
 
   const getEntryStatus = (entry: OwnerEntry): { label: string; color: string } => {
     if (entry.duplicate_flag && !entry.has_address) {
@@ -512,7 +497,7 @@ export default function Title() {
   }
 
   const handleExport = async (format: 'csv' | 'excel' | 'mineral', county = '', campaignName = '') => {
-    if (entriesToExport.length === 0) {
+    if (preview.entriesToExport.length === 0) {
       setError('No entries selected for export')
       return
     }
@@ -531,7 +516,7 @@ export default function Title() {
           ...hdrs,
         },
         body: JSON.stringify({
-          entries: entriesToExport,
+          entries: preview.entriesToExport,
           filters: {
             hide_no_address: hideNoAddress,
             hide_duplicates: hideDuplicates,
@@ -565,7 +550,6 @@ export default function Title() {
   const handleSelectJob = async (job: TitleJob) => {
     setActiveJob(job)
     setError(null)
-    setExcludedIndices(new Set())
 
     // Lazy-load entries if not already loaded
     if (job.job_id && (!job.result?.entries || job.result.entries.length === 0)) {
@@ -619,24 +603,20 @@ export default function Title() {
     setFilterPropertyType('')
     setFilterMinValue('')
     setFilterMaxValue('')
-    setExcludedIndices(new Set())
   }
 
-  const handleEditEntry = (entry: OwnerEntry, index: number) => {
+  const handleEditEntry = (entry: OwnerEntry) => {
     setEditingEntry({ ...entry })
-    setEditingIndex(index)
+    setEditingUid(entry._uid ?? null)
   }
 
   const handleSaveEdit = () => {
-    if (editingEntry === null || editingIndex === null || !activeJob?.result?.entries) return
+    if (editingEntry === null || editingUid === null || !activeJob?.result?.entries) return
 
-    const updatedEntries = [...activeJob.result.entries]
-    // Find the original index in the full entries array
-    const filteredEntry = filteredEntries[editingIndex]
-    const originalIndex = activeJob.result.entries.indexOf(filteredEntry)
-    if (originalIndex !== -1) {
-      updatedEntries[originalIndex] = editingEntry
-    }
+    const updatedEntries = activeJob.result.entries.map((e, i) => {
+      const uid = e._uid ?? `title-${i}`
+      return uid === editingUid ? editingEntry : e
+    })
 
     const updatedResult = { ...activeJob.result, entries: updatedEntries }
     const updatedJob = { ...activeJob, result: updatedResult }
@@ -644,7 +624,7 @@ export default function Title() {
     setJobs((prev) => prev.map((j) => (j.id === activeJob.id ? updatedJob : j)))
 
     setEditingEntry(null)
-    setEditingIndex(null)
+    setEditingUid(null)
   }
 
   return (
@@ -819,7 +799,7 @@ export default function Title() {
                     )}
                     <button
                       onClick={() => {
-                        const hasPerEntryCampaign = entriesToExport.some(e => e.campaign_name)
+                        const hasPerEntryCampaign = preview.entriesToExport.some(e => e.campaign_name)
                         if (hasPerEntryCampaign) {
                           // Per-entry values will flow through; global fallback handles the rest
                           handleExport('mineral', activeJob?.result?.county || '', '')
@@ -835,6 +815,14 @@ export default function Title() {
                       <Download className="w-4 h-4" />
                       Mineral
                     </button>
+                    <EnrichmentToolbar
+                      {...featureFlags}
+                      onCleanUp={() => { /* stub for Phase 8 */ }}
+                      onValidate={() => { /* stub for Phase 8 */ }}
+                      onEnrich={() => { /* stub for Phase 8 */ }}
+                      isProcessing={isEnrichmentProcessing}
+                      entryCount={preview.entriesToExport.length}
+                    />
                   </div>
                 </div>
               </div>
@@ -855,7 +843,7 @@ export default function Title() {
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-oswald font-semibold text-green-600">
-                    {entriesToExport.length}
+                    {preview.entriesToExport.length}
                   </p>
                   <p className="text-sm text-gray-500">Selected</p>
                 </div>
@@ -964,7 +952,7 @@ export default function Title() {
                 </div>
                 <div className="mt-2 text-xs text-gray-500">
                   Showing {filteredEntries.length} of {activeJob.result.total_count} entries
-                  ({entriesToExport.length} selected for export)
+                  ({preview.entriesToExport.length} selected for export)
                 </div>
               </div>
 
@@ -1011,11 +999,11 @@ export default function Title() {
                           <th className="text-left py-2 px-3 font-medium text-gray-600 w-10">
                             <input
                               type="checkbox"
-                              checked={isAllSelected}
+                              checked={preview.isAllSelected}
                               ref={(el) => {
-                                if (el) el.indeterminate = isSomeSelected
+                                if (el) el.indeterminate = preview.isSomeSelected
                               }}
-                              onChange={toggleSelectAll}
+                              onChange={() => preview.toggleExcludeAll()}
                               className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
                             />
                           </th>
@@ -1092,12 +1080,13 @@ export default function Title() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {filteredEntries.map((entry, i) => {
-                        const isExcluded = excludedIndices.has(i)
+                      {preview.previewEntries.map((entry) => {
+                        const entryKey = entry._uid ?? ''
+                        const isExcluded = preview.isExcluded(entryKey)
                         const status = getEntryStatus(entry)
                         return (
                           <tr
-                            key={i}
+                            key={entryKey}
                             className={`
                               ${entry.duplicate_flag && !entry.has_address ? 'bg-purple-50' :
                                 entry.duplicate_flag ? 'bg-yellow-50' :
@@ -1110,14 +1099,17 @@ export default function Title() {
                                 <input
                                   type="checkbox"
                                   checked={!isExcluded}
-                                  onChange={() => toggleEntry(i)}
+                                  onChange={() => preview.toggleExclude(entryKey)}
                                   className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
                                 />
                               </td>
                             )}
                             {isColumnVisible('full_name') && (
                               <td className={`py-2 px-3 text-gray-900 ${isExcluded ? 'line-through' : ''}`} title={entry.full_name}>
-                                {entry.full_name.length > 30 ? entry.full_name.substring(0, 30) + '...' : entry.full_name}
+                                <EditableCell
+                                  value={entry.full_name}
+                                  onCommit={(val) => preview.editField(entryKey, 'full_name', val)}
+                                />
                               </td>
                             )}
                             {isColumnVisible('first_name') && (
@@ -1134,20 +1126,43 @@ export default function Title() {
                             )}
                             {isColumnVisible('address') && (
                               <td className="py-2 px-3 text-gray-600 text-xs">
-                                {entry.address || <span className="text-gray-400">{'\u2014'}</span>}
+                                <EditableCell
+                                  value={entry.address}
+                                  onCommit={(val) => preview.editField(entryKey, 'address', val)}
+                                />
                               </td>
                             )}
                             {isColumnVisible('address_line_2') && (
-                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.address_line_2 || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                              <td className="py-2 px-3 text-gray-600 text-xs">
+                                <EditableCell
+                                  value={entry.address_line_2}
+                                  onCommit={(val) => preview.editField(entryKey, 'address_line_2', val)}
+                                />
+                              </td>
                             )}
                             {isColumnVisible('city') && (
-                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.city || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                              <td className="py-2 px-3 text-gray-600 text-xs">
+                                <EditableCell
+                                  value={entry.city}
+                                  onCommit={(val) => preview.editField(entryKey, 'city', val)}
+                                />
+                              </td>
                             )}
                             {isColumnVisible('state') && (
-                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.state || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                              <td className="py-2 px-3 text-gray-600 text-xs">
+                                <EditableCell
+                                  value={entry.state}
+                                  onCommit={(val) => preview.editField(entryKey, 'state', val)}
+                                />
+                              </td>
                             )}
                             {isColumnVisible('zip_code') && (
-                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.zip_code || <span className="text-gray-400">{'\u2014'}</span>}</td>
+                              <td className="py-2 px-3 text-gray-600 text-xs">
+                                <EditableCell
+                                  value={entry.zip_code}
+                                  onCommit={(val) => preview.editField(entryKey, 'zip_code', val)}
+                                />
+                              </td>
                             )}
                             {isColumnVisible('legal_description') && (
                               <td className="py-2 px-3 text-gray-600 text-xs">{entry.legal_description}</td>
@@ -1213,7 +1228,7 @@ export default function Title() {
                             {isColumnVisible('edit') && (
                               <td className="py-2 px-3">
                                 <button
-                                  onClick={() => handleEditEntry(entry, i)}
+                                  onClick={() => handleEditEntry(entry)}
                                   className="p-1 text-gray-400 hover:text-tre-teal transition-colors rounded hover:bg-gray-100"
                                   title="Edit entry"
                                 >
@@ -1341,13 +1356,13 @@ export default function Title() {
       {/* Edit Entry Modal */}
       <Modal
         isOpen={editingEntry !== null}
-        onClose={() => { setEditingEntry(null); setEditingIndex(null) }}
+        onClose={() => { setEditingEntry(null); setEditingUid(null) }}
         title="Edit Entry"
         size="lg"
         footer={
           <>
             <button
-              onClick={() => { setEditingEntry(null); setEditingIndex(null) }}
+              onClick={() => { setEditingEntry(null); setEditingUid(null) }}
               className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
             >
               Cancel

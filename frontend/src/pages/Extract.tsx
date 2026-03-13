@@ -1,12 +1,14 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Wand2, Search, Play } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel, AutoCorrectionsBanner, EnrichmentPanel } from '../components'
+import { FileUpload, Modal, AiReviewPanel, AutoCorrectionsBanner, EnrichmentPanel, EditableCell, EnrichmentToolbar } from '../components'
 import MineralExportModal from '../components/MineralExportModal'
 import EnrichmentProgress, { DEFAULT_STEPS, type EnrichmentStep, type EnrichmentSummary } from '../components/EnrichmentProgress'
 import { aiApi, enrichmentApi, extractApi } from '../utils/api'
 import type { AiSuggestion, PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
+import { useFeatureFlags } from '../hooks/useFeatureFlags'
+import { usePreviewState } from '../hooks/usePreviewState'
 
 interface PartyEntry {
   entry_number: string
@@ -130,8 +132,9 @@ export default function Extract() {
   const [filterMinValue, setFilterMinValue] = useState<string>('')
   const [filterMaxValue, setFilterMaxValue] = useState<string>('')
 
-  // Row selection state (set of excluded entry numbers)
-  const [excludedEntries, setExcludedEntries] = useState<Set<string>>(new Set())
+  // Enrichment feature flags
+  const featureFlags = useFeatureFlags()
+  const [isEnrichmentProcessing, setIsEnrichmentProcessing] = useState(false)
 
   // AI Review state
   const [showAiReview, setShowAiReview] = useState(false)
@@ -483,7 +486,7 @@ export default function Extract() {
   }
 
   const handleExport = async (county: string, campaignName: string) => {
-    if (entriesToExport.length === 0) {
+    if (preview.entriesToExport.length === 0) {
       setError('No entries selected for export')
       return
     }
@@ -497,7 +500,7 @@ export default function Extract() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          entries: entriesToExport,
+          entries: preview.entriesToExport,
           filename: activeJob?.documentName?.replace(/\.[^.]+$/, '') || 'extract',
           county,
           campaign_name: campaignName,
@@ -524,7 +527,6 @@ export default function Extract() {
   const handleSelectJob = async (job: ExtractJob) => {
     setActiveJob(job)
     setError(null)
-    setExcludedEntries(new Set())
 
     // Lazy-load entries if not already loaded
     if (!job.result && job.job_id) {
@@ -587,35 +589,12 @@ export default function Extract() {
     })
   }, [activeJob?.result?.entries, showIndividualsOnly, hideFlagged, hideUnknownAddresses, filterPropertyType, filterMinValue, filterMaxValue])
 
-  // Get entries to export (filtered + not excluded)
-  const entriesToExport = useMemo(() => {
-    return filteredEntries.filter((entry) => !excludedEntries.has(entry.entry_number))
-  }, [filteredEntries, excludedEntries])
-
-  // Selection helpers
-  const isAllSelected = filteredEntries.length > 0 &&
-    filteredEntries.every((e) => !excludedEntries.has(e.entry_number))
-  const isSomeSelected = filteredEntries.some((e) => !excludedEntries.has(e.entry_number)) && !isAllSelected
-
-  const toggleSelectAll = () => {
-    if (isAllSelected) {
-      setExcludedEntries(new Set(filteredEntries.map((e) => e.entry_number)))
-    } else {
-      const newExcluded = new Set(excludedEntries)
-      filteredEntries.forEach((e) => newExcluded.delete(e.entry_number))
-      setExcludedEntries(newExcluded)
-    }
-  }
-
-  const toggleEntry = (entryNumber: string) => {
-    const newExcluded = new Set(excludedEntries)
-    if (newExcluded.has(entryNumber)) {
-      newExcluded.delete(entryNumber)
-    } else {
-      newExcluded.add(entryNumber)
-    }
-    setExcludedEntries(newExcluded)
-  }
+  // Preview state: exclusion, inline editing, flagged-row sorting
+  const preview = usePreviewState({
+    entries: filteredEntries,
+    keyField: 'entry_number',
+    flagField: 'flagged',
+  })
 
   const resetFilters = () => {
     setShowIndividualsOnly(false)
@@ -624,7 +603,6 @@ export default function Extract() {
     setFilterPropertyType('')
     setFilterMinValue('')
     setFilterMaxValue('')
-    setExcludedEntries(new Set())
   }
 
   const handleEditEntry = (entry: PartyEntry) => {
@@ -968,13 +946,21 @@ export default function Extract() {
                     {enrichmentEnabled && (
                       <button
                         onClick={() => setShowEnrichment(true)}
-                        disabled={entriesToExport.length === 0}
+                        disabled={preview.entriesToExport.length === 0}
                         className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm disabled:opacity-50"
                       >
                         <Search className="w-4 h-4" />
-                        Contact Lookup ({entriesToExport.length})
+                        Contact Lookup ({preview.entriesToExport.length})
                       </button>
                     )}
+                    <EnrichmentToolbar
+                      {...featureFlags}
+                      onCleanUp={() => { /* stub for Phase 8 */ }}
+                      onValidate={() => { /* stub for Phase 8 */ }}
+                      onEnrich={() => { /* stub for Phase 8 */ }}
+                      isProcessing={isEnrichmentProcessing}
+                      entryCount={preview.entriesToExport.length}
+                    />
                     <button
                       onClick={() => setShowMineralModal(true)}
                       className="flex items-center gap-2 px-4 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors text-sm"
@@ -1102,7 +1088,7 @@ export default function Extract() {
                 </div>
                 <div className="mt-2 text-xs text-gray-500">
                   Showing {filteredEntries.length} of {activeJob.result.total_count} entries
-                  ({entriesToExport.length} selected for export)
+                  ({preview.entriesToExport.length} selected for export)
                 </div>
               </div>
 
@@ -1122,7 +1108,7 @@ export default function Extract() {
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-oswald font-semibold text-green-600">
-                    {entriesToExport.length}
+                    {preview.entriesToExport.length}
                   </p>
                   <p className="text-sm text-gray-500">Selected for Export</p>
                 </div>
@@ -1167,11 +1153,11 @@ export default function Extract() {
                         <th className="text-left py-2 px-3 font-medium text-gray-600 w-10">
                           <input
                             type="checkbox"
-                            checked={isAllSelected}
+                            checked={preview.isAllSelected}
                             ref={(el) => {
-                              if (el) el.indeterminate = isSomeSelected
+                              if (el) el.indeterminate = preview.isSomeSelected
                             }}
-                            onChange={toggleSelectAll}
+                            onChange={() => preview.toggleExcludeAll()}
                             className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
                           />
                         </th>
@@ -1195,8 +1181,8 @@ export default function Extract() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {filteredEntries.map((entry) => {
-                        const isExcluded = excludedEntries.has(entry.entry_number)
+                      {preview.previewEntries.map((entry) => {
+                        const isExcluded = preview.isExcluded(entry.entry_number)
                         return (
                           <tr
                             key={entry.entry_number}
@@ -1209,7 +1195,7 @@ export default function Extract() {
                               <input
                                 type="checkbox"
                                 checked={!isExcluded}
-                                onChange={() => toggleEntry(entry.entry_number)}
+                                onChange={() => preview.toggleExclude(entry.entry_number)}
                                 className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
                               />
                             </td>
@@ -1220,9 +1206,10 @@ export default function Extract() {
                             )}
                             {isColVisible('primary_name') && (
                               <td className={`py-2 px-3 text-gray-900 ${isExcluded ? 'line-through' : ''}`} title={entry.primary_name}>
-                                {entry.primary_name.length > 30
-                                  ? entry.primary_name.substring(0, 30) + '...'
-                                  : entry.primary_name}
+                                <EditableCell
+                                  value={entry.primary_name}
+                                  onCommit={(val) => preview.editField(entry.entry_number, 'primary_name', val)}
+                                />
                               </td>
                             )}
                             {isColVisible('first_name') && (
@@ -1242,27 +1229,42 @@ export default function Extract() {
                             )}
                             {isColVisible('mailing_address') && (
                               <td className="py-2 px-3 text-gray-600 text-xs">
-                                {entry.mailing_address || <span className="text-gray-400">{'\u2014'}</span>}
+                                <EditableCell
+                                  value={entry.mailing_address}
+                                  onCommit={(val) => preview.editField(entry.entry_number, 'mailing_address', val)}
+                                />
                               </td>
                             )}
                             {isColVisible('mailing_address_2') && (
                               <td className="py-2 px-3 text-gray-600 text-xs">
-                                {entry.mailing_address_2 || <span className="text-gray-400">{'\u2014'}</span>}
+                                <EditableCell
+                                  value={entry.mailing_address_2}
+                                  onCommit={(val) => preview.editField(entry.entry_number, 'mailing_address_2', val)}
+                                />
                               </td>
                             )}
                             {isColVisible('city') && (
                               <td className="py-2 px-3 text-gray-600 text-xs">
-                                {entry.city || <span className="text-gray-400">{'\u2014'}</span>}
+                                <EditableCell
+                                  value={entry.city}
+                                  onCommit={(val) => preview.editField(entry.entry_number, 'city', val)}
+                                />
                               </td>
                             )}
                             {isColVisible('state') && (
                               <td className="py-2 px-3 text-gray-600 text-xs">
-                                {entry.state || <span className="text-gray-400">{'\u2014'}</span>}
+                                <EditableCell
+                                  value={entry.state}
+                                  onCommit={(val) => preview.editField(entry.entry_number, 'state', val)}
+                                />
                               </td>
                             )}
                             {isColVisible('zip_code') && (
                               <td className="py-2 px-3 text-gray-600 text-xs">
-                                {entry.zip_code || <span className="text-gray-400">{'\u2014'}</span>}
+                                <EditableCell
+                                  value={entry.zip_code}
+                                  onCommit={(val) => preview.editField(entry.entry_number, 'zip_code', val)}
+                                />
                               </td>
                             )}
                             {isColVisible('notes') && (
@@ -1341,7 +1343,7 @@ export default function Extract() {
             <EnrichmentPanel
               isOpen={showEnrichment}
               onClose={() => setShowEnrichment(false)}
-              persons={entriesToExport.map((e) => ({
+              persons={preview.entriesToExport.map((e) => ({
                 name: e.primary_name,
                 address: e.mailing_address || undefined,
                 city: e.city || undefined,
