@@ -52,11 +52,11 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
   2. After ECF detection, the Convey 640 CSV upload area appears automatically so user can optionally add CSV before processing
   3. No processing occurs until user explicitly clicks the Process button (uploading a file alone does not trigger extraction)
   4. When both PDF and CSV are provided, the merged results show PDF-corrected data with CSV head-start fields filled in
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 05-01: TBD
-- [ ] 05-02: TBD
+- [ ] 05-01-PLAN.md -- Backend detect-format endpoint + tests (ECF-01)
+- [ ] 05-02-PLAN.md -- Frontend staged upload flow with Process button (ECF-02, ECF-03, ECF-04)
 
 ### Phase 6: RRC & GHL Fixes
 **Goal**: Users get usable results from RRC fetch-missing and understand how GHL campaign tagging works
@@ -131,7 +131,7 @@ Plans:
 | 2. Convey 640 Processing | v1.4 | 1/1 | Complete | 2026-03-12 |
 | 3. Merge and Export | v1.4 | 2/2 | Complete | 2026-03-12 |
 | 4. Frontend Integration | v1.4 | 2/2 | Complete | 2026-03-11 |
-| 5. ECF Upload Flow Fix | v1.5 | 0/? | Not started | - |
+| 5. ECF Upload Flow Fix | v1.5 | 0/2 | Planning complete | - |
 | 6. RRC & GHL Fixes | v1.5 | 0/? | Not started | - |
 | 7. Enrichment UI & Preview State | v1.5 | 0/? | Not started | - |
 | 8. Enrichment Pipeline Features | v1.5 | 0/? | Not started | - |
