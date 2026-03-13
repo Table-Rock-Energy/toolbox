@@ -56,6 +56,10 @@ class MineralHolderRow(BaseModel):
     dollars_per_nra: Optional[float] = Field(None, description="$/NRA")
     notes: Optional[str] = Field(None, description="Notes and error messages")
     well_type: Optional[WellType] = Field(None, description="Determined well type")
+    fetch_status: Optional[str] = Field(
+        None,
+        description="Status from fetch-missing: found, not_found, multiple_matches, split_lookup",
+    )
 
 
 class FilterOptions(BaseModel):
