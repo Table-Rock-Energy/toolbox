@@ -46,9 +46,19 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 
 ### Active
 
-<!-- Empty — ready for next milestone requirements. -->
+<!-- Current milestone: v1.5 Enrichment Pipeline & Bug Fixes -->
 
-(None — use `/gsd:new-milestone` to define next scope)
+## Current Milestone: v1.5 Enrichment Pipeline & Bug Fixes
+
+**Goal:** Fix broken enrichment/validation flows, add universal 3-button post-processing UI across all tools, fix ECF upload UX, and repair RRC fetch-missing pipeline.
+
+**Target features:**
+- Fix GHL bulk send smart list creation
+- Universal Validate / Clean Up / Enrich buttons (conditional on API keys + feature switches)
+- Preview updates after each enrichment step across all tools
+- Tool-specific Gemini QA prompts (name cleanup, figure verification, address cleaning)
+- ECF upload flow fix (auto-detect → auto-select → explicit Process button)
+- RRC fetch-missing repair (multi-lease lookups, surface results to user)
 
 ### Out of Scope
 
@@ -100,4 +110,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Dedicated ecf_parser.py module (not extending parser.py) | Clean separation, ECF has distinct parsing logic | ✓ Good — v1.4 |
 
 ---
-*Last updated: 2026-03-12 after v1.4 milestone completion*
+*Last updated: 2026-03-13 after v1.5 milestone start*

@@ -1,39 +1,40 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.4
-milestone_name: ECF Extraction
-status: milestone_complete
-stopped_at: Milestone v1.4 archived
-last_updated: "2026-03-12T19:00:00.000Z"
-last_activity: 2026-03-12 — Milestone v1.4 ECF Extraction completed
+milestone: v1.5
+milestone_name: Enrichment Pipeline & Bug Fixes
+status: defining_requirements
+stopped_at: null
+last_updated: "2026-03-13T00:00:00.000Z"
+last_activity: 2026-03-13 — Milestone v1.5 started
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 7
-  completed_plans: 7
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-12)
+See: .planning/PROJECT.md (updated 2026-03-13)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results. Everything else is secondary to parsing accuracy and data integrity.
-**Current focus:** Planning next milestone
+**Current focus:** v1.5 Enrichment Pipeline & Bug Fixes
 
 ## Current Position
 
-Milestone: v1.4 ECF Extraction — SHIPPED 2026-03-12
-Status: Complete, archived to `.planning/milestones/`
-Next: `/gsd:new-milestone` to define v1.5 scope
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-13 — Milestone v1.5 started
 
 ## Accumulated Context
 
 ### Decisions
 
-(Cleared — full decision log in PROJECT.md Key Decisions table)
+(None yet)
 
 ### Pending Todos
 
@@ -52,6 +53,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-12
-Stopped at: Milestone v1.4 archived
-Resume file: .planning/MILESTONES.md
+Last session: 2026-03-13
+Stopped at: Defining v1.5 requirements
+Resume file: .planning/REQUIREMENTS.md
