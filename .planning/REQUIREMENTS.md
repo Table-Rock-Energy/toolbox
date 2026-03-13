@@ -81,7 +81,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ENRICH-03 | Phase 8 | Pending |
 | ENRICH-04 | Phase 8 | Pending |
 | ENRICH-05 | Phase 8 | Pending |
-| ENRICH-06 | Phase 7 | Pending |
+| ENRICH-06 | Phase 8 | Pending |
 | ENRICH-07 | Phase 7 | Pending |
 | ENRICH-08 | Phase 7 | Pending |
 | ENRICH-09 | Phase 7 | Pending |
@@ -98,4 +98,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-03-13*
-*Last updated: 2026-03-13 after roadmap creation*
+*Last updated: 2026-03-13 after plan revision (ENRICH-06 moved from Phase 7 to Phase 8)*
