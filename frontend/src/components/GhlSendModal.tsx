@@ -218,7 +218,6 @@ export default function GhlSendModal({
     campaign_tag: smartListName,
     manual_sms: manualSms,
     assigned_to_list: selectedOwners.length > 0 ? selectedOwners : undefined,
-    smart_list_name: smartListName || undefined,
   })
 
   // Step 1 → 2: Validate batch
@@ -513,12 +512,17 @@ export default function GhlSendModal({
             )}
           </div>
 
-          {/* SmartList Name Field */}
+          {/* Campaign Tag Field */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Campaign Name
+              Campaign Tag
+              <span className="relative group ml-1 inline-block">
+                <AlertCircle className="w-3.5 h-3.5 text-gray-400 inline" />
+                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-gray-800 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                  To create a SmartList in GHL, filter contacts by this tag manually
+                </span>
+              </span>
             </label>
-            <p className="text-xs text-gray-500 mb-1">Used as the campaign tag and SmartList name</p>
             <input
               type="text"
               value={smartListName}
@@ -596,9 +600,6 @@ export default function GhlSendModal({
                 {selectedOwners.map(id => users.find(u => u.id === id)?.name || 'Unknown').join(', ')}
                 {selectedOwners.length === 2 && ' (even split)'}
               </p>
-            )}
-            {smartListName && (
-              <p><strong>SmartList:</strong> {smartListName}</p>
             )}
             {manualSms && (
               <p><strong>Manual SMS:</strong> Yes</p>
