@@ -38,6 +38,28 @@ async def health_check() -> dict:
     return {"status": "healthy", "service": "extract"}
 
 
+@router.post("/detect-format")
+async def detect_format_endpoint(
+    file: Annotated[UploadFile, File(description="PDF to detect format")],
+    request: Request,
+) -> dict:
+    """Detect the format of an uploaded PDF without full extraction."""
+    file_bytes = await validate_upload(file, allowed_extensions=[".pdf"])
+    full_text = extract_text_from_pdf(file_bytes)
+    if not full_text or len(full_text.strip()) < 50:
+        return {"format": None, "error": "Could not extract text"}
+    fmt = detect_format(full_text, file_bytes)
+    format_labels = {
+        ExhibitFormat.TABLE_ATTENTION: "Table with Attention Column",
+        ExhibitFormat.TABLE_SPLIT_ADDR: "Table with Split Address",
+        ExhibitFormat.FREE_TEXT_LIST: "Two-Column Numbered List",
+        ExhibitFormat.FREE_TEXT_NUMBERED: "Free Text (Default)",
+        ExhibitFormat.ECF: "ECF Filing",
+        ExhibitFormat.UNKNOWN: "Unknown",
+    }
+    return {"format": fmt.value, "format_label": format_labels.get(fmt, fmt.value)}
+
+
 @router.post("/upload", response_model=UploadResponse)
 async def upload_pdf(
     file: Annotated[UploadFile, File(description="PDF file containing Exhibit A")],
