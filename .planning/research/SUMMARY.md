@@ -1,336 +1,165 @@
 # Project Research Summary
 
-**Project:** Table Rock Tools — ECF/Convey 640 Extraction for Extract Tool
-**Domain:** OCC multiunit horizontal well application PDF parsing with optional CSV/Excel metadata merge
-**Researched:** 2026-03-11
+**Project:** Table Rock Tools v1.5 — Enrichment Pipeline & Bug Fixes
+**Domain:** Internal document-processing tools with post-processing enrichment
+**Researched:** 2026-03-13
 **Confidence:** HIGH
 
 ## Executive Summary
 
-ECF/Convey 640 integration is a natural extension of the existing Extract tool, requiring no new dependencies or architectural changes. The project adds ECF PDF format parsing for Oklahoma Corporation Commission multiunit well applications, with optional Convey 640 CSV/Excel merge for metadata enrichment. All capabilities exist in the current stack: PyMuPDF handles PDF text extraction, pandas processes CSV/Excel files, and existing name/address/entity parsers handle respondent data. The integration follows the established tool-per-module pattern with format detection driving parser selection.
+v1.5 is a wiring and bug-fix release, not a greenfield effort. All required libraries, services, and backend infrastructure already exist in the codebase. The work is connecting existing backend services (Gemini AI, Google Maps address validation, PDL/SearchBug enrichment) to tool page frontends that currently lack those integrations, and fixing data flow bugs where enrichment results never propagate back to the preview table. No new dependencies are needed. Two new API endpoints are required (address validation batch, service status), and three thin `/enrich` wrappers need adding to existing tool routers.
 
-The recommended approach is a three-phase build: (1) PDF-only ECF extraction with header metadata, (2) Convey 640 CSV/Excel parsing with normalization, (3) PDF-authoritative merge logic with fuzzy matching. This order validates parsing independently before introducing merge complexity. The critical insight is that PDF is source of truth for respondent names/addresses, while CSV provides accelerator data for county, legal description, and case numbers that augments PDF header extraction.
+The recommended approach is to fix standalone bugs first (ECF upload flow, RRC fetch-missing), then build the universal enrichment UI. The GHL "smart list" feature is not a code fix but a UX clarification -- GHL SmartLists are filter-based saved views, not API-creatable objects. The field should be renamed from "SmartList Name" to "Campaign Tag" with help text explaining the manual SmartList creation workflow in GHL's UI.
 
-Key risks center on data quality and parsing accuracy: multi-line address preservation in PDF extraction, ZIP code leading-zero loss in Excel imports, OCR error contamination from CSV data, and entity type misclassification for deceased parties and trusts. These are mitigated through explicit dtype enforcement, line-aware parsing, strict merge precedence (PDF over CSV), and enhanced entity detection patterns. The architecture minimizes risk by reusing production-validated Extract tool parsers rather than building from scratch.
+The primary risk is **concurrent enrichment operations corrupting shared state**. The universal 3-button enrichment UI (Validate / Clean Up / Enrich) must enforce serial execution -- if two buttons are clicked simultaneously, the last to complete silently overwrites the other's results. A version-counter on the entries array and button-disabling during active operations are the minimum safeguards. Secondary risk is the enrichment service's sequential processing of 50+ persons without progress feedback, which will appear hung on larger datasets.
 
 ## Key Findings
 
 ### Recommended Stack
 
-**NO NEW DEPENDENCIES REQUIRED.** All ECF/Convey 640 capabilities exist in the current Table Rock Tools stack. This is a feature addition using existing infrastructure, not a technology integration project.
+No new packages, libraries, or environment variables are needed. Every v1.5 feature uses existing infrastructure.
 
-**Core technologies (already installed):**
-- **PyMuPDF (fitz) >=1.23.0**: Multi-column PDF text extraction — current version 1.27.2 (Mar 2026) handles 2-3 column ECF layouts identical to existing OCC Exhibit A PDFs
-- **pandas >=2.1.0**: CSV/Excel processing — existing delimiter detection, flexible column mapping, and row processing handle variable Convey 640 formats
-- **openpyxl >=3.1.0**: Excel read/write via pandas — no changes needed for .xlsx/.xls files
-- **python-multipart**: FastAPI multipart/form-data uploads — already supports dual-file uploads (PDF + CSV)
+**Core technologies (all already installed):**
+- **Gemini AI** (`google-genai`, model `gemini-2.5-flash`): Powers "Clean Up" button via existing `TOOL_PROMPTS` with per-tool QA prompts. Structured JSON output already configured.
+- **Google Maps Geocoding API** (`requests`-based): Powers "Validate" button via existing `address_validation_service.py` with batch support at 40 QPS. Only needs an API endpoint wrapper.
+- **PDL + SearchBug** (`enrichment_service.py`): Powers "Enrich" button for contact data enrichment. Exists but needs frontend wiring and progress feedback.
+- **React + useState**: Sufficient for preview state management. No Redux/Zustand needed.
 
-**Reusable existing infrastructure:**
-- PDF extractor, name parser, address parser, entity detector (services/extract/)
-- CSV processor with column mapping (services/title/)
-- Legal description parser (services/proration/)
-- Mineral export service with 53-column format (services/extract/export_service.py)
-- Dual-file upload component (frontend/components/FileUpload.tsx)
+**New endpoints required (2):**
+- `POST /api/validate/addresses` -- wraps existing `validate_addresses_batch()`
+- `GET /api/services/status` -- aggregates feature flag status for conditional button rendering
 
-**Critical version note:** No upgrades required. Current pandas >=2.1.0 constraint already allows 3.x (latest 3.0.1). PyMuPDF 1.27.2 is latest stable. All dependencies are production-validated.
+**New thin endpoints (3):**
+- `POST /api/title/enrich`, `POST /api/proration/enrich`, `POST /api/revenue/enrich` -- 3-line delegates to existing `data_enrichment_pipeline.enrich_entries()`
 
 ### Expected Features
 
-ECF/Convey 640 feature set extends existing Extract tool patterns rather than introducing new categories.
+**Must have (table stakes -- product feels broken without these):**
+- **Preview updates after enrichment** -- Validate/Cleanup buttons exist but results never update the preview table. Core data flow bug across all tools.
+- **ECF upload: explicit Process button** -- ECF auto-processes on PDF upload before user can add CSV. Confusing UX that actively harms the workflow.
+- **RRC fetch-missing returns usable data** -- Endpoint queries RRC but results don't surface to user. Multi-lease parsing broken.
+- **GHL smart list clarification** -- "SmartList Name" field does nothing. Rename to "Campaign Tag" with workflow documentation.
 
-**Must have (table stakes):**
-- ECF PDF text extraction — core functionality, PDF is authoritative source
-- Numbered entry parsing — ECF filings use "1. Name\nAddress" format
-- Respondent name/address parsing — expected from existing Extract tool capabilities
-- Entity type detection — Individual, Trust, LLC, Estate classification
-- PDF header metadata extraction — county, legal description, applicant, case number
-- Mineral export output — 53-column format matching existing tools
-- Dual-file upload UI — PDF required, CSV/Excel optional
-- Entry flagging for low confidence — warnings when parsing is uncertain
-
-**Should have (competitive):**
-- Convey 640 CSV/Excel upload (optional) — users expect to leverage existing data
-- PDF-authoritative merge — when PDF and CSV disagree, PDF wins (corrects OCR errors)
-- Convey 640 metadata enrichment — CSV provides county, STR, case number to augment PDF
-- Address standardization — cleaner addresses improve downstream CRM import
-- Case number tracking — OCC application ID for compliance reference
-- County auto-population — metadata from PDF header or CSV fills County field
+**Should have (differentiators):**
+- **Universal 3-button enrichment bar** -- Validate / Clean Up / Enrich as conditional buttons across all tool pages, gated by API key availability.
+- **Tool-specific Gemini QA prompt refinement** -- Existing prompts work but can be sharpened per tool.
+- **Multi-step enrichment progress modal** -- `EnrichmentProgress.tsx` exists but is only partially wired.
+- **RRC multi-lease parsing** -- Handle combined lease numbers like "02-12345/02-12346".
 
 **Defer (v2+):**
-- Fuzzy name matching for OCR correction — start with exact match, flag mismatches
-- STR field mapping to dedicated column — append to Notes/Comments initially
-- Multi-respondent row expansion — depends on Convey 640 schema (unknown)
-- Address geocoding/validation — use existing optional enrichment services
-- Batch processing (multiple ECF filings) — process one filing per upload
+- Enrichment result caching (don't re-enrich already-enriched entries)
+- Enrichment history/audit trail
+- Direct SmartList API creation (not how GHL SmartLists work)
+- Real-time SSE streaming for enrichment (overkill for current batch sizes)
+- Auto-enrichment on upload (users need to see raw data first)
 
 ### Architecture Approach
 
-ECF/Convey 640 integration fits naturally into existing Extract tool architecture as parser diversification rather than structural redesign. Format detection drives parser selection: `detect_format()` identifies ECF format via header patterns, routes to new `ecf_parser.py` for PDF processing and optional `convey640_parser.py` for CSV. Merge happens in dedicated `ecf_merge_service.py` that combines parsed outputs with explicit precedence rules (PDF for names/addresses, CSV for metadata). All parsers output uniform `PartyEntry` model extended with optional fields (case_number, legal_description, county), maintaining backward compatibility. Export layer maps enriched entries to existing `MINERAL_EXPORT_COLUMNS` format.
+v1.5 follows the existing tool-per-module pattern. The only net-new frontend code is a shared `usePostProcess` hook extracted from Extract.tsx's existing enrichment logic. Backend changes are thin wiring -- per-tool `/enrich` endpoints delegate to the existing `data_enrichment_pipeline.enrich_entries()` orchestrator, which already handles tool-specific logic via `FIELD_MAPS` and conditional step execution. The key architectural rule: entries live in frontend state only (no Firestore persistence of intermediate enrichment results), and each enrichment step takes current entries as input and produces updated entries as output in a serial pipeline.
 
-**Major components:**
-1. **ECF Parser** (new: `ecf_parser.py`) — Parse ECF PDF Exhibit A respondent list using existing pdf_extractor, name_parser, address_parser utilities
-2. **ECF Metadata Extractor** (new: `ecf_metadata_extractor.py`) — Extract county, case number, applicant, legal description from PDF header text
-3. **Convey 640 Parser** (new: `convey640_parser.py`) — Parse CSV/Excel with flexible column mapping, extract metadata + respondent data
-4. **Merge Service** (new: `ecf_merge_service.py`) — Combine PDF entries (source of truth) with CSV metadata, handle mismatches via fuzzy matching
-5. **Format Detector** (extended: `format_detector.py`) — Add ECF_EXHIBIT_A enum value and detection patterns
-6. **Upload Endpoint** (modified: `api/extract.py`) — Accept optional csv_file parameter, route ECF format to merge pipeline
-7. **Export Service** (extended: `export_service.py`) — Map ECF metadata (county, case_number, legal_description) to mineral export columns
-8. **PartyEntry Model** (extended: `models/extract.py`) — Add optional ECF metadata fields while maintaining backward compatibility
-9. **Frontend Extract Page** (modified: `Extract.tsx`) — Conditional second FileUpload for CSV when ECF format selected, display metadata panel
-10. **Dual-File Upload UI** (reused: `FileUpload.tsx`) — Show two instances conditionally, no component changes needed
-
-**Integration principle:** Reuse > extend > create new. Prefer existing parsers, extend models with optional fields, create new only for ECF-specific logic (numbered entry parsing, metadata extraction, merge).
+**Major components (modified, not new):**
+1. **`data_enrichment_pipeline.py`** -- Add `FIELD_MAPS` for proration and revenue tools
+2. **`hooks/usePostProcess.ts`** (NEW) -- Shared hook encapsulating NDJSON streaming, progress tracking, entry state replacement
+3. **Per-tool pages** (Extract, Title, Proration, Revenue) -- Add conditional enrichment buttons using shared hook
+4. **`api/proration.py`** -- Fix fetch-missing to use returned data directly instead of Firestore re-lookup
+5. **`GhlSendModal.tsx`** -- Rename SmartList field, add help text
 
 ### Critical Pitfalls
 
-Research identified 10 critical pitfalls ranked by impact. Top 5 require preventative design decisions before implementation:
-
-1. **Multi-Line Address Parsing with Inconsistent Line Breaks** — PDF text extraction may not preserve line breaks, causing name fragments to bleed into address fields. Prevention: line-aware parsing that treats each `\n` as parsing boundary, validate street patterns don't match within names (<10 chars before pattern), flag suspicious entity type mismatches (Individual when "Trust" keyword present). Address in Phase 1 parser implementation.
-
-2. **Convey 640 Line Number Contamination in Name Fields** — OCR exports embed entry numbers in names ("1. John Smith"), preventing string matching. Prevention: strip entry number patterns (`^\s*(U\s*)?\d+\.\s*`) before any comparison, normalize both PDF and CSV names for matching, separate entry number into dedicated field. Address in Phase 2 CSV parsing before Phase 3 merge.
-
-3. **ZIP Code Data Type Loss in Excel Import** — Northeast US ZIP codes (02101) lose leading zeros when Excel converts to integer. Prevention: force `dtype={'zip': str}` in pandas, validate state-ZIP correlation (MA/CT/RI/NH/VT/ME should start with 0), pad to 5 digits if 4 detected. Address in Phase 2 CSV ingestion.
-
-4. **Entity Type Detection Failure for Deceased Parties** — Entries like "John Smith, Deceased" misclassified as Individual instead of Estate. Prevention: reorder detection to check Estate patterns before Individual fallback, add deceased-specific patterns (`, Deceased`, `Estate of`, `c/o [Name], Executor`), two-pass detection (extract annotations first). Address in Phase 1 entity detection.
-
-5. **Merge Logic Choosing CSV Over PDF for Name Data** — Naive merge (`csv_value or pdf_value`) prefers CSV when both exist, propagating OCR errors. Prevention: explicit precedence (`pdf_value if pdf_value is not None else csv_value`), ALWAYS use PDF for names/addresses (CSV only for metadata), add merge audit logging to track source per field. Address in Phase 3 merge service implementation.
-
-**Additional pitfalls to monitor:**
-- Name parser failure on Mc/Mac/O' prefixes (Phase 1 enhancement)
-- Trustee name conflation with trust entity name (Phase 1 entity-aware parsing)
-- PDF format variation across OCC filing dates (Phase 1 format detection robustness)
-- Case metadata extraction failure from PDF header (Phase 1 parallel track)
-- Low merge match rate from overly strict matching (Phase 3 fuzzy matching tuning)
+1. **Concurrent enrichment button clicks cause race condition** -- Two simultaneous operations overwrite each other's results. Fix: disable all buttons during active operation, enforce serial pipeline with version counter.
+2. **Preview state goes stale after async enrichment** -- AI suggestions reference stale entry indices if entries were modified by a prior step. Fix: version-stamp entries, reject suggestions from outdated versions.
+3. **Enrichment service processes sequentially without progress** -- 50 persons at ~2s each = 100+ seconds with no feedback. Fix: add per-person progress events, cap batch at 25, consider parallel execution with semaphore.
+4. **GHL SmartLists are not API-creatable** -- The field exists but does nothing. Fix: rename to "Campaign Tag", document manual SmartList creation workflow.
+5. **RRC HTML parsing breaks on website layout changes** -- Positional column indexing is fragile. Fix: add header row validation before deploying multi-lease lookups.
 
 ## Implications for Roadmap
 
-Based on research, suggested phase structure follows dependency order: validate PDF parsing independently, add CSV processing, integrate merge logic, polish frontend.
+Based on research, suggested phase structure:
 
-### Phase 1: ECF PDF Parsing (Backend Foundation)
-**Rationale:** Core extraction capability must work independently before adding CSV complexity. PDF is source of truth, so this phase delivers complete feature without CSV merge. Validates parsing patterns against actual ECF filings before merge dependency.
+### Phase 1: ECF Upload Flow Fix
+**Rationale:** Lowest complexity, zero backend changes, immediate UX improvement. Self-contained in Extract.tsx.
+**Delivers:** Explicit Process button for ECF uploads; standard OCC format unchanged.
+**Addresses:** ECF upload table-stakes bug
+**Avoids:** Auto-processing without confirmation (Pitfall #8)
+**Complexity:** LOW
 
-**Delivers:**
-- ECF format detection and numbered entry parsing
-- Respondent name/address extraction with entity type detection
-- PDF header metadata extraction (county, legal description, applicant, case number)
-- Entry flagging for low confidence parses
-- Mineral export output with ECF metadata
+### Phase 2: RRC Fetch-Missing Repair
+**Rationale:** Fixes an existing broken endpoint. Backend parsing bug is small; frontend state merge follows patterns established elsewhere.
+**Delivers:** Multi-lease parsing, direct use of fetch results (no Firestore re-lookup race), results surfaced in Proration preview.
+**Addresses:** RRC fetch-missing table-stakes bug, multi-lease parsing differentiator
+**Avoids:** Session state leakage (Pitfall #7), HTML parsing fragility (Pitfall #6)
+**Complexity:** MEDIUM
 
-**Addresses features:**
-- ECF PDF text extraction (table stakes)
-- Numbered entry parsing (table stakes)
-- Respondent name/address parsing (table stakes)
-- Entity type detection (table stakes)
-- PDF header metadata extraction (table stakes)
-- Mineral export output (table stakes)
+### Phase 3: GHL Smart List Clarification
+**Rationale:** Independent of other phases. Low complexity UX fix that removes user confusion. Can run in parallel with Phases 1-2.
+**Delivers:** Renamed "Campaign Tag" field, help text explaining tag-based SmartList workflow, post-send instructions.
+**Addresses:** GHL smart list table-stakes bug
+**Avoids:** Building impossible API integration (Pitfall #2)
+**Complexity:** LOW
 
-**Avoids pitfalls:**
-- Multi-line address parsing (#1) — line-aware extraction from start
-- Entity type detection failure (#4) — Estate patterns before Individual fallback
-- Name parser Mc/Mac/O' failures (#6) — prefix preservation rules
-- Trustee/trust name conflation (#7) — entity-first parsing priority
-- PDF format variation (#8) — test with filings from 2020-2026
-- Case metadata extraction failure (#9) — separate header parser track
+### Phase 4: Universal Enrichment UI + Preview Updates
+**Rationale:** Largest scope, depends on understanding Extract.tsx patterns from Phase 1. This is the core v1.5 feature. Preview updates and the 3-button UI are inseparable -- buttons without preview updates are useless.
+**Delivers:** Validate/CleanUp/Enrich buttons on all tool pages, conditional visibility by API key, shared `usePostProcess` hook, entry state replacement after each step, undo capability.
+**Addresses:** Preview update table-stakes bug, universal enrichment bar differentiator, progress modal
+**Avoids:** Race conditions (Pitfall #4), stale preview state (Pitfall #1), sequential processing without progress (Pitfall #3)
+**Complexity:** HIGH (but using established patterns from Extract.tsx)
 
-**Architecture components:**
-- `ecf_parser.py` (new)
-- `ecf_metadata_extractor.py` (new)
-- `format_detector.py` (extend with ECF_EXHIBIT_A)
-- `models/extract.py` (extend PartyEntry with optional metadata fields)
-
-**Research flag:** LOW — ECF format structure is well-documented through OCC examples, parser reuses validated Extract tool infrastructure. Test with sample PDFs spanning multiple years to confirm format stability.
-
----
-
-### Phase 2: Convey 640 CSV/Excel Processing
-**Rationale:** CSV parsing must happen independently to validate normalization, column mapping, and data quality before merge. ZIP code and entry number handling are table-stakes for merge success; validate here first.
-
-**Delivers:**
-- CSV/Excel file upload and format detection
-- Flexible column mapping for Convey 640 schema variations
-- Entry number normalization (strip line number contamination)
-- ZIP code leading-zero preservation
-- Metadata extraction (county, legal description, case number, applicant)
-- Respondent data parsing with address standardization
-
-**Addresses features:**
-- Convey 640 CSV/Excel upload (should-have)
-- Address standardization (should-have)
-
-**Avoids pitfalls:**
-- Line number contamination (#2) — strip patterns before any processing
-- ZIP code data type loss (#3) — dtype enforcement + state-ZIP correlation check
-
-**Architecture components:**
-- `convey640_parser.py` (new)
-- Pandas CSV/Excel processing (reuse existing patterns from title/csv_processor.py)
-
-**Research flag:** MEDIUM — Convey 640 schema is unknown (no public documentation). Requires sample CSV/Excel files from users to validate column mapping. Likely need iterative tuning based on real data.
-
----
-
-### Phase 3: PDF-CSV Merge Logic
-**Rationale:** Merge is highest complexity and depends on validated parsers from Phases 1-2. Fuzzy matching requires tuning against real data pairs. Merge precedence rules are critical to avoid OCR error propagation.
-
-**Delivers:**
-- PDF-authoritative merge service
-- Fuzzy name matching for OCR error detection
-- Entry-by-entry merge with explicit precedence (PDF for names/addresses, CSV for metadata)
-- Match statistics and unmatched entry reporting
-- Merge audit trail (track source per field)
-- Conflict resolution logging
-
-**Addresses features:**
-- PDF-authoritative merge (should-have)
-- Convey 640 metadata enrichment (should-have)
-- County auto-population (should-have)
-- Case number tracking (should-have)
-
-**Avoids pitfalls:**
-- Merge choosing CSV over PDF (#5) — explicit precedence rules
-- Low merge match rate (#10) — multi-strategy matching (exact, fuzzy, position-based)
-
-**Architecture components:**
-- `ecf_merge_service.py` (new)
-- Integration with `api/extract.py` upload endpoint
-
-**Research flag:** HIGH — Fuzzy matching thresholds require empirical tuning. Need 5-10 real PDF+CSV pairs to calibrate similarity thresholds, test match rates, validate precedence rules. Plan for iteration based on match statistics.
-
----
-
-### Phase 4: Frontend Dual-File Upload
-**Rationale:** Backend merge must be stable before adding UI complexity. Conditional upload UI depends on format selection, metadata display needs merge output structure.
-
-**Delivers:**
-- ECF format selector in Extract page
-- Conditional second FileUpload for CSV/Excel (optional)
-- Dual-file FormData upload to backend
-- ECF metadata display panel (county, case number, applicant, legal description)
-- Match statistics display (matched/unmatched counts)
-- Export with enriched metadata
-
-**Addresses features:**
-- Dual-file upload UI (table stakes)
-- Entry flagging for low confidence (table stakes)
-
-**Avoids pitfalls:**
-- UX pitfalls: no merge preview, silent failures, cryptic flagging
-
-**Architecture components:**
-- `Extract.tsx` (modify for conditional upload + metadata display)
-- `FileUpload.tsx` (reuse, no changes)
-
-**Research flag:** LOW — Standard React patterns, FileUpload already supports multi-file. UI design is straightforward once backend API is stable.
-
----
-
-### Phase 5: Polish and Validation (Optional)
-**Rationale:** Post-MVP enhancements based on user feedback and production usage patterns.
-
-**Delivers:**
-- Merge preview before commit (side-by-side PDF vs CSV comparison)
-- Manual match override UI (link PDF entry to CSV row)
-- Enhanced flagging reasons (specific validation failures)
-- Match confidence scoring
-- Export validation summary
-
-**Addresses:** UX improvements identified in pitfalls research
-
-**Research flag:** LOW — Standard UI patterns, defer until user feedback validates need
-
----
+### Phase 5: Gemini QA Prompt Refinement
+**Rationale:** Low-risk prompt engineering. Can be done anytime after Phase 4 establishes the universal Clean Up button.
+**Delivers:** Sharpened per-tool validation and cleanup prompts, partial validation warning banner.
+**Addresses:** Tool-specific Gemini prompts differentiator
+**Avoids:** Partial validation looking like success (Pitfall #5)
+**Complexity:** LOW
 
 ### Phase Ordering Rationale
 
-**Why this order:**
-1. **Phase 1 validates core parsing** before merge complexity — PDF parsing must work independently since PDF-only mode is complete feature
-2. **Phase 2 isolates CSV data quality issues** before introducing merge logic — ZIP code and entry number handling are foundational
-3. **Phase 3 depends on validated parsers** from 1+2 — fuzzy matching can only be tuned with real parsed data
-4. **Phase 4 needs stable backend API** before UI work — conditional upload and metadata display depend on merge output structure
-5. **Phase 5 defers UX polish** until production usage validates priorities
-
-**Why this grouping:**
-- **Backend foundation first** (Phases 1-3) enables API testing via Swagger before frontend work
-- **Parser separation** (PDF vs CSV vs merge) allows independent testing and debugging
-- **Progressive enhancement** — each phase delivers usable functionality (PDF-only → CSV-only → merged → UI)
-
-**How this avoids pitfalls:**
-- Testing parsers independently catches data quality issues (pitfalls #1-4) before merge
-- Merge logic isolated in Phase 3 allows precedence rule validation without parser bugs (pitfall #5)
-- Backend stability before frontend prevents UI rework when merge logic changes
-- Format detection in Phase 1 enables early testing across filing date ranges (pitfall #8)
+- **Phases 1-3 are independent** -- can be built in parallel or any order. All are bug fixes or UX clarifications with no cross-dependencies.
+- **Phase 4 is the core feature work** -- depends on familiarity with Extract.tsx patterns (gained in Phase 1) and must solve the state management pitfalls before any enrichment buttons ship.
+- **Phase 5 is polish** -- prompt text changes only, no structural risk. Natural follow-on after Phase 4 proves the enrichment pipeline works.
+- **Grouping logic:** Bug fixes first (quick wins, user-facing improvements), then feature work (universal enrichment), then refinement (prompts).
 
 ### Research Flags
 
-**Phases needing deeper research during planning:**
-- **Phase 2 (Convey 640 CSV):** Unknown schema requires sample files from users. Column mapping patterns may need iteration based on real data variations. Budget 2-3 sample files for validation.
-- **Phase 3 (Merge Logic):** Fuzzy matching thresholds require empirical tuning. Need 5-10 PDF+CSV pairs to calibrate similarity scores, validate match rates >75%, test conflict resolution. Budget research spike for algorithm selection (Levenshtein vs Jaro-Winkler vs phonetic).
+Phases likely needing deeper research during planning:
+- **Phase 3 (GHL):** Verify current GHL API v2 documentation for smart list/saved search endpoints. Prior research is from Feb 2026; API may have changed. Check `https://highlevel.stoplight.io/docs/integrations`.
+- **Phase 4 (Universal Enrichment):** The state management pattern (version counter, serial pipeline, undo snapshots) needs careful design. Research Extract.tsx's existing implementation thoroughly before generalizing.
 
-**Phases with standard patterns (skip research-phase):**
-- **Phase 1 (ECF PDF):** Reuses production-validated Extract tool parsers. PyMuPDF extraction is well-documented and tested. Format detection patterns from existing OCC Exhibit A work.
-- **Phase 4 (Frontend):** Standard React patterns, existing FileUpload component supports required functionality. No novel UI patterns.
-- **Phase 5 (Polish):** Deferred UX enhancements based on established patterns (side-by-side comparison, manual overrides).
+Phases with standard patterns (skip research-phase):
+- **Phase 1 (ECF Fix):** Pure frontend state change. Pattern is well-understood.
+- **Phase 2 (RRC Fix):** Bug fix with known root cause (Firestore re-lookup race). Code changes are targeted.
+- **Phase 5 (Prompts):** Prompt engineering. No architectural decisions needed.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | **HIGH** | All dependencies exist in current codebase. PyMuPDF 1.27.2 (Mar 2026) and pandas 3.0.1 (Jan 2026) are latest stable. No version upgrades or new packages required. Validated through direct requirements.txt analysis. |
-| Features | **MEDIUM** | Table stakes and differentiators validated through Extract tool patterns. Unknown: Convey 640 schema variations (no public docs). Need sample files to confirm column mappings and OCR error patterns. ECF PDF structure validated via OCC filing examples. |
-| Architecture | **HIGH** | Direct codebase analysis confirms reusability. Extract tool architecture already handles multiple formats via format detection. Merge pattern follows standard data integration practices (explicit precedence, audit logging). Component boundaries clear. |
-| Pitfalls | **HIGH** | Pitfall research based on PDF parsing studies (2026), CSV data quality literature, fuzzy matching algorithms, and name parsing edge cases. ZIP code leading-zero loss is documented Excel behavior. Entity detection patterns tested in existing Extract tool. |
+| Stack | HIGH | No new dependencies. All libraries verified as installed and functional in codebase. |
+| Features | MEDIUM | Web search unavailable; feature scope based on codebase analysis and prior research. GHL SmartList limitation needs re-verification against current API docs. |
+| Architecture | HIGH | Based on direct codebase analysis. All proposed patterns extend existing, working implementations. |
+| Pitfalls | HIGH | All critical pitfalls identified from actual code paths. Race condition and stale state issues are deterministic bugs, not edge cases. |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-**Gap 1: Convey 640 schema variations**
-- **Issue:** No public documentation for Convey 640 export format. Column names, data types, and structure inferred from project context only.
-- **Resolution:** Obtain 2-3 sample Convey 640 CSV/Excel files from users before Phase 2 implementation. Validate column mapping assumptions, identify OCR error patterns, confirm metadata field presence.
-- **Impact:** Medium — affects Phase 2 parser flexibility and Phase 3 merge matching. Does not block Phase 1 (PDF-only mode).
-
-**Gap 2: ECF PDF format variation over time**
-- **Issue:** OCC may change filing templates across years. Research found examples from 2024 but format stability 2020-2026 not confirmed.
-- **Resolution:** Collect ECF PDF samples spanning 2020-2026 before Phase 1 implementation. Test format detection and parser robustness across date ranges. Add version detection if significant variations found.
-- **Impact:** Medium — affects Phase 1 parser design. Can start with recent format (2024+) and extend backward if needed.
-
-**Gap 3: Fuzzy matching threshold calibration**
-- **Issue:** Optimal similarity threshold (85%? 90%? 95%?) for PDF-CSV name matching unknown without empirical testing.
-- **Resolution:** Phase 3 research spike with 5-10 real PDF+CSV pairs. Calculate match rates at different thresholds, validate false positive/negative rates, tune algorithm choice.
-- **Impact:** High for Phase 3 — merge success depends on threshold tuning. Does not block Phases 1-2.
-
-**Gap 4: Mineral export column mapping for ECF metadata**
-- **Issue:** Unknown which specific columns in MINERAL_EXPORT_COLUMNS should receive case_number, legal_description, applicant. Research shows "Notes/Comments" as likely target but not confirmed.
-- **Resolution:** Review MINERAL_EXPORT_COLUMNS definition in export_utils.py, confirm with downstream GHL Prep tool requirements. Validate County field exists and is appropriate for county metadata.
-- **Impact:** Low — affects Phase 1 export logic but straightforward to adjust. Mineral format is well-defined.
-
-**Gap 5: Entry number mismatch handling**
-- **Issue:** PDF entry numbers may not align with CSV entry numbers (renumbering, ADDRESS UNKNOWN section differences). Unclear if position-based matching should override number-based matching.
-- **Resolution:** Test with sample files that have misaligned numbering. Implement multi-strategy matching: (1) exact number match, (2) position-based match, (3) fuzzy name match. Report statistics to user for review.
-- **Impact:** Medium for Phase 3 — affects merge logic complexity. Can start with exact match and extend.
+- **GHL SmartList API availability:** Prior research (Feb 2026) says no API endpoint exists. This should be re-verified against current GHL API v2 documentation before finalizing Phase 3 scope. If an endpoint now exists, Phase 3 becomes a code integration rather than a UX clarification.
+- **Enrichment service production behavior:** PDL + SearchBug services exist but have limited production testing. Phase 4 should include integration testing with real API keys before deploying universally.
+- **Cloud Run scaling + Gemini rate limits:** Module-level rate limit state is per-instance. Acceptable for current scale (small team, max 10 instances) but should be monitored. Not a v1.5 blocker.
+- **RRC website stability:** HTML scraping is inherently fragile. Phase 2 should add header validation but cannot guarantee long-term reliability. Consider monitoring for parsing failures post-deploy.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- **Existing codebase analysis** (`backend/requirements.txt`, `services/extract/`, `services/title/`, `frontend/components/FileUpload.tsx`) — Direct verification of reusable components, validated patterns, and mineral export format
-- [PyMuPDF Documentation](https://pymupdf.readthedocs.io/) — Latest version 1.27.2 (March 2026), multi-column text extraction capabilities
-- [pandas 3.0.1 Documentation](https://pandas.pydata.org/docs/whatsnew/v3.0.0.html) — Released January 21, 2026, CSV/Excel processing features
-- [BEFORE THE CORPORATION COMMISSION OF THE STATE OF OKLAHOMA](https://imaging.occ.ok.gov/AP/CaseFiles/occ30451709.pdf) — OCC multiunit well application example showing ECF format structure
-- [OAC 165:5 CORPORATION COMMISSION](https://oklahoma.gov/content/dam/ok/en/occ/documents/ajls/jls-courts/rules/2023/current-rules/chapter-05-rules-effective-10-01-2023.pdf) — Respondent list requirements and filing format specifications
+- Direct codebase analysis of all referenced files (services, models, API routes, frontend components)
+- Existing implementation patterns in `Extract.tsx`, `data_enrichment_pipeline.py`, `gemini_service.py`
 
 ### Secondary (MEDIUM confidence)
-- [A Comparative Study of PDF Parsing Tools](https://arxiv.org/html/2410.09871v1) — Layout preservation and multi-column extraction challenges
-- [Excel Import Errors and Fixes](https://flatfile.com/blog/the-top-excel-import-errors-and-how-to-fix-them/) — Data type coercion problems (ZIP code leading zeros)
-- [Working with Leading Zeros in Northeast ZIP Codes](https://help.littlegreenlight.com/article/53-working-with-leading-zeros-in-northeast-zip-codes) — ZIP code formatting solutions
-- [Fuzzy String Matching in Python Tutorial](https://www.datacamp.com/tutorial/fuzzy-string-python) — Levenshtein, Jaro-Winkler algorithm overview
-- [Deep Dive into String Similarity](https://medium.com/data-science-collective/deep-dive-into-string-similarity-from-edit-distance-to-fuzzy-matching-theory-and-practice-in-68e214c0cb1d) — Similarity threshold selection and false positive prevention
-- [Why Mac and Mc Surnames Contain Second Capital Letter](https://www.todayifoundout.com/index.php/2014/02/mac-mc-surnames-often-contain-second-capital-letter/) — Celtic name prefix patterns
+- Prior GHL API research: `.planning/research/FEATURES-GHL-API.md` (2026-02-26)
+- Prior GHL pitfalls research: `.planning/research/PITFALLS-GHL-API.md` (2026-02-26)
 
-### Tertiary (LOW confidence — needs validation)
-- **Convey 640 schema** — Inferred from project context only, no public documentation found. Requires sample files for validation.
-- [What is a Pooling Application before the Oklahoma Corporation Commission?](https://winblad.law.com/pooling/) — Background on OCC pooling process, but limited filing format details
-- [Strategies for Reducing and Correcting OCR Errors](https://link.springer.com/chapter/10.1007/978-3-642-20227-8_1) — General PDF/OCR merge strategies, not ECF-specific
+### Tertiary (LOW confidence)
+- GHL SmartList API availability -- needs re-verification against current docs (web search was unavailable)
 
 ---
-*Research completed: 2026-03-11*
+*Research completed: 2026-03-13*
 *Ready for roadmap: yes*

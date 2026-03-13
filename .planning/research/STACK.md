@@ -1,129 +1,224 @@
-# Technology Stack — ECF/Convey 640 Extraction
+# Technology Stack — v1.5 Enrichment Pipeline & Bug Fixes
 
-**Project:** Table Rock Tools — Extract Tool (ECF/Convey 640 Format)
-**Researched:** 2026-03-11
+**Project:** Table Rock Tools v1.5
+**Researched:** 2026-03-13
 
 ## Summary
 
-**NO NEW DEPENDENCIES REQUIRED.** All capabilities for ECF PDF parsing and Convey 640 CSV/Excel merge exist in the current stack. This is a feature addition using existing infrastructure.
+**NO NEW DEPENDENCIES REQUIRED.** All v1.5 features are bug fixes, API integration corrections, and UI wiring using existing libraries. The key challenge is understanding external API capabilities and limitations, not adding new packages.
 
-## Validated Current Stack
+## Critical Finding: GHL Smart Lists
 
-### Core Dependencies (Already Installed)
+**GHL SmartLists are NOT creatable via API.** This was documented in earlier research (FEATURES-GHL-API.md) and confirmed by codebase review. SmartLists in GoHighLevel are filter-based saved views, not membership lists. The GHL API v2 (version `2021-07-28`, base URL `https://services.leadconnectorhq.com`) does not expose endpoints for creating or managing SmartLists.
 
-| Technology | Current Version | Purpose | Why Sufficient |
-|------------|----------------|---------|----------------|
-| PyMuPDF (fitz) | >=1.23.0 | PDF text extraction | Latest is 1.27.2 (Mar 2026). Existing multi-column extraction already handles 2-3 column layouts. `extract_text_from_pdf()` with column-aware sorting is production-validated for OCC Exhibit A PDFs. |
-| pdfplumber | >=0.10.0 | Fallback PDF extraction | Production fallback for PyMuPDF. No changes needed. |
-| pandas | >=2.1.0 | CSV/Excel processing | Latest is 3.0.1 (Jan 2026). Current constraint (>=2.1.0) allows 3.x. Existing CSV delimiter detection, column mapping, and row processing in `title/csv_processor.py` handles variable column formats. |
-| openpyxl | >=3.1.0 | Excel read/write | Latest is 3.1.5. Used via pandas ExcelWriter for mineral export. No changes needed. |
-| python-multipart | >=0.0.6 | File upload handling | FastAPI dependency for multipart/form-data uploads. Already handles dual-file uploads. |
+**What the app currently does:** Applies a `campaign_tag` to all contacts during bulk send. The `smart_list_name` field in `BulkSendRequest` is stored for reference only -- it is never sent to GHL as a SmartList creation call.
 
-### Existing Infrastructure (Reusable)
+**The fix is a workflow, not code:**
+1. Tag contacts with campaign tag (already works)
+2. User creates SmartList in GHL UI filtered by that tag (manual step)
+3. Document this workflow clearly in the app's Help page and send confirmation modal
 
-| Component | Location | Capability | How ECF/Convey 640 Uses It |
-|-----------|----------|------------|---------------------------|
-| PDF extractor | `services/extract/pdf_extractor.py` | Multi-column text extraction, exhibit detection, column count auto-detection | **Reuse as-is.** ECF PDFs are 2-3 column Exhibit A lists — same as existing OCC format. |
-| CSV processor | `services/title/csv_processor.py` | Delimiter detection (`_detect_delimiter`), column mapping (`_identify_columns`), row processing | **Adapt pattern.** Convey 640 has known columns (County, STR, Applicant, Case#, Respondent data). Copy logic for flexible column mapping. |
-| Excel processor | `services/title/excel_processor.py` | Excel file reading via pandas | **Reuse as-is.** `pd.read_excel()` handles .xlsx/.xls. |
-| Name parser | `services/extract/name_parser.py` | Parse names into first/middle/last/suffix, detect entity type | **Reuse as-is.** Same parsing needs for ECF respondent names. |
-| Address parser | `services/extract/address_parser.py` | Parse addresses, extract city/state/zip, handle PO Box | **Reuse as-is.** Same parsing needs for ECF addresses. |
-| Entity detector | `services/title/entity_detector.py` | Detect Individual/Trust/LLC/Estate/Corporation from text | **Reuse as-is.** Same entity types in ECF respondents. |
-| Export service | `services/extract/export_service.py` | Generate mineral export CSV/Excel with `MINERAL_EXPORT_COLUMNS` | **Reuse as-is.** ECF output uses same 53-column mineral format. |
-| Legal description parser | `services/proration/legal_description_parser.py` | Extract Block/Section/Abstract from legal text | **Extend.** Add County extraction (already in Convey 640 as column). STR parsing may need township/range patterns. |
-| File upload component | `frontend/components/FileUpload.tsx` | Drag-drop multi-file upload with validation | **Reuse.** Already supports `multiple={true}`. UI pattern: show two file slots (PDF required, CSV optional). |
+**Confidence:** HIGH -- Prior research confirmed this, codebase confirms `smart_list_name` is only used for Firestore job persistence (`campaign_name = data.smart_list_name or data.campaign_tag`), never sent to GHL API.
+
+## Stack for Each v1.5 Feature
+
+### 1. GHL Smart List "Fix" (Workflow Documentation)
+
+| Technology | Already Installed | Purpose | What Changes |
+|------------|------------------|---------|--------------|
+| GHL API v2 | Yes (`services/ghl/client.py`) | Contact upsert with tags | No change -- tagging already works |
+| React frontend | Yes | Send modal UI | Clarify UI text: "Campaign Tag" creates a GHL tag, user creates SmartList manually |
+
+**No new endpoints, no new libraries.** The "fix" is:
+- Rename "SmartList Name" field to "Campaign Tag" in `GhlSendModal.tsx` (it already IS a tag)
+- Add help text explaining the SmartList creation workflow
+- Optionally add a post-send instruction: "Create a SmartList in GHL filtered by tag: [campaign_tag]"
+
+### 2. Three-Button Enrichment UI (Validate / Clean Up / Enrich)
+
+| Technology | Already Installed | Purpose | What Changes |
+|------------|------------------|---------|--------------|
+| Gemini AI (`google-genai`) | Yes | "Validate" button -- QA pass | Tool-specific prompts already exist in `TOOL_PROMPTS` dict. Need to extend with "cleanup" prompts. |
+| Google Maps Geocoding API | Yes (`address_validation_service.py`) | "Clean Up" button -- address standardization | Already implemented as `validate_addresses_batch()`. Need to wire to frontend. |
+| PDL + SearchBug | Yes (`enrichment/`) | "Enrich" button -- contact data enrichment | Already implemented as `enrichment_service.py`. Need to wire to frontend. |
+| React | Yes | Button bar component | New shared component: `EnrichmentButtonBar.tsx` with three conditional buttons |
+
+**Key integration points (already exist in backend):**
+
+| Service | Endpoint | Status |
+|---------|----------|--------|
+| Gemini validation | `POST /api/ai/review` | Working -- accepts `{tool, entries}` |
+| Address validation | None (service-only) | Needs new endpoint: `POST /api/validate/addresses` |
+| Contact enrichment | `POST /api/enrichment/enrich` | Working -- needs wiring to tool pages |
+
+**Feature switches (already exist in `config.py`):**
+
+| Setting | Property | Controls |
+|---------|----------|----------|
+| `gemini_enabled` + `gemini_api_key` | `settings.use_gemini` | Validate button visibility |
+| `google_maps_enabled` + `google_maps_api_key` | `settings.use_google_maps` | Clean Up button visibility |
+| `enrichment_enabled` + `pdl_api_key`/`searchbug_api_key` | `settings.use_enrichment` | Enrich button visibility |
+
+**No new dependencies.** All three services are already installed and have backend implementations.
+
+### 3. Preview Update Mechanism After Enrichment Steps
+
+| Technology | Already Installed | Purpose | What Changes |
+|------------|------------------|---------|--------------|
+| React state | Yes | Update preview data after each step | Pattern: POST entries to service endpoint, receive updated entries, replace React state |
+| Pydantic models | Yes | Request/response models | `AiValidationResult` already has suggestions; address validation needs a batch response model |
+
+**The pattern for all three buttons:**
+```
+Frontend state (entries[])
+  --> POST to backend service endpoint
+  --> Backend returns updated entries[] + change summary
+  --> Frontend replaces state with updated entries[]
+  --> DataTable re-renders with new data
+```
+
+**Existing model that works for this:** `PostProcessResult` in `models/ai_validation.py` already has `corrections` (auto-applied) and `ai_suggestions` (manual review). This pattern can be reused for all three enrichment steps.
+
+**No new dependencies.** React state management with `useState` is sufficient -- no need for Redux/Zustand.
+
+### 4. Tool-Specific Gemini QA Prompts
+
+| Technology | Already Installed | Purpose | What Changes |
+|------------|------------------|---------|--------------|
+| `google-genai` | Yes | Gemini API client | No package changes |
+| Gemini 2.5 Flash | Yes (model: `gemini-2.5-flash`) | QA validation | No model changes |
+
+**Current prompts already exist in `gemini_service.py`:**
+
+| Tool | Prompt Key | Current Focus | v1.5 Enhancement |
+|------|-----------|---------------|------------------|
+| `extract` | `TOOL_PROMPTS["extract"]` | Name casing, entity type, address completeness | Add: cleanup-specific prompt for ALL CAPS to Title Case batch correction |
+| `title` | `TOOL_PROMPTS["title"]` | Name casing, entity type, duplicate detection | Add: cleanup-specific prompt for first/last name splitting |
+| `proration` | `TOOL_PROMPTS["proration"]` | County spelling, interest range, legal description | Add: cleanup-specific prompt for county name standardization |
+| `revenue` | `TOOL_PROMPTS["revenue"]` | Product code, interest sanity, financial math | No change needed -- `REVENUE_VERIFY_PROMPT` already handles verification |
+
+**Implementation approach:** Add a second prompt set (`CLEANUP_PROMPTS`) alongside existing `TOOL_PROMPTS`. The "Validate" button uses `TOOL_PROMPTS` (review-only, suggestions). The "Clean Up" button uses `CLEANUP_PROMPTS` (apply corrections directly).
+
+**Structured output already works:** `RESPONSE_SCHEMA` defines the JSON schema for Gemini responses. `response_mime_type="application/json"` and `response_json_schema=RESPONSE_SCHEMA` are already configured. Temperature is 0.1 (deterministic). No changes needed to the API call pattern.
+
+**Rate limiting already handled:** `_check_rate_limit()` enforces MAX_RPM=10, MAX_RPD=250, monthly budget cap. Batch size is 25 entries per API call with 6s delay between batches.
+
+**No new dependencies.** Prompt engineering only.
+
+### 5. Google Maps Address Validation (Clean Up Button)
+
+| Technology | Already Installed | Purpose | What Changes |
+|------------|------------------|---------|--------------|
+| Google Maps Geocoding API | Yes | Address standardization | Already implemented in `address_validation_service.py` |
+| `requests` | Yes | HTTP client for Maps API | Already used by the service |
+
+**Current implementation is complete and production-ready:**
+- `validate_address()` -- single address validation via Geocoding API
+- `validate_addresses_batch()` -- batch validation with progress callback
+- Rate limiting at 40 QPS (under Google's 50 QPS limit)
+- Change detection with before/after comparison
+- Property type classification (residential/commercial/PO box)
+
+**What's missing is only the API endpoint.** The service exists but is only called internally. Need:
+- `POST /api/validate/addresses` endpoint that accepts entries and returns corrected entries
+- Frontend button to trigger it
+
+**Important note on Google Maps Address Validation API vs Geocoding API:**
+The current service uses the **Geocoding API** (`maps.googleapis.com/maps/api/geocode/json`), not the dedicated **Address Validation API** (`addressvalidation.googleapis.com`). The Geocoding API is sufficient for address standardization (correcting street/city/state/zip). The Address Validation API provides deeper validation (USPS deliverability, component-level confirmation) but costs $0.005/request vs Geocoding's $0.005/request (same price tier). The Geocoding API approach is already working -- no reason to switch.
+
+**Confidence:** HIGH -- existing service is tested and functional. The Geocoding API is the correct choice for address cleanup (standardize components, detect changes). Switching to Address Validation API would add complexity without meaningful benefit for this use case.
+
+### 6. RRC Multi-Lease Number Lookups
+
+| Technology | Already Installed | Purpose | What Changes |
+|------------|------------------|---------|--------------|
+| `requests` | Yes | HTTP to RRC website | Already used in `rrc_data_service.py` and `rrc_county_download_service.py` |
+| BeautifulSoup4 + lxml | Yes | HTML parsing | Already used for individual lease lookups |
+| pandas | Yes | CSV parsing | Already used for RRC data processing |
+
+**Multi-lease lookup already works in-memory:**
+`rrc_data_service.lookup_multiple_acres()` already handles comma-separated RRC lease strings (e.g., `"08-41100, 08-41101"`), parsing them and summing acres from the in-memory DataFrame.
+
+**The bug is in `fetch_individual_leases()`:** When a row has multiple RRC lease numbers (comma-separated), the fetch-missing endpoint parses only the first district-lease pair from `rrc_lease`. The fix:
+1. Parse ALL lease numbers from `row.rrc_lease` or `row.raw_rrc` (using existing `parse_all_rrc_leases()`)
+2. Query each lease individually (already supported by `fetch_individual_leases()`)
+3. Sum acres across all matched leases (pattern already in `lookup_multiple_acres()`)
+
+**RRC scraping constraints (already coded):**
+- `MAX_INDIVIDUAL_QUERIES = 25` per fetch-missing call
+- `COUNTY_BUDGET_SECONDS = 180` (3 min per county)
+- `TOTAL_BUDGET_SECONDS = 300` (5 min total)
+- Human-like delays between queries (2-5s)
+- Custom SSL adapter required (`RRCSSLAdapter` with `verify=False`)
+
+**No new dependencies.** Bug fix in parsing logic only.
+
+### 7. ECF Upload Flow Fix
+
+| Technology | Already Installed | Purpose | What Changes |
+|------------|------------------|---------|--------------|
+| React | Yes | Upload UI | Fix auto-detect/auto-select/Process button flow |
+| FastAPI | Yes | Upload endpoint | No backend changes -- fix is frontend-only |
+
+**No new dependencies.** Frontend UX fix only.
 
 ## What NOT to Add
 
 | Technology | Why NOT Needed |
 |------------|----------------|
-| PyPDF2 / pypdf | PyMuPDF already handles all PDF text extraction needs. PyPDF2 is slower and less capable for multi-column layouts. |
-| tabula-py / camelot-py | Table extraction libraries. ECF PDFs are text-based lists, not complex tables. PyMuPDF text extraction is sufficient. |
-| OpenCV / pytesseract | OCR libraries. ECF PDFs are digitally generated (not scanned), so OCR is unnecessary. Revenue tool already has optional OCR for scanned documents; not needed here. |
-| xlrd / xlwt | Legacy Excel libraries. openpyxl via pandas handles all modern Excel needs. |
-| csvkit | CSV utilities. pandas delimiter detection and column mapping are sufficient. |
-| polars / duckdb | Alternative data processing. pandas is already installed and validated for CSV/Excel. No performance bottleneck for single-file processing. |
-| regex library (3rd-party) | Python's built-in `re` module handles all pattern matching needs. `utils/patterns.py` already has extensive regex patterns. |
+| GoHighLevel SmartList API | Does not exist. SmartLists are filter-based saved views, not API-creatable. Use tags instead. |
+| Google Address Validation API | Geocoding API already provides address standardization. Same pricing, simpler integration. |
+| `google-maps-services-python` | The `requests`-based Geocoding call in `address_validation_service.py` is simpler and already works. No need for a wrapper library. |
+| Redux / Zustand | React `useState` is sufficient for preview state management. App already uses this pattern successfully across all tools. |
+| WebSocket / Socket.IO | SSE (Server-Sent Events) via `sse-starlette` is already used for GHL send progress. No need for full duplex. |
+| Celery / Redis | Background tasks use `asyncio.create_task()` and `BackgroundTasks`. App runs on single Cloud Run instance (1Gi memory). No need for distributed task queue. |
+| New Gemini model | `gemini-2.5-flash` is already configured and working. No need to switch to a different model for QA prompts. |
 
-## Integration Points
+## Configuration Status
 
-### Backend (FastAPI)
+All required environment variables already exist:
 
-**Router:** `api/extract.py`
-- Add `format` parameter to upload endpoint (detect ECF vs standard Exhibit A)
-- Add optional `convey_file` parameter for dual-file upload
-- Reuse existing `ExtractionResult` and `PartyEntry` models
+| Variable | Current Status | Needed For |
+|----------|---------------|------------|
+| `GEMINI_API_KEY` | Configured | Validate button |
+| `GEMINI_ENABLED` | `false` (toggle) | Validate button visibility |
+| `GOOGLE_MAPS_API_KEY` | Configured | Clean Up button |
+| `GOOGLE_MAPS_ENABLED` | `false` (toggle) | Clean Up button visibility |
+| `PDL_API_KEY` | Configured | Enrich button |
+| `SEARCHBUG_API_KEY` | Configured | Enrich button |
+| `ENRICHMENT_ENABLED` | `false` (toggle) | Enrich button visibility |
+| `ENCRYPTION_KEY` | Required in production | GHL token encryption |
 
-**Models:** `models/extract.py`
-- No changes needed — `PartyEntry` already has all fields (name, address, entity type, notes)
-- Optional: Add `case_metadata` field to `ExtractionResult` for county/legal/applicant/case# (defer until phase implementation)
+**No new environment variables needed.**
 
-**Service:** `services/extract/`
-- New file: `ecf_parser.py` — ECF-specific header extraction (county, legal description, applicant, case number)
-- New file: `convey_processor.py` — Parse Convey 640 CSV/Excel with column mapping
-- New file: `merge_service.py` — Merge PDF respondent data with Convey 640 metadata (PDF is source of truth for names/addresses)
-- Reuse: `pdf_extractor.py`, `name_parser.py`, `address_parser.py`, `export_service.py`
+## New Endpoints Needed
 
-### Frontend (React)
+| Method | Endpoint | Purpose | Backend Service |
+|--------|----------|---------|-----------------|
+| `POST` | `/api/validate/addresses` | Batch address validation for Clean Up button | `address_validation_service.validate_addresses_batch()` |
+| `GET` | `/api/services/status` | Combined status of all enrichment services | Aggregate `use_gemini`, `use_google_maps`, `use_enrichment` |
 
-**Page:** `pages/Extract.tsx`
-- Add format selector radio buttons: "Standard Exhibit A" vs "ECF Multiunit Application"
-- Conditional dual-file upload UI when ECF selected:
-  - Slot 1: "ECF PDF (Required)" — `.pdf` only
-  - Slot 2: "Convey 640 CSV/Excel (Optional)" — `.csv, .xlsx, .xls`
-- Reuse existing `FileUpload` component with `multiple={true}`
-- Pass both files in single multipart/form-data request
-
-**Components:** No new components needed
-- `FileUpload.tsx` already handles multi-file drag-drop
-- `DataTable.tsx` already displays results with filtering
-- `Modal.tsx` already handles export configuration
-
-## Recommended Approach
-
-### Phase 1: PDF-Only ECF Extraction
-1. Add ECF format detection in `format_detector.py` (look for "MULTIUNIT" or case number pattern in header)
-2. Create `ecf_parser.py` to extract case metadata from PDF header
-3. Reuse `pdf_extractor.extract_party_list()` for respondent text
-4. Reuse `parser.parse_entries()` for numbered entry parsing
-5. Map to mineral export with case metadata in County/Campaign Name fields
-
-### Phase 2: Convey 640 Merge
-1. Create `convey_processor.py` to parse CSV/Excel with flexible column mapping
-2. Create `merge_service.py` to:
-   - Match PDF respondents to Convey 640 rows by name fuzzy match
-   - Use PDF names/addresses as source of truth (correct OCR errors)
-   - Pull county/STR/applicant/case# from Convey 640 metadata
-   - Fill mineral export fields with maximum coverage
-
-### Phase 3: Frontend Dual Upload
-1. Add format selector to Extract page
-2. Show two file slots when ECF selected
-3. Send both files in single request (FastAPI handles multipart with multiple files)
-4. Display merged results with case metadata
-
-## Version Updates Needed
-
-**NONE.** All dependencies are current and sufficient.
-
-**Optional future consideration:** Upgrade pandas to 3.0.1 for performance improvements, but current >=2.1.0 constraint already permits 3.x. No code changes required (pandas 3.0 maintains backward compatibility for basic DataFrame operations).
+All other endpoints already exist.
 
 ## Confidence Assessment
 
 | Area | Confidence | Rationale |
 |------|------------|-----------|
-| PDF extraction | **HIGH** | PyMuPDF 1.27.2 is current (Mar 2026). Existing `pdf_extractor.py` handles multi-column OCC PDFs in production. ECF PDFs are same format (2-3 columns, numbered entries, Exhibit A section). |
-| CSV/Excel processing | **HIGH** | pandas 3.0.1 is current (Jan 2026). Existing `csv_processor.py` handles delimiter detection and flexible column mapping. Convey 640 has known column names (easier than title opinion CSVs already processed). |
-| Name/address parsing | **HIGH** | Existing parsers validated on OCC Exhibit A data. ECF respondents have identical format (name on line 1, address on lines 2-3). |
-| Entity detection | **HIGH** | Same entity types (Individual, Trust, LLC, Estate, etc.) in ECF as existing formats. |
-| Mineral export | **HIGH** | `MINERAL_EXPORT_COLUMNS` already defined. ECF data maps to same fields. |
-| Frontend file upload | **MEDIUM** | `FileUpload.tsx` supports multi-file. Need UI pattern for "PDF required, CSV optional" — implementation detail, not stack limitation. |
+| GHL Smart Lists | **HIGH** | Prior research + codebase confirms SmartLists are not API-creatable. The "fix" is UX documentation, not code. |
+| Gemini QA prompts | **HIGH** | `google-genai` SDK with structured JSON output is already working. Adding new prompt templates is low-risk. |
+| Address validation | **HIGH** | `address_validation_service.py` is fully implemented with batch support. Only needs API endpoint wiring. |
+| Contact enrichment | **MEDIUM** | PDL + SearchBug services exist but have not been extensively tested in production. Wiring to frontend may surface edge cases. |
+| RRC multi-lease | **HIGH** | `lookup_multiple_acres()` and `parse_all_rrc_leases()` already handle multi-lease parsing. Bug is in the fetch-missing path not using these functions. |
+| ECF upload flow | **HIGH** | Frontend-only fix. No stack implications. |
+| Preview updates | **MEDIUM** | Pattern is straightforward (POST/response/setState) but needs careful design to handle partial failures and maintain undo capability. |
 
 ## Sources
 
-- [PyMuPDF Documentation](https://pymupdf.readthedocs.io/) — Latest version 1.27.2, March 2026
-- [PyMuPDF PyPI](https://pypi.org/project/PyMuPDF/) — Version history and installation
-- [pandas 3.0.1 Documentation](https://pandas.pydata.org/docs/whatsnew/v3.0.0.html) — Released January 21, 2026
-- [pandas.read_excel Documentation](https://pandas.pydata.org/docs/reference/api/pandas.read_excel.html) — CSV/Excel reading
-- [openpyxl Documentation](https://openpyxl.readthedocs.io/en/latest/) — Latest version 3.1.5
-- Existing codebase: `backend/requirements.txt`, `services/extract/`, `services/title/`, `utils/patterns.py`, `frontend/components/FileUpload.tsx`
+- Existing codebase analysis (all file paths referenced above)
+- Prior GHL API research: `.planning/research/FEATURES-GHL-API.md` (2026-02-26) -- confirmed SmartLists are filter-based
+- GHL API client: `backend/app/services/ghl/client.py` -- API version `2021-07-28`, base URL `services.leadconnectorhq.com`
+- Google Maps Geocoding API: already integrated at `maps.googleapis.com/maps/api/geocode/json`
+- Gemini SDK: already integrated via `google-genai` with structured output (`response_json_schema`)
+- RRC scraping: `backend/app/services/proration/rrc_county_download_service.py` and `rrc_data_service.py`
+
+**Note:** WebSearch and WebFetch were unavailable during this research. All findings are based on codebase analysis and prior research. GHL API endpoint availability should be re-verified against current GHL API documentation if the team wants to pursue SmartList creation. **Confidence on GHL SmartList unavailability: MEDIUM** -- while prior research and codebase both confirm this, the GHL API may have added new endpoints since the v1.2 research (Feb 2026). Recommend a manual check of `https://highlevel.stoplight.io/docs/integrations` before finalizing.
