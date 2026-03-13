@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Enrichment Pipeline & Bug Fixes
-status: completed
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-03-13T13:29:20.125Z"
-last_activity: 2026-03-13 -- Completed detect-format endpoint (05-01)
+status: in-progress
+stopped_at: Completed 07-02-PLAN.md
+last_updated: "2026-03-13T13:53:30Z"
+last_activity: 2026-03-13 -- Completed preview state hook and EditableCell (07-02)
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 7
-  completed_plans: 4
-  percent: 50
+  completed_plans: 5
+  percent: 71
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-13)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results. Everything else is secondary to parsing accuracy and data integrity.
-**Current focus:** v1.5 Enrichment Pipeline & Bug Fixes -- Phase 5 (ECF Upload Flow Fix)
+**Current focus:** v1.5 Enrichment Pipeline & Bug Fixes -- Phase 7 (Enrichment UI, Preview State)
 
 ## Current Position
 
-Phase: 5 of 9 (ECF Upload Flow Fix) -- first phase of v1.5
-Plan: 1 of 1 complete
-Status: Phase 5 Plan 1 complete
-Last activity: 2026-03-13 -- Completed detect-format endpoint (05-01)
+Phase: 7 of 9 (Enrichment UI, Preview State)
+Plan: 2 of 3 complete
+Status: Phase 7 Plan 2 complete
+Last activity: 2026-03-13 -- Completed preview state hook and EditableCell (07-02)
 
-Progress: [█████░░░░░] 50%
+Progress: [███████░░░] 71%
 
 ## Performance Metrics
 
@@ -44,6 +44,7 @@ Progress: [█████░░░░░] 50%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 05-ecf-upload-flow-fix | 1 | 13min | 13min |
+| 07-enrichment-ui-preview-state | 2 | 11min | 6min |
 
 ## Accumulated Context
 
@@ -51,6 +52,8 @@ Progress: [█████░░░░░] 50%
 
 - (05-01) Detect-format endpoint placed before /upload for correct FastAPI route matching
 - (05-01) Returns null format with error for unreadable PDFs instead of HTTP error
+- (07-02) usePreviewState resets edits/exclusions on sourceEntries change but preserves edits on updateEntries
+- (07-02) EditableCell kept as simple leaf component; edit tracking intelligence lives in usePreviewState
 
 ### Pending Todos
 
@@ -72,5 +75,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Completed 05-01-PLAN.md
-Resume file: .planning/phases/05-ecf-upload-flow-fix/05-01-SUMMARY.md
+Stopped at: Completed 07-02-PLAN.md
+Resume file: .planning/phases/07-enrichment-ui-preview-state/07-02-SUMMARY.md

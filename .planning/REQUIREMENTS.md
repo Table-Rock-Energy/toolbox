@@ -27,9 +27,9 @@ Requirements for v1.5 Enrichment Pipeline & Bug Fixes. Each maps to roadmap phas
 - [ ] **ENRICH-04**: Validate (Google Maps) runs second: verify cleaned addresses, flag mismatches
 - [ ] **ENRICH-05**: Enrich (PDL/SearchBug) runs third: fill phone/email using clean validated addresses
 - [ ] **ENRICH-06**: After each enrichment step, preview table updates with enriched data visible to user
-- [ ] **ENRICH-07**: Flagged rows (validation mismatches) sort to top of preview for user review
-- [ ] **ENRICH-08**: User can uncheck flagged rows to omit from export, or edit inline to fix
-- [ ] **ENRICH-09**: Export always reflects current preview state (edits, unchecks, enrichment results)
+- [x] **ENRICH-07**: Flagged rows (validation mismatches) sort to top of preview for user review
+- [x] **ENRICH-08**: User can uncheck flagged rows to omit from export, or edit inline to fix
+- [x] **ENRICH-09**: Export always reflects current preview state (edits, unchecks, enrichment results)
 - [ ] **ENRICH-10**: AI cleanup service uses provider-agnostic LLM interface (Gemini now, Ollama/Qwen swappable via admin settings in v1.6)
 - [ ] **ENRICH-11**: Tool-specific AI QA prompts: name cleanup for Extract/Title, figure verification for Revenue, address cleaning for all, overall accuracy check across both source files for ECF
 
@@ -82,9 +82,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ENRICH-04 | Phase 8 | Pending |
 | ENRICH-05 | Phase 8 | Pending |
 | ENRICH-06 | Phase 8 | Pending |
-| ENRICH-07 | Phase 7 | Pending |
-| ENRICH-08 | Phase 7 | Pending |
-| ENRICH-09 | Phase 7 | Pending |
+| ENRICH-07 | Phase 7 | Complete |
+| ENRICH-08 | Phase 7 | Complete |
+| ENRICH-09 | Phase 7 | Complete |
 | ENRICH-10 | Phase 8 | Pending |
 | ENRICH-11 | Phase 9 | Pending |
 | RRC-01 | Phase 6 | Pending |
