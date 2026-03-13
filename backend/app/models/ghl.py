@@ -103,10 +103,18 @@ class BulkSendRequest(BaseModel):
     """Request model for bulk contact send."""
     connection_id: str = Field(..., description="GHL connection ID")
     contacts: list[BulkContactData] = Field(..., min_length=1, description="Contacts to send")
-    campaign_tag: str = Field(..., min_length=1, description="Campaign tag to apply to all contacts")
+    campaign_tag: str = Field(
+        ...,
+        min_length=1,
+        description="Tag applied to all contacts. Filter by this tag in GHL to create SmartLists manually.",
+    )
     manual_sms: bool = Field(False, description="Apply 'manual sms' tag to all contacts")
     assigned_to_list: Optional[list[str]] = Field(None, max_length=2, description="1-2 GHL user IDs for contact owner assignment (even split)")
-    smart_list_name: Optional[str] = Field(None, description="SmartList/campaign name for reference")
+    smart_list_name: Optional[str] = Field(
+        None,
+        description="Deprecated: Use campaign_tag instead. Kept for backward compatibility.",
+        deprecated=True,
+    )
 
 
 class ContactResult(BaseModel):
