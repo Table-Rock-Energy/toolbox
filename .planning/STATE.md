@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Enrichment Pipeline & Bug Fixes
-status: roadmap_created
-stopped_at: null
-last_updated: "2026-03-13T00:00:00.000Z"
-last_activity: 2026-03-13 — Roadmap created (5 phases, 20 requirements)
+status: executing
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-03-13T13:08:39Z"
+last_activity: 2026-03-13 -- Completed Phase 5 Plan 1 (detect-format endpoint)
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 4
+  completed_plans: 2
   percent: 0
 ---
 
@@ -26,30 +26,31 @@ See: .planning/PROJECT.md (updated 2026-03-13)
 ## Current Position
 
 Phase: 5 of 9 (ECF Upload Flow Fix) -- first phase of v1.5
-Plan: --
-Status: Ready to plan
-Last activity: 2026-03-13 -- Roadmap created
+Plan: 1 of 1 complete
+Status: Phase 5 Plan 1 complete
+Last activity: 2026-03-13 -- Completed detect-format endpoint (05-01)
 
-Progress: [..........] 0%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0 (v1.5)
-- Average duration: --
-- Total execution time: --
+- Total plans completed: 1 (v1.5)
+- Average duration: 13min
+- Total execution time: 13min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 05-ecf-upload-flow-fix | 1 | 13min | 13min |
 
 ## Accumulated Context
 
 ### Decisions
 
-(None yet for v1.5)
+- (05-01) Detect-format endpoint placed before /upload for correct FastAPI route matching
+- (05-01) Returns null format with error for unreadable PDFs instead of HTTP error
 
 ### Pending Todos
 
@@ -71,5 +72,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Roadmap created, ready to plan Phase 5
-Resume file: .planning/ROADMAP.md
+Stopped at: Completed 05-01-PLAN.md
+Resume file: .planning/phases/05-ecf-upload-flow-fix/05-01-SUMMARY.md

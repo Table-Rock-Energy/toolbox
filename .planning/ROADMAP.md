@@ -131,7 +131,7 @@ Plans:
 | 2. Convey 640 Processing | v1.4 | 1/1 | Complete | 2026-03-12 |
 | 3. Merge and Export | v1.4 | 2/2 | Complete | 2026-03-12 |
 | 4. Frontend Integration | v1.4 | 2/2 | Complete | 2026-03-11 |
-| 5. ECF Upload Flow Fix | v1.5 | 0/2 | Planning complete | - |
+| 5. ECF Upload Flow Fix | 1/2 | In Progress|  | - |
 | 6. RRC & GHL Fixes | v1.5 | 0/2 | Planning complete | - |
 | 7. Enrichment UI & Preview State | v1.5 | 0/? | Not started | - |
 | 8. Enrichment Pipeline Features | v1.5 | 0/? | Not started | - |
