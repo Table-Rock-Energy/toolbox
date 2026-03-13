@@ -121,11 +121,15 @@ async def test_individual_results_used_directly(monkeypatch):
     def mock_lookup_county(name):
         return ("123", "08", name.upper())
 
-    # Patch at the module level where the imports are used
-    with patch("app.api.proration.lookup_rrc_acres", side_effect=mock_lookup_rrc_acres), \
-         patch("app.api.proration.lookup_rrc_by_lease_number", side_effect=mock_lookup_rrc_by_lease_number), \
-         patch("app.api.proration.fetch_individual_leases", side_effect=mock_fetch_individual_leases), \
-         patch("app.api.proration.ensure_counties_fresh", side_effect=mock_ensure_counties_fresh), \
+    # fetch_individual_leases and ensure_counties_fresh are imported at top of proration.py
+    # lookup_rrc_acres/by_lease_number are imported inside the function from firestore_service
+    # lookup_county is imported inside the function from rrc_county_codes
+    from app.api import proration as proration_mod  # force module load
+
+    with patch.object(proration_mod, "fetch_individual_leases", side_effect=mock_fetch_individual_leases), \
+         patch.object(proration_mod, "ensure_counties_fresh", side_effect=mock_ensure_counties_fresh), \
+         patch("app.services.firestore_service.lookup_rrc_acres", side_effect=mock_lookup_rrc_acres, create=True), \
+         patch("app.services.firestore_service.lookup_rrc_by_lease_number", side_effect=mock_lookup_rrc_by_lease_number, create=True), \
          patch("app.services.proration.rrc_county_codes.lookup_county", side_effect=mock_lookup_county):
 
         from app.api.proration import fetch_missing_rrc_data
@@ -181,10 +185,11 @@ async def test_fetch_status_set_on_returned_rows(monkeypatch):
         return None
 
     async def mock_fetch_individual_leases(leases):
+        # Only return data for lease 41100 (Owner A), not 99999 (Owner B)
         results = {}
-        # Only return data for the first lease
-        for d, ln, _cc in leases[:1]:
-            results[(d, ln)] = {"acres": 320.0, "type": "gas"}
+        for d, ln, _cc in leases:
+            if ln == "41100":
+                results[(d, ln)] = {"acres": 320.0, "type": "gas"}
         return results
 
     async def mock_ensure_counties_fresh(counties):
@@ -193,10 +198,12 @@ async def test_fetch_status_set_on_returned_rows(monkeypatch):
     def mock_lookup_county(name):
         return ("123", "08", name.upper())
 
-    with patch("app.api.proration.lookup_rrc_acres", side_effect=mock_lookup_rrc_acres), \
-         patch("app.api.proration.lookup_rrc_by_lease_number", side_effect=mock_lookup_rrc_by_lease_number), \
-         patch("app.api.proration.fetch_individual_leases", side_effect=mock_fetch_individual_leases), \
-         patch("app.api.proration.ensure_counties_fresh", side_effect=mock_ensure_counties_fresh), \
+    from app.api import proration as proration_mod
+
+    with patch.object(proration_mod, "fetch_individual_leases", side_effect=mock_fetch_individual_leases), \
+         patch.object(proration_mod, "ensure_counties_fresh", side_effect=mock_ensure_counties_fresh), \
+         patch("app.services.firestore_service.lookup_rrc_acres", side_effect=mock_lookup_rrc_acres, create=True), \
+         patch("app.services.firestore_service.lookup_rrc_by_lease_number", side_effect=mock_lookup_rrc_by_lease_number, create=True), \
          patch("app.services.proration.rrc_county_codes.lookup_county", side_effect=mock_lookup_county):
 
         from app.api.proration import fetch_missing_rrc_data
