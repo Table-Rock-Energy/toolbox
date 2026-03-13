@@ -4,7 +4,7 @@ milestone: v1.5
 milestone_name: Enrichment Pipeline & Bug Fixes
 status: completed
 stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-03-13T13:27:31.399Z"
+last_updated: "2026-03-13T13:29:20.125Z"
 last_activity: 2026-03-13 -- Completed detect-format endpoint (05-01)
 progress:
   total_phases: 5
