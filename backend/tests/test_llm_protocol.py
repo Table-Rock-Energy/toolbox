@@ -58,6 +58,9 @@ class TestGeminiProviderCleanup:
             "app.services.llm.gemini_provider.asyncio.to_thread",
             new_callable=AsyncMock,
             return_value=canned_suggestions,
+        ), patch(
+            "app.services.gemini_service._get_client",
+            return_value=MagicMock(),
         ):
             result = await provider.cleanup_entries(
                 "extract", [{"name": "JOHN SMITH"}]
