@@ -49,9 +49,9 @@ Exceptions: none
 |------|------|--------|-------------|
 | Body | 14px | 400 (regular) | 1.5 |
 | Label | 12px | 500 (medium) | 1.33 |
-| Heading | 20px | 600 (semibold) | 1.2 |
+| Heading | 20px | 500 (medium) | 1.2 |
 
-Note: This phase touches only the Label tier (12px/text-xs for confidence badges and field labels within ProposedChangesPanel).
+Note: This phase touches only the Label tier (12px/text-xs for confidence badges and field labels within ProposedChangesPanel). Two weights declared: 400 (regular) for body text, 500 (medium) for labels and headings.
 
 ---
 
