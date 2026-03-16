@@ -276,6 +276,144 @@ class TestPipelineEnrich:
         assert "not enabled" in data["error"].lower() or "not configured" in data["error"].lower()
 
 
+class TestPipelineRequestModel:
+    """Test PipelineRequest model extensions."""
+
+    def test_pipeline_request_accepts_source_data(self):
+        """PipelineRequest accepts source_data=None by default (existing calls still work)."""
+        from app.models.pipeline import PipelineRequest
+
+        # Without source_data (backward compatible)
+        req = PipelineRequest(tool="extract", entries=[{"name": "Test"}])
+        assert req.source_data is None
+
+        # With source_data
+        csv_rows = [{"entry_number": "1", "name": "Test"}]
+        req2 = PipelineRequest(
+            tool="ecf", entries=[{"name": "Test"}], source_data=csv_rows
+        )
+        assert req2.source_data == csv_rows
+
+    def test_pipeline_request_accepts_ecf_tool(self):
+        """PipelineRequest accepts tool='ecf'."""
+        from app.models.pipeline import PipelineRequest
+
+        req = PipelineRequest(tool="ecf", entries=[])
+        assert req.tool == "ecf"
+
+
+class TestPipelineMedianInjection:
+    """Test revenue median injection and ECF source_data passthrough."""
+
+    @pytest.mark.asyncio
+    async def test_ecf_cleanup_passes_source_data(self, authenticated_client):
+        """POST /api/pipeline/cleanup with tool='ecf' passes source_data to provider."""
+        mock_provider = AsyncMock()
+        mock_provider.cleanup_entries = AsyncMock(return_value=[])
+        mock_provider.is_available.return_value = True
+
+        csv_rows = [{"entry_number": "1", "name": "Test User"}]
+
+        with patch(
+            "app.api.pipeline.get_llm_provider", return_value=mock_provider
+        ):
+            response = await authenticated_client.post(
+                "/api/pipeline/cleanup",
+                json={
+                    "tool": "ecf",
+                    "entries": [{"name": "Test User", "entry_number": "1"}],
+                    "source_data": csv_rows,
+                },
+            )
+
+        assert response.status_code == 200
+        # Verify source_data was passed to cleanup_entries
+        mock_provider.cleanup_entries.assert_called_once()
+        call_kwargs = mock_provider.cleanup_entries.call_args
+        assert call_kwargs.kwargs.get("source_data") == csv_rows
+
+    @pytest.mark.asyncio
+    async def test_revenue_injects_median(self, authenticated_client):
+        """POST /api/pipeline/cleanup with tool='revenue' injects _batch_median_value."""
+        mock_provider = AsyncMock()
+        mock_provider.cleanup_entries = AsyncMock(return_value=[])
+        mock_provider.is_available.return_value = True
+
+        entries = [
+            {"owner_value": "100.00"},
+            {"owner_value": "200.00"},
+            {"owner_value": "150.00"},
+        ]
+
+        with patch(
+            "app.api.pipeline.get_llm_provider", return_value=mock_provider
+        ):
+            response = await authenticated_client.post(
+                "/api/pipeline/cleanup",
+                json={"tool": "revenue", "entries": entries},
+            )
+
+        assert response.status_code == 200
+        # Check that entries passed to provider had median injected
+        call_args = mock_provider.cleanup_entries.call_args
+        passed_entries = call_args[0][1]  # positional arg: entries
+        assert "_batch_median_value" in passed_entries[0]
+        assert "_outlier_threshold" in passed_entries[0]
+        assert passed_entries[0]["_batch_median_value"] == 150.0
+        assert passed_entries[0]["_outlier_threshold"] == 450.0
+
+    @pytest.mark.asyncio
+    async def test_revenue_skips_median_when_few_values(self, authenticated_client):
+        """POST /api/pipeline/cleanup with < 3 revenue entries skips median injection."""
+        mock_provider = AsyncMock()
+        mock_provider.cleanup_entries = AsyncMock(return_value=[])
+        mock_provider.is_available.return_value = True
+
+        entries = [
+            {"owner_value": "100.00"},
+            {"owner_value": "200.00"},
+        ]
+
+        with patch(
+            "app.api.pipeline.get_llm_provider", return_value=mock_provider
+        ):
+            response = await authenticated_client.post(
+                "/api/pipeline/cleanup",
+                json={"tool": "revenue", "entries": entries},
+            )
+
+        assert response.status_code == 200
+        call_args = mock_provider.cleanup_entries.call_args
+        passed_entries = call_args[0][1]
+        assert "_batch_median_value" not in passed_entries[0]
+
+    @pytest.mark.asyncio
+    async def test_extract_does_not_inject_median(self, authenticated_client):
+        """POST /api/pipeline/cleanup with tool='extract' does NOT inject median metadata."""
+        mock_provider = AsyncMock()
+        mock_provider.cleanup_entries = AsyncMock(return_value=[])
+        mock_provider.is_available.return_value = True
+
+        entries = [
+            {"name": "A", "owner_value": "100.00"},
+            {"name": "B", "owner_value": "200.00"},
+            {"name": "C", "owner_value": "150.00"},
+        ]
+
+        with patch(
+            "app.api.pipeline.get_llm_provider", return_value=mock_provider
+        ):
+            response = await authenticated_client.post(
+                "/api/pipeline/cleanup",
+                json={"tool": "extract", "entries": entries},
+            )
+
+        assert response.status_code == 200
+        call_args = mock_provider.cleanup_entries.call_args
+        passed_entries = call_args[0][1]
+        assert "_batch_median_value" not in passed_entries[0]
+
+
 class TestPipelineAuth:
     """Test that pipeline endpoints require authentication."""
 
