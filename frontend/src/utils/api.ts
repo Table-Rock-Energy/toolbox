@@ -571,6 +571,7 @@ export interface PipelineRequest {
   tool: string
   entries: Record<string, unknown>[]
   field_mapping?: Record<string, string>
+  source_data?: Record<string, unknown>[] | null
 }
 
 export interface PipelineResponse {
@@ -581,12 +582,12 @@ export interface PipelineResponse {
 }
 
 export const pipelineApi = {
-  cleanup: (tool: string, entries: Record<string, unknown>[], fieldMapping?: Record<string, string>) =>
-    api.post<PipelineResponse>('/pipeline/cleanup', { tool, entries, field_mapping: fieldMapping } as PipelineRequest, { timeout: 120000 }),
-  validate: (tool: string, entries: Record<string, unknown>[], fieldMapping?: Record<string, string>) =>
-    api.post<PipelineResponse>('/pipeline/validate', { tool, entries, field_mapping: fieldMapping } as PipelineRequest, { timeout: 120000 }),
-  enrich: (tool: string, entries: Record<string, unknown>[], fieldMapping?: Record<string, string>) =>
-    api.post<PipelineResponse>('/pipeline/enrich', { tool, entries, field_mapping: fieldMapping } as PipelineRequest, { timeout: 120000 }),
+  cleanup: (tool: string, entries: Record<string, unknown>[], fieldMapping?: Record<string, string>, sourceData?: Record<string, unknown>[]) =>
+    api.post<PipelineResponse>('/pipeline/cleanup', { tool, entries, field_mapping: fieldMapping, source_data: sourceData || undefined } as PipelineRequest, { timeout: 120000 }),
+  validate: (tool: string, entries: Record<string, unknown>[], fieldMapping?: Record<string, string>, sourceData?: Record<string, unknown>[]) =>
+    api.post<PipelineResponse>('/pipeline/validate', { tool, entries, field_mapping: fieldMapping, source_data: sourceData || undefined } as PipelineRequest, { timeout: 120000 }),
+  enrich: (tool: string, entries: Record<string, unknown>[], fieldMapping?: Record<string, string>, sourceData?: Record<string, unknown>[]) =>
+    api.post<PipelineResponse>('/pipeline/enrich', { tool, entries, field_mapping: fieldMapping, source_data: sourceData || undefined } as PipelineRequest, { timeout: 120000 }),
 }
 
 export default api

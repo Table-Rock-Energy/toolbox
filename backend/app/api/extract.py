@@ -105,6 +105,7 @@ async def upload_pdf(
         # Route to correct parser based on format
         case_metadata = None
         merge_warnings = None
+        original_csv_entries = None
         if fmt in (ExhibitFormat.TABLE_ATTENTION, ExhibitFormat.TABLE_SPLIT_ADDR):
             entries = parse_table_pdf(file_bytes, fmt)
             # Fallback: if table parser found nothing, try free-text parser
@@ -129,12 +130,15 @@ async def upload_pdf(
 
             # Merge with optional CSV file
             merge_warnings = None
+            original_csv_entries = None
             if csv_file:
                 csv_bytes = await csv_file.read()
                 from app.services.extract.convey640_parser import parse_convey640
                 from app.services.extract.merge_service import merge_entries
 
                 csv_result = parse_convey640(csv_bytes, csv_file.filename or "upload.csv")
+                # Capture original CSV entries before merge for cross-file comparison
+                original_csv_entries = [e.model_dump() for e in csv_result.entries] if csv_result.entries else None
                 merge_result = merge_entries(ecf_result, csv_result)
                 entries = merge_result.entries
                 case_metadata = merge_result.metadata
@@ -221,6 +225,7 @@ async def upload_pdf(
             format_warning=format_warning,
             case_metadata=case_metadata,
             merge_warnings=merge_warnings,
+            original_csv_entries=original_csv_entries if fmt == ExhibitFormat.ECF else None,
             post_process=pp_result,
         )
 

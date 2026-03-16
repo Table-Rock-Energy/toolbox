@@ -52,6 +52,7 @@ interface ExtractionResult {
   format_warning?: string
   case_metadata?: CaseMetadata
   merge_warnings?: string[]
+  original_csv_entries?: Record<string, unknown>[]
   post_process?: PostProcessResult
 }
 
@@ -122,6 +123,7 @@ export default function Extract() {
   const [error, setError] = useState<string | null>(null)
   const [formatHint, setFormatHint] = useState<string>('')
   const [csvFile, setCsvFile] = useState<File | null>(null)
+  const [originalCsvEntries, setOriginalCsvEntries] = useState<Record<string, unknown>[]>([])
   const [stagedFile, setStagedFile] = useState<File | null>(null)
   const [isDetecting, setIsDetecting] = useState(false)
 
@@ -470,6 +472,13 @@ export default function Extract() {
         setPreCorrectionEntries(null)
       }
 
+      // Capture original CSV entries for ECF cross-file comparison
+      if (data.result?.original_csv_entries) {
+        setOriginalCsvEntries(data.result.original_csv_entries)
+      } else {
+        setOriginalCsvEntries([])
+      }
+
       setJobs((prev) => [newJob, ...prev])
       setActiveJob(newJob)
     } catch (err) {
@@ -598,12 +607,13 @@ export default function Extract() {
 
   // Enrichment pipeline: sequential cleanup -> validate -> enrich
   const pipeline = useEnrichmentPipeline({
-    tool: 'extract',
+    tool: formatHint === 'ECF' ? 'ecf' : 'extract',
     previewEntries: preview.previewEntries,
     updateEntries: preview.updateEntries,
     editedFields: preview.editedFields,
     keyField: 'entry_number' as keyof PartyEntry,
     featureFlags,
+    sourceData: formatHint === 'ECF' ? originalCsvEntries : undefined,
   })
 
   const resetFilters = () => {

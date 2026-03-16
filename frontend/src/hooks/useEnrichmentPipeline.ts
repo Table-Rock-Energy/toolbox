@@ -11,6 +11,7 @@ export interface UseEnrichmentPipelineOptions<T> {
   editedFields: Map<string, Partial<T>>
   keyField: keyof T
   featureFlags: { cleanUpEnabled: boolean; validateEnabled: boolean; enrichEnabled: boolean }
+  sourceData?: Record<string, unknown>[]
 }
 
 export interface UseEnrichmentPipelineReturn {
@@ -35,7 +36,7 @@ export interface UseEnrichmentPipelineReturn {
 export function useEnrichmentPipeline<T extends object>(
   options: UseEnrichmentPipelineOptions<T>
 ): UseEnrichmentPipelineReturn {
-  const { tool, previewEntries, updateEntries, editedFields, keyField, featureFlags } = options
+  const { tool, previewEntries, updateEntries, editedFields, keyField, featureFlags, sourceData } = options
 
   const [completedSteps, setCompletedSteps] = useState<Set<PipelineStep>>(new Set())
   const [activeAction, setActiveAction] = useState<PipelineStep | null>(null)
@@ -78,7 +79,7 @@ export function useEnrichmentPipeline<T extends object>(
           ? pipelineApi.validate
           : pipelineApi.enrich
 
-      const response = await apiMethod(tool, entries)
+      const response = await apiMethod(tool, entries, undefined, step === 'cleanup' ? sourceData : undefined)
 
       if (response.data && response.data.success) {
         const changes = response.data.proposed_changes
@@ -94,7 +95,7 @@ export function useEnrichmentPipeline<T extends object>(
     } finally {
       setActiveAction(null)
     }
-  }, [completedSteps, previewEntries, tool])
+  }, [completedSteps, previewEntries, tool, sourceData])
 
   const onCleanUp = useCallback(() => { runStep('cleanup') }, [runStep])
   const onValidate = useCallback(() => { runStep('validate') }, [runStep])
