@@ -1116,10 +1116,12 @@ export default function Title() {
                           <tr
                             key={entryKey}
                             className={`
-                              ${entry.duplicate_flag && !entry.has_address ? 'bg-purple-50' :
+                              ${pipeline.recentlyAppliedKeys.has(entryKey) ? 'bg-green-100' :
+                                entry.duplicate_flag && !entry.has_address ? 'bg-purple-50' :
                                 entry.duplicate_flag ? 'bg-yellow-50' :
                                 !entry.has_address ? 'bg-red-50' : ''}
                               ${isExcluded ? 'opacity-50' : ''}
+                              transition-colors duration-[2000ms]
                             `}
                           >
                             {isColumnVisible('checkbox') && (

@@ -1358,7 +1358,7 @@ export default function Proration() {
                         const rowKey = row._uid ?? ''
                         const isExcluded = preview.isExcluded(rowKey)
                         return (
-                        <tr key={rowKey} className={`${!row.rrc_acres ? 'bg-red-50' : ''} ${isExcluded ? 'opacity-50 bg-gray-100' : ''}`}>
+                        <tr key={rowKey} className={`${pipeline.recentlyAppliedKeys.has(rowKey) ? 'bg-green-100' : !row.rrc_acres ? 'bg-red-50' : ''} ${isExcluded ? 'opacity-50 bg-gray-100' : ''} transition-colors duration-[2000ms]`}>
                           <td className="py-2 px-3">
                             <input
                               type="checkbox"

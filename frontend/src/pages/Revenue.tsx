@@ -989,7 +989,7 @@ export default function Revenue() {
                         return (
                           <tr
                             key={row._id}
-                            className={isExcluded ? 'opacity-50 bg-gray-100' : ''}
+                            className={`${pipeline.recentlyAppliedKeys.has(row._id) ? 'bg-green-100' : ''} ${isExcluded ? 'opacity-50 bg-gray-100' : ''} transition-colors duration-[2000ms]`}
                           >
                             <td className="py-2 px-2">
                               <input

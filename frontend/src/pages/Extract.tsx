@@ -1215,8 +1215,9 @@ export default function Extract() {
                           <tr
                             key={entry.entry_number}
                             className={`
-                              ${entry.flagged ? 'bg-yellow-50' : ''}
+                              ${pipeline.recentlyAppliedKeys.has(String(entry.entry_number)) ? 'bg-green-100' : entry.flagged ? 'bg-yellow-50' : ''}
                               ${isExcluded ? 'opacity-50 bg-gray-100' : ''}
+                              transition-colors duration-[2000ms]
                             `}
                           >
                             <td className="py-2 px-3">
