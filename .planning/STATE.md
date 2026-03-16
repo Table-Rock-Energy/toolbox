@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Enrichment Pipeline & Bug Fixes
-status: completed
-stopped_at: Phase 8 context gathered
-last_updated: "2026-03-16T14:55:00.980Z"
-last_activity: 2026-03-13 -- Completed enrichment UI wiring across all tool pages (07-03)
+status: in-progress
+stopped_at: Completed 08-01-PLAN.md
+last_updated: "2026-03-16T16:02:00Z"
+last_activity: 2026-03-16 -- Completed pipeline API backend (08-01)
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 7
-  completed_plans: 7
-  percent: 100
+  total_plans: 9
+  completed_plans: 8
+  percent: 89
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-13)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results. Everything else is secondary to parsing accuracy and data integrity.
-**Current focus:** v1.5 Enrichment Pipeline & Bug Fixes -- Phase 7 complete, ready for Phase 8
+**Current focus:** v1.5 Enrichment Pipeline & Bug Fixes -- Phase 8 plan 1 complete, plan 2 remaining
 
 ## Current Position
 
-Phase: 7 of 9 (Enrichment UI, Preview State) -- COMPLETE
-Plan: 3 of 3 complete
-Status: Phase 7 complete
-Last activity: 2026-03-13 -- Completed enrichment UI wiring across all tool pages (07-03)
+Phase: 8 of 9 (Enrichment Pipeline Features) -- IN PROGRESS
+Plan: 1 of 2 complete
+Status: Phase 8 in progress
+Last activity: 2026-03-16 -- Completed pipeline API backend (08-01)
 
-Progress: [██████████] 100%
+Progress: [████████░░] 89%
 
 ## Performance Metrics
 
@@ -45,6 +45,7 @@ Progress: [██████████] 100%
 |-------|-------|-------|----------|
 | 05-ecf-upload-flow-fix | 1 | 13min | 13min |
 | 07-enrichment-ui-preview-state | 3 | 19min | 6min |
+| 08-enrichment-pipeline-features | 1 | 18min | 18min |
 
 ## Accumulated Context
 
@@ -58,6 +59,10 @@ Progress: [██████████] 100%
 - (07-02) EditableCell kept as simple leaf component; edit tracking intelligence lives in usePreviewState
 - [Phase 07]: Proration keeps modal editor instead of inline EditableCell per RESEARCH recommendation
 - [Phase 07]: EnrichmentToolbar callbacks are stubs in Phase 7; enrichment wiring deferred to Phase 8
+- (08-01) CLEANUP_PROMPTS are correction-focused vs existing TOOL_PROMPTS which are validation-focused
+- (08-01) Validate endpoint uses validate_address() per entry (not batch) to build ProposedChange diffs without auto-applying
+- (08-01) Field mapping system: per-tool defaults with request-level overrides for consistent API across tools
+- (08-01) Revenue tool returns empty proposed changes for validate (no address fields)
 
 ### Pending Todos
 
@@ -78,6 +83,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-16T14:55:00.971Z
-Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-enrichment-pipeline-features/08-CONTEXT.md
+Last session: 2026-03-16T16:02:00Z
+Stopped at: Completed 08-01-PLAN.md
+Resume file: .planning/phases/08-enrichment-pipeline-features/08-02-PLAN.md

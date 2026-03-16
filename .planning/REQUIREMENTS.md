@@ -23,14 +23,14 @@ Requirements for v1.5 Enrichment Pipeline & Bug Fixes. Each maps to roadmap phas
 
 - [x] **ENRICH-01**: Three conditional buttons shown across all tool pages: Clean Up, Validate, Enrich
 - [x] **ENRICH-02**: Buttons visible only when corresponding API keys are set and feature switches enabled (Google API key + switches for Clean Up and Validate; PDL/SearchBug keys for Enrich)
-- [ ] **ENRICH-03**: Clean Up (AI) runs first: fix names, strip c/o from addresses, move extras to notes, attempt to complete partial entries
-- [ ] **ENRICH-04**: Validate (Google Maps) runs second: verify cleaned addresses, flag mismatches
-- [ ] **ENRICH-05**: Enrich (PDL/SearchBug) runs third: fill phone/email using clean validated addresses
+- [x] **ENRICH-03**: Clean Up (AI) runs first: fix names, strip c/o from addresses, move extras to notes, attempt to complete partial entries
+- [x] **ENRICH-04**: Validate (Google Maps) runs second: verify cleaned addresses, flag mismatches
+- [x] **ENRICH-05**: Enrich (PDL/SearchBug) runs third: fill phone/email using clean validated addresses
 - [ ] **ENRICH-06**: After each enrichment step, preview table updates with enriched data visible to user
 - [x] **ENRICH-07**: Flagged rows (validation mismatches) sort to top of preview for user review
 - [x] **ENRICH-08**: User can uncheck flagged rows to omit from export, or edit inline to fix
 - [x] **ENRICH-09**: Export always reflects current preview state (edits, unchecks, enrichment results)
-- [ ] **ENRICH-10**: AI cleanup service uses provider-agnostic LLM interface (Gemini now, Ollama/Qwen swappable via admin settings in v1.6)
+- [x] **ENRICH-10**: AI cleanup service uses provider-agnostic LLM interface (Gemini now, Ollama/Qwen swappable via admin settings in v1.6)
 - [ ] **ENRICH-11**: Tool-specific AI QA prompts: name cleanup for Extract/Title, figure verification for Revenue, address cleaning for all, overall accuracy check across both source files for ECF
 
 ### RRC/Proration
@@ -78,14 +78,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | GHL-02 | Phase 6 | Pending |
 | ENRICH-01 | Phase 7 | Complete |
 | ENRICH-02 | Phase 7 | Complete |
-| ENRICH-03 | Phase 8 | Pending |
-| ENRICH-04 | Phase 8 | Pending |
-| ENRICH-05 | Phase 8 | Pending |
+| ENRICH-03 | Phase 8 | Complete |
+| ENRICH-04 | Phase 8 | Complete |
+| ENRICH-05 | Phase 8 | Complete |
 | ENRICH-06 | Phase 8 | Pending |
 | ENRICH-07 | Phase 7 | Complete |
 | ENRICH-08 | Phase 7 | Complete |
 | ENRICH-09 | Phase 7 | Complete |
-| ENRICH-10 | Phase 8 | Pending |
+| ENRICH-10 | Phase 8 | Complete |
 | ENRICH-11 | Phase 9 | Pending |
 | RRC-01 | Phase 6 | Pending |
 | RRC-02 | Phase 6 | Pending |

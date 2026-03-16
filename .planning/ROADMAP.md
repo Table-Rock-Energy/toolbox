@@ -135,5 +135,5 @@ Plans:
 | 5. ECF Upload Flow Fix | 1/2 | In Progress|  | - |
 | 6. RRC & GHL Fixes | v1.5 | 0/2 | Planning complete | - |
 | 7. Enrichment UI & Preview State | 2/3 | In Progress|  | - |
-| 8. Enrichment Pipeline Features | v1.5 | 0/2 | Planning complete | - |
+| 8. Enrichment Pipeline Features | v1.5 | 1/2 | In Progress | - |
 | 9. Tool-Specific AI Prompts | v1.5 | 0/? | Not started | - |
