@@ -31,6 +31,7 @@ from app.api.ai_validation import router as ai_router
 from app.api.enrichment import router as enrichment_router
 from app.api.etl import router as etl_router
 from app.api.features import router as features_router
+from app.api.pipeline import router as pipeline_router
 from app.core.config import settings
 
 # Configure logging
@@ -82,6 +83,7 @@ app.include_router(ai_router, prefix="/api/ai", tags=["ai"], dependencies=[Depen
 app.include_router(enrichment_router, prefix="/api/enrichment", tags=["enrichment"], dependencies=[Depends(require_auth)])
 app.include_router(etl_router, prefix="/api/etl", tags=["etl"], dependencies=[Depends(require_auth)])
 app.include_router(features_router, prefix="/api/features", tags=["features"], dependencies=[Depends(require_auth)])
+app.include_router(pipeline_router, prefix="/api/pipeline", tags=["pipeline"], dependencies=[Depends(require_auth)])
 
 
 @app.exception_handler(404)
