@@ -100,11 +100,12 @@ Plans:
   3. Enrich button sends validated entries to PDL/SearchBug and fills phone/email fields -- results appear in preview
   4. After each enrichment step completes, the preview table immediately reflects the updated data without page reload (ENRICH-06 -- uses updateEntries infrastructure from Phase 7)
   5. AI cleanup service uses a provider-agnostic LLM interface so Gemini can be swapped for Ollama/Qwen in v1.6 via admin settings without code changes
-**Plans**: 2 plans
+**Plans**: 3 plans
 
 Plans:
-- [ ] 08-01-PLAN.md -- LLM protocol + pipeline API endpoints (cleanup, validate, enrich) with unified ProposedChange format (ENRICH-03, ENRICH-04, ENRICH-05, ENRICH-10)
-- [ ] 08-02-PLAN.md -- Frontend useEnrichmentPipeline hook, ProposedChangesPanel, wire into all 4 tool pages (ENRICH-06)
+- [x] 08-01-PLAN.md -- LLM protocol + pipeline API endpoints (cleanup, validate, enrich) with unified ProposedChange format (ENRICH-03, ENRICH-04, ENRICH-05, ENRICH-10)
+- [x] 08-02-PLAN.md -- Frontend useEnrichmentPipeline hook, ProposedChangesPanel, wire into all 4 tool pages (ENRICH-06)
+- [ ] 08-03-PLAN.md -- Gap closure: wire recentlyAppliedKeys green row highlight into all 4 tool pages (ENRICH-06)
 
 ### Phase 9: Tool-Specific AI Prompts
 **Goal**: Each tool gets tailored AI QA prompts that leverage tool-specific data patterns for better cleanup and validation
@@ -135,5 +136,5 @@ Plans:
 | 5. ECF Upload Flow Fix | 1/2 | In Progress|  | - |
 | 6. RRC & GHL Fixes | v1.5 | 0/2 | Planning complete | - |
 | 7. Enrichment UI & Preview State | 2/3 | In Progress|  | - |
-| 8. Enrichment Pipeline Features | 2/2 | Complete   | 2026-03-16 | - |
+| 8. Enrichment Pipeline Features | 2/3 | Gap closure | 2026-03-16 | - |
 | 9. Tool-Specific AI Prompts | v1.5 | 0/? | Not started | - |
