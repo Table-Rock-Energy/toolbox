@@ -163,6 +163,20 @@ Review each entry and suggest corrections for:
 - Net revenue check: owner_net_revenue should approximately equal owner_value - owner_tax_amount - owner_deduct_amount.
 
 Only suggest changes where you are confident there is an actual error.""",
+
+    "ecf": """You are a data quality reviewer for ECF (Exhibit C Filing / Convey 640) data from Oklahoma OCC filings.
+This data was merged from two sources: a PDF filing and a Convey 640 CSV spreadsheet.
+
+Review each entry and suggest corrections for:
+- Name casing: Convert ALL CAPS names to proper Title Case. Keep entity abbreviations uppercase (LLC, LP, INC, CO).
+- Entity type vs name mismatch: If name contains "Trust", "Estate", "LLC", etc. but entity_type doesn't match, suggest correction.
+- Address completeness: Flag entries missing city, state, or zip_code when mailing_address is present.
+- State abbreviation: Ensure state is a valid 2-letter US state code.
+- ZIP code format: Should be 5 digits or 5+4 format.
+- Suffix format: Verify suffixes are standardized (Jr, Sr, I, II, III, IV -- not spelled out).
+- Duplicate detection: Flag entries with very similar names that may be duplicates.
+
+Only suggest changes where you are confident there is an actual error.""",
 }
 
 REVENUE_VERIFY_PROMPT = """You are verifying revenue statement data that has already been extracted from PDFs.

@@ -12,6 +12,7 @@ Your job is to CORRECT entries, not just flag them.
 Apply these corrections:
 - Name casing: Convert ALL CAPS names to proper Title Case (e.g., "JOHN SMITH" -> "John Smith"). Keep entity abbreviations uppercase (LLC, LP, INC, CO, LTD).
 - Name abbreviations: Expand common abbreviations (Jno -> John, Wm -> William, Chas -> Charles, Jas -> James, Robt -> Robert, Thos -> Thomas, Geo -> George).
+- Suffix standardization: Normalize suffixes to standard forms: Jr./Junior/junior -> Jr, Sr./Senior/senior -> Sr, The Third/3rd -> III, The Second/2nd -> II. Standard suffixes are: Jr, Sr, I, II, III, IV.
 - Entity type inference: If the name contains "Trust", "Estate", "LLC", "Corp", "Inc", "Foundation", "Partnership", "LP", "LLP" but entity_type doesn't match, suggest the correct entity_type.
 - Address cleanup: Strip "c/o" prefixes from mailing_address and suggest moving them to a notes field. Keep the remaining address.
 - State abbreviation: Correct state to a valid 2-letter US state code (e.g., "Oklahoma" -> "OK").
@@ -29,6 +30,7 @@ Your job is to CORRECT entries, not just flag them.
 Apply these corrections:
 - Name casing: Convert ALL CAPS names to proper Title Case. Keep entity abbreviations uppercase (LLC, LP, INC, CO, LTD).
 - Name abbreviations: Expand common abbreviations (Jno -> John, Wm -> William, Chas -> Charles).
+- Suffix standardization: Normalize suffixes to standard forms: Jr./Junior/junior -> Jr, Sr./Senior/senior -> Sr, The Third/3rd -> III, The Second/2nd -> II. Standard suffixes are: Jr, Sr, I, II, III, IV.
 - First/last split: If full_name is present, verify first_name and last_name are correctly split. Fix if wrong.
 - Entity type inference: If name contains "Trust", "Estate", "LLC", etc. but entity_type doesn't match, suggest the correct entity_type.
 - Duplicate detection: Flag entries with very similar names that may be duplicates (same person, different formatting). Use "medium" confidence for duplicate flags.
@@ -63,11 +65,40 @@ Apply these corrections:
 - Date format normalization: Normalize sales_date to MM/YYYY format. Fix variations like "January 2025" -> "01/2025", "2025-01" -> "01/2025".
 - Interest type inference: If decimal_interest is present but interest_type is empty, infer from magnitude (RI typically 0.001-0.25, WI typically 0.25-1.0, ORRI typically 0.001-0.05). Use "medium" confidence.
 - Financial math: Check that owner_value approximately equals owner_volume * avg_price. Flag large discrepancies (>10%).
+- Statistical outlier detection: If _batch_median_value is provided, flag any owner_value that exceeds 3x the median (_outlier_threshold). These may indicate data extraction errors (misplaced decimal, concatenated values). Use "medium" confidence for outlier flags.
 
 Do NOT guess missing addresses or fill in data you don't have. Mark incomplete entries by suggesting 'incomplete' in a notes/comments field.
 
 Return corrections as JSON with: entry_index, field, current_value, suggested_value, reason, confidence (high/medium/low).
 If all entries look correct, return {"suggestions": []}.""",
+
+    "ecf": """You are a data cleanup assistant for ECF (Exhibit C Filing / Convey 640) data from Oklahoma OCC filings.
+You have TWO data sources for each entry:
+1. MERGED ENTRIES: The processed result combining PDF extraction and CSV data (entries in the main list)
+2. ORIGINAL CSV DATA: The raw data from the Convey 640 CSV upload (provided separately as source_data)
+
+Your job has TWO parts:
+
+PART 1 - Standard Cleanup (same as extract):
+- Name casing: Convert ALL CAPS names to proper Title Case (e.g., "JOHN SMITH" -> "John Smith"). Keep entity abbreviations uppercase (LLC, LP, INC, CO, LTD).
+- Suffix standardization: Normalize suffixes (Jr./Junior -> Jr, Sr./Senior -> Sr, The Third/3rd -> III). Standard suffixes: Jr, Sr, I, II, III, IV.
+- Name abbreviations: Expand common abbreviations (Jno -> John, Wm -> William, Chas -> Charles, Jas -> James, Robt -> Robert).
+- Entity type inference: If name contains "Trust", "Estate", "LLC", etc. but entity_type doesn't match, suggest the correct entity_type.
+- Address cleanup: Strip "c/o" prefixes from mailing_address, suggest moving them to notes.
+- State abbreviation: Correct to valid 2-letter US state code.
+- ZIP format: Normalize to XXXXX or XXXXX-XXXX.
+
+PART 2 - Cross-File Comparison:
+Compare each merged entry against its CSV counterpart (matched by entry_number).
+For EVERY field that differs between merged and CSV data:
+- If PDF-extracted value differs from CSV value, suggest the PDF value (PDF is authoritative).
+- Report the CSV value as current_value and the PDF/merged value as suggested_value.
+- Include reason explaining: "PDF extraction differs from CSV: [field] was '[csv_val]' in CSV but '[pdf_val]' in PDF"
+- Mark ALL cross-file discrepancies as "high" confidence (these are objective factual mismatches).
+- Compare: names, addresses, entity types, entry numbers, and any metadata fields present in both sources.
+
+Return corrections as JSON with: entry_index, field, current_value, suggested_value, reason, confidence (high/medium/low).
+If all entries look correct and CSV matches merged data, return {"suggestions": []}.""",
 }
 
 # Response schema for structured JSON output from LLM
