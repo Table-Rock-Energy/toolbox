@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Enrichment Pipeline & Bug Fixes
 status: completed
-stopped_at: Phase 9 UI-SPEC approved
-last_updated: "2026-03-16T19:22:18.051Z"
-last_activity: 2026-03-16 -- Completed green row highlight gap closure (08-03)
+stopped_at: Completed 09-01-PLAN.md
+last_updated: "2026-03-16T19:42:51.978Z"
+last_activity: 2026-03-16 -- Completed tool-specific AI prompts backend plumbing (09-01)
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 10
-  completed_plans: 10
-  percent: 100
+  total_plans: 12
+  completed_plans: 11
+  percent: 92
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-13)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results. Everything else is secondary to parsing accuracy and data integrity.
-**Current focus:** v1.5 Enrichment Pipeline & Bug Fixes -- Phase 8 complete
+**Current focus:** v1.5 Enrichment Pipeline & Bug Fixes -- Phase 9 in progress
 
 ## Current Position
 
-Phase: 8 of 9 (Enrichment Pipeline Features) -- COMPLETE
-Plan: 3 of 3 complete
-Status: Phase 8 complete
-Last activity: 2026-03-16 -- Completed green row highlight gap closure (08-03)
+Phase: 9 of 9 (Tool-Specific AI Prompts) -- IN PROGRESS
+Plan: 1 of 2 complete
+Status: Plan 09-01 complete
+Last activity: 2026-03-16 -- Completed tool-specific AI prompts backend plumbing (09-01)
 
-Progress: [██████████] 100%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Progress: [██████████] 100%
 | 08-enrichment-pipeline-features | 1 | 18min | 18min |
 | Phase 08 P02 | 7min | 2 tasks | 9 files |
 | Phase 08 P03 | 6min | 1 tasks | 4 files |
+| Phase 09 P01 | 6min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,9 @@ Progress: [██████████] 100%
 - [Phase 08-02]: ProposedChangesPanel groups changes by entry_index with expandable detail and per-change checkboxes
 - [Phase 08-02]: EnrichmentToolbar backward compatible: canValidate/canEnrich overrides optional
 - [Phase 08]: Green highlight (bg-green-100) takes priority over all other row backgrounds since it is transient (2s)
+- (09-01) ECF cleanup prompt does dual-duty: standard cleanup + cross-file comparison in one pass
+- (09-01) Revenue median pre-computed in Python (not by LLM) for reliability
+- (09-01) source_data is keyword-only with None default for backward compatibility
 
 ### Pending Todos
 
@@ -89,6 +93,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-16T19:22:18.048Z
-Stopped at: Phase 9 UI-SPEC approved
-Resume file: .planning/phases/09-tool-specific-ai-prompts/09-UI-SPEC.md
+Last session: 2026-03-16T19:42:51.976Z
+Stopped at: Completed 09-01-PLAN.md
+Resume file: None

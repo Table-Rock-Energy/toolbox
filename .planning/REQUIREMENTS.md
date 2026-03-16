@@ -31,7 +31,7 @@ Requirements for v1.5 Enrichment Pipeline & Bug Fixes. Each maps to roadmap phas
 - [x] **ENRICH-08**: User can uncheck flagged rows to omit from export, or edit inline to fix
 - [x] **ENRICH-09**: Export always reflects current preview state (edits, unchecks, enrichment results)
 - [x] **ENRICH-10**: AI cleanup service uses provider-agnostic LLM interface (Gemini now, Ollama/Qwen swappable via admin settings in v1.6)
-- [ ] **ENRICH-11**: Tool-specific AI QA prompts: name cleanup for Extract/Title, figure verification for Revenue, address cleaning for all, overall accuracy check across both source files for ECF
+- [x] **ENRICH-11**: Tool-specific AI QA prompts: name cleanup for Extract/Title, figure verification for Revenue, address cleaning for all, overall accuracy check across both source files for ECF
 
 ### RRC/Proration
 
@@ -86,7 +86,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ENRICH-08 | Phase 7 | Complete |
 | ENRICH-09 | Phase 7 | Complete |
 | ENRICH-10 | Phase 8 | Complete |
-| ENRICH-11 | Phase 9 | Pending |
+| ENRICH-11 | Phase 9 | Complete |
 | RRC-01 | Phase 6 | Pending |
 | RRC-02 | Phase 6 | Pending |
 | RRC-03 | Phase 6 | Pending |
