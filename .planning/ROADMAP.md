@@ -115,10 +115,11 @@ Plans:
   1. Extract and Title tools use name-focused cleanup prompts (fix casing, standardize suffixes, detect entity types from name patterns)
   2. Revenue tool uses figure-verification prompts (cross-check amounts, flag outliers, validate decimal positions)
   3. ECF tool uses cross-file accuracy prompts (compare PDF-extracted vs CSV-provided data, flag discrepancies between sources)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 09-01: TBD
+- [ ] 09-01-PLAN.md -- Backend pipeline plumbing + ECF/prompt refinements (ENRICH-11)
+- [ ] 09-02-PLAN.md -- Frontend ECF routing + confidence badges in ProposedChangesPanel (ENRICH-11)
 
 ## Progress
 
@@ -137,4 +138,4 @@ Plans:
 | 6. RRC & GHL Fixes | v1.5 | 0/2 | Planning complete | - |
 | 7. Enrichment UI & Preview State | 2/3 | In Progress|  | - |
 | 8. Enrichment Pipeline Features | 3/3 | Complete    | 2026-03-16 | - |
-| 9. Tool-Specific AI Prompts | v1.5 | 0/? | Not started | - |
+| 9. Tool-Specific AI Prompts | v1.5 | 0/2 | Planning complete | - |
