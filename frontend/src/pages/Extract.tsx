@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Wand2, Search, Play } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel, AutoCorrectionsBanner, EnrichmentPanel, EditableCell, EnrichmentToolbar } from '../components'
+import { FileUpload, Modal, AiReviewPanel, AutoCorrectionsBanner, EnrichmentPanel, EditableCell, EnrichmentToolbar, ProposedChangesPanel } from '../components'
 import MineralExportModal from '../components/MineralExportModal'
 import EnrichmentProgress, { DEFAULT_STEPS, type EnrichmentStep, type EnrichmentSummary } from '../components/EnrichmentProgress'
 import { aiApi, enrichmentApi, extractApi } from '../utils/api'
@@ -9,6 +9,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
 import { useFeatureFlags } from '../hooks/useFeatureFlags'
 import { usePreviewState } from '../hooks/usePreviewState'
+import { useEnrichmentPipeline } from '../hooks/useEnrichmentPipeline'
 
 interface PartyEntry {
   entry_number: string
@@ -134,7 +135,6 @@ export default function Extract() {
 
   // Enrichment feature flags
   const featureFlags = useFeatureFlags()
-  const [isEnrichmentProcessing] = useState(false)
 
   // AI Review state
   const [showAiReview, setShowAiReview] = useState(false)
@@ -596,6 +596,16 @@ export default function Extract() {
     flagField: 'flagged',
   })
 
+  // Enrichment pipeline: sequential cleanup -> validate -> enrich
+  const pipeline = useEnrichmentPipeline({
+    tool: 'extract',
+    previewEntries: preview.previewEntries,
+    updateEntries: preview.updateEntries,
+    editedFields: preview.editedFields,
+    keyField: 'entry_number' as keyof PartyEntry,
+    featureFlags,
+  })
+
   const resetFilters = () => {
     setShowIndividualsOnly(false)
     setHideFlagged(false)
@@ -955,10 +965,14 @@ export default function Extract() {
                     )}
                     <EnrichmentToolbar
                       {...featureFlags}
-                      onCleanUp={() => { /* stub for Phase 8 */ }}
-                      onValidate={() => { /* stub for Phase 8 */ }}
-                      onEnrich={() => { /* stub for Phase 8 */ }}
-                      isProcessing={isEnrichmentProcessing}
+                      onCleanUp={pipeline.onCleanUp}
+                      onValidate={pipeline.onValidate}
+                      onEnrich={pipeline.onEnrich}
+                      isProcessing={pipeline.isProcessing}
+                      activeAction={pipeline.activeAction}
+                      canValidate={pipeline.canValidate}
+                      canEnrich={pipeline.canEnrich}
+                      hasProposedChanges={pipeline.proposedChanges !== null}
                       entryCount={preview.entriesToExport.length}
                     />
                     <button
@@ -971,6 +985,20 @@ export default function Extract() {
                   </div>
                 </div>
               </div>
+
+              {/* Proposed Changes Panel */}
+              {pipeline.proposedChanges && (
+                <div className="px-6 py-4 border-b border-gray-100">
+                  <ProposedChangesPanel
+                    proposedChanges={pipeline.proposedChanges}
+                    checkedIndices={pipeline.checkedIndices}
+                    onToggleCheck={pipeline.toggleCheck}
+                    onToggleCheckAll={pipeline.toggleCheckAll}
+                    onApply={pipeline.onApply}
+                    onDismiss={pipeline.onDismiss}
+                  />
+                </div>
+              )}
 
               {/* Case Metadata Panel - ECF results */}
               {activeJob?.result?.case_metadata && (

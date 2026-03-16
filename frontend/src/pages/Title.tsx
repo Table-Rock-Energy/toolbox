@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Filter, RotateCcw, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Wand2 } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel, MineralExportModal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar } from '../components'
+import { FileUpload, Modal, AiReviewPanel, MineralExportModal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar, ProposedChangesPanel } from '../components'
 import EnrichmentProgress, { DEFAULT_STEPS, type EnrichmentStep, type EnrichmentSummary } from '../components/EnrichmentProgress'
 import { aiApi } from '../utils/api'
 import type { AiSuggestion, PostProcessResult } from '../utils/api'
@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
 import { useFeatureFlags } from '../hooks/useFeatureFlags'
 import { usePreviewState } from '../hooks/usePreviewState'
+import { useEnrichmentPipeline } from '../hooks/useEnrichmentPipeline'
 
 interface OwnerEntry {
   _uid?: string
@@ -143,7 +144,6 @@ export default function Title() {
 
   // Enrichment feature flags
   const featureFlags = useFeatureFlags()
-  const [isEnrichmentProcessing] = useState(false)
 
   // AI Review state
   const [showAiReview, setShowAiReview] = useState(false)
@@ -308,7 +308,17 @@ export default function Title() {
     flagField: 'duplicate_flag',
   })
 
-  const getEntryStatus = (entry: OwnerEntry): { label: string; color: string } => {
+  // Enrichment pipeline: sequential cleanup -> validate -> enrich
+  const pipeline = useEnrichmentPipeline({
+    tool: 'title',
+    previewEntries: preview.previewEntries,
+    updateEntries: preview.updateEntries,
+    editedFields: preview.editedFields,
+    keyField: '_uid' as keyof OwnerEntry,
+    featureFlags,
+  })
+
+  const getEntryStatus =(entry: OwnerEntry): { label: string; color: string } => {
     if (entry.duplicate_flag && !entry.has_address) {
       return { label: 'Dup + No Addr', color: 'text-purple-600 bg-purple-100' }
     }
@@ -817,15 +827,33 @@ export default function Title() {
                     </button>
                     <EnrichmentToolbar
                       {...featureFlags}
-                      onCleanUp={() => { /* stub for Phase 8 */ }}
-                      onValidate={() => { /* stub for Phase 8 */ }}
-                      onEnrich={() => { /* stub for Phase 8 */ }}
-                      isProcessing={isEnrichmentProcessing}
+                      onCleanUp={pipeline.onCleanUp}
+                      onValidate={pipeline.onValidate}
+                      onEnrich={pipeline.onEnrich}
+                      isProcessing={pipeline.isProcessing}
+                      activeAction={pipeline.activeAction}
+                      canValidate={pipeline.canValidate}
+                      canEnrich={pipeline.canEnrich}
+                      hasProposedChanges={pipeline.proposedChanges !== null}
                       entryCount={preview.entriesToExport.length}
                     />
                   </div>
                 </div>
               </div>
+
+              {/* Proposed Changes Panel */}
+              {pipeline.proposedChanges && (
+                <div className="px-6 py-4 border-b border-gray-100">
+                  <ProposedChangesPanel
+                    proposedChanges={pipeline.proposedChanges}
+                    checkedIndices={pipeline.checkedIndices}
+                    onToggleCheck={pipeline.toggleCheck}
+                    onToggleCheckAll={pipeline.toggleCheckAll}
+                    onApply={pipeline.onApply}
+                    onDismiss={pipeline.onDismiss}
+                  />
+                </div>
+              )}
 
               {/* Stats */}
               <div className="grid grid-cols-5 gap-4 p-6 border-b border-gray-100">

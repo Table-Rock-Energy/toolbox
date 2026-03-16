@@ -1,12 +1,13 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { DollarSign, Download, Upload, AlertCircle, CheckCircle, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Edit2, Bug, ChevronDown, ChevronRight, RotateCcw, Filter } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel, MineralExportModal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar } from '../components'
+import { FileUpload, Modal, AiReviewPanel, MineralExportModal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar, ProposedChangesPanel } from '../components'
 import { aiApi } from '../utils/api'
 import type { AiSuggestion } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
 import { useFeatureFlags } from '../hooks/useFeatureFlags'
 import { usePreviewState } from '../hooks/usePreviewState'
+import { useEnrichmentPipeline } from '../hooks/useEnrichmentPipeline'
 
 interface RevenueRow {
   property_name?: string
@@ -204,7 +205,6 @@ export default function Revenue() {
 
   // Enrichment feature flags
   const featureFlags = useFeatureFlags()
-  const [isEnrichmentProcessing] = useState(false)
 
   // Mineral export modal state
   const [showMineralExport, setShowMineralExport] = useState(false)
@@ -334,6 +334,16 @@ export default function Revenue() {
   const preview = usePreviewState({
     entries: filteredRows,
     keyField: '_id',
+  })
+
+  // Enrichment pipeline: sequential cleanup -> validate -> enrich
+  const pipeline = useEnrichmentPipeline({
+    tool: 'revenue',
+    previewEntries: preview.previewEntries,
+    updateEntries: preview.updateEntries,
+    editedFields: preview.editedFields,
+    keyField: '_id' as keyof FlatRow,
+    featureFlags,
   })
 
   // Unique product codes for filter dropdown
@@ -791,10 +801,14 @@ export default function Revenue() {
                     )}
                     <EnrichmentToolbar
                       {...featureFlags}
-                      onCleanUp={() => { /* stub for Phase 8 */ }}
-                      onValidate={() => { /* stub for Phase 8 */ }}
-                      onEnrich={() => { /* stub for Phase 8 */ }}
-                      isProcessing={isEnrichmentProcessing}
+                      onCleanUp={pipeline.onCleanUp}
+                      onValidate={pipeline.onValidate}
+                      onEnrich={pipeline.onEnrich}
+                      isProcessing={pipeline.isProcessing}
+                      activeAction={pipeline.activeAction}
+                      canValidate={pipeline.canValidate}
+                      canEnrich={pipeline.canEnrich}
+                      hasProposedChanges={pipeline.proposedChanges !== null}
                       entryCount={preview.entriesToExport.length}
                     />
                     <button
@@ -808,6 +822,20 @@ export default function Revenue() {
                   </div>
                 </div>
               </div>
+
+              {/* Proposed Changes Panel */}
+              {pipeline.proposedChanges && (
+                <div className="px-6 py-4 border-b border-gray-100">
+                  <ProposedChangesPanel
+                    proposedChanges={pipeline.proposedChanges}
+                    checkedIndices={pipeline.checkedIndices}
+                    onToggleCheck={pipeline.toggleCheck}
+                    onToggleCheckAll={pipeline.toggleCheckAll}
+                    onApply={pipeline.onApply}
+                    onDismiss={pipeline.onDismiss}
+                  />
+                </div>
+              )}
 
               {/* Filter Controls */}
               <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">

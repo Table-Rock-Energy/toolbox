@@ -1,12 +1,13 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw, Filter, Settings, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel, AutoCorrectionsBanner, EnrichmentToolbar } from '../components'
+import { FileUpload, Modal, AiReviewPanel, AutoCorrectionsBanner, EnrichmentToolbar, ProposedChangesPanel } from '../components'
 import { aiApi } from '../utils/api'
 import type { AiSuggestion, PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
 import { useFeatureFlags } from '../hooks/useFeatureFlags'
 import { usePreviewState } from '../hooks/usePreviewState'
+import { useEnrichmentPipeline } from '../hooks/useEnrichmentPipeline'
 
 interface MineralHolderRow {
   _uid?: string
@@ -192,7 +193,6 @@ export default function Proration() {
 
   // Enrichment feature flags
   const featureFlags = useFeatureFlags()
-  const [isEnrichmentProcessing] = useState(false)
 
   // AI Review state
   const [showAiReview, setShowAiReview] = useState(false)
@@ -341,6 +341,16 @@ export default function Proration() {
   const preview = usePreviewState({
     entries: rowsWithKeys,
     keyField: '_uid' as keyof MineralHolderRow,
+  })
+
+  // Enrichment pipeline: sequential cleanup -> validate -> enrich
+  const pipeline = useEnrichmentPipeline({
+    tool: 'proration',
+    previewEntries: preview.previewEntries,
+    updateEntries: preview.updateEntries,
+    editedFields: preview.editedFields,
+    keyField: '_uid' as keyof MineralHolderRow,
+    featureFlags,
   })
 
   const handleApplySuggestions = (accepted: AiSuggestion[]) => {
@@ -1116,10 +1126,14 @@ export default function Proration() {
                     )}
                     <EnrichmentToolbar
                       {...featureFlags}
-                      onCleanUp={() => { /* stub for Phase 8 */ }}
-                      onValidate={() => { /* stub for Phase 8 */ }}
-                      onEnrich={() => { /* stub for Phase 8 */ }}
-                      isProcessing={isEnrichmentProcessing}
+                      onCleanUp={pipeline.onCleanUp}
+                      onValidate={pipeline.onValidate}
+                      onEnrich={pipeline.onEnrich}
+                      isProcessing={pipeline.isProcessing}
+                      activeAction={pipeline.activeAction}
+                      canValidate={pipeline.canValidate}
+                      canEnrich={pipeline.canEnrich}
+                      hasProposedChanges={pipeline.proposedChanges !== null}
                       entryCount={preview.entriesToExport.length}
                     />
                     <button
@@ -1132,6 +1146,20 @@ export default function Proration() {
                   </div>
                 </div>
               </div>
+
+              {/* Proposed Changes Panel */}
+              {pipeline.proposedChanges && (
+                <div className="px-6 py-4 border-b border-gray-100">
+                  <ProposedChangesPanel
+                    proposedChanges={pipeline.proposedChanges}
+                    checkedIndices={pipeline.checkedIndices}
+                    onToggleCheck={pipeline.toggleCheck}
+                    onToggleCheckAll={pipeline.toggleCheckAll}
+                    onApply={pipeline.onApply}
+                    onDismiss={pipeline.onDismiss}
+                  />
+                </div>
+              )}
 
               {/* Stats */}
               {(() => {
