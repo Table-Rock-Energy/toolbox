@@ -555,4 +555,38 @@ export const ghlApi = {
     api.post<QuickCheckResponse>(`/ghl/connections/${id}/quick-check`),
 }
 
+// Pipeline types (enrichment pipeline)
+export interface ProposedChange {
+  entry_index: number
+  field: string
+  current_value: string
+  proposed_value: string
+  reason: string
+  confidence: 'high' | 'medium' | 'low'
+  source: 'ai_cleanup' | 'google_maps' | 'pdl' | 'searchbug'
+  authoritative: boolean
+}
+
+export interface PipelineRequest {
+  tool: string
+  entries: Record<string, unknown>[]
+  field_mapping?: Record<string, string>
+}
+
+export interface PipelineResponse {
+  success: boolean
+  proposed_changes: ProposedChange[]
+  error?: string | null
+  entries_processed: number
+}
+
+export const pipelineApi = {
+  cleanup: (tool: string, entries: Record<string, unknown>[], fieldMapping?: Record<string, string>) =>
+    api.post<PipelineResponse>('/pipeline/cleanup', { tool, entries, field_mapping: fieldMapping } as PipelineRequest, { timeout: 120000 }),
+  validate: (tool: string, entries: Record<string, unknown>[], fieldMapping?: Record<string, string>) =>
+    api.post<PipelineResponse>('/pipeline/validate', { tool, entries, field_mapping: fieldMapping } as PipelineRequest, { timeout: 120000 }),
+  enrich: (tool: string, entries: Record<string, unknown>[], fieldMapping?: Record<string, string>) =>
+    api.post<PipelineResponse>('/pipeline/enrich', { tool, entries, field_mapping: fieldMapping } as PipelineRequest, { timeout: 120000 }),
+}
+
 export default api
