@@ -31,6 +31,8 @@ const CONFIDENCE_STYLES: Record<string, string> = {
   low: 'bg-red-100 text-red-800',
 }
 
+const CONFIDENCE_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 }
+
 export default function ProposedChangesPanel({
   proposedChanges,
   checkedIndices,
@@ -62,6 +64,13 @@ export default function ProposedChangesPanel({
     } else {
       groups.set(change.entry_index, { indices: [idx], changes: [change] })
     }
+  })
+
+  // Sort groups by highest confidence (high first)
+  const sortedGroups = [...groups.entries()].sort(([, a], [, b]) => {
+    const aHighest = Math.min(...a.changes.map(c => CONFIDENCE_ORDER[c.confidence] ?? 3))
+    const bHighest = Math.min(...b.changes.map(c => CONFIDENCE_ORDER[c.confidence] ?? 3))
+    return aHighest - bHighest
   })
 
   const allChecked = checkedIndices.size === proposedChanges.length
@@ -138,10 +147,13 @@ export default function ProposedChangesPanel({
 
       {/* Change groups */}
       <div className="max-h-64 overflow-y-auto divide-y divide-gray-50">
-        {[...groups.entries()].map(([entryIndex, { indices, changes }]) => {
+        {sortedGroups.map(([entryIndex, { indices, changes }]) => {
           const isExpanded = expandedGroups.has(entryIndex)
           const primarySource = changes[0].source
           const borderColor = SOURCE_COLORS[primarySource] || 'border-l-gray-300'
+          const highestConfidence = changes.reduce((best, c) =>
+            (CONFIDENCE_ORDER[c.confidence] ?? 3) < (CONFIDENCE_ORDER[best] ?? 3) ? c.confidence : best
+          , changes[0].confidence)
 
           return (
             <div key={entryIndex} className={`border-l-4 ${borderColor}`}>
@@ -161,6 +173,9 @@ export default function ProposedChangesPanel({
                 {isExpanded ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
                 <span className="text-sm text-gray-700">
                   Row {entryIndex + 1}
+                </span>
+                <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium ${CONFIDENCE_STYLES[highestConfidence] || ''}`}>
+                  {highestConfidence}
                 </span>
                 <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
                   {changes.length} field{changes.length !== 1 ? 's' : ''}
