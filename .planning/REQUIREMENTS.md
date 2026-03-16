@@ -26,7 +26,7 @@ Requirements for v1.5 Enrichment Pipeline & Bug Fixes. Each maps to roadmap phas
 - [x] **ENRICH-03**: Clean Up (AI) runs first: fix names, strip c/o from addresses, move extras to notes, attempt to complete partial entries
 - [x] **ENRICH-04**: Validate (Google Maps) runs second: verify cleaned addresses, flag mismatches
 - [x] **ENRICH-05**: Enrich (PDL/SearchBug) runs third: fill phone/email using clean validated addresses
-- [ ] **ENRICH-06**: After each enrichment step, preview table updates with enriched data visible to user
+- [x] **ENRICH-06**: After each enrichment step, preview table updates with enriched data visible to user
 - [x] **ENRICH-07**: Flagged rows (validation mismatches) sort to top of preview for user review
 - [x] **ENRICH-08**: User can uncheck flagged rows to omit from export, or edit inline to fix
 - [x] **ENRICH-09**: Export always reflects current preview state (edits, unchecks, enrichment results)
@@ -81,7 +81,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ENRICH-03 | Phase 8 | Complete |
 | ENRICH-04 | Phase 8 | Complete |
 | ENRICH-05 | Phase 8 | Complete |
-| ENRICH-06 | Phase 8 | Pending |
+| ENRICH-06 | Phase 8 | Complete |
 | ENRICH-07 | Phase 7 | Complete |
 | ENRICH-08 | Phase 7 | Complete |
 | ENRICH-09 | Phase 7 | Complete |

@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Enrichment Pipeline & Bug Fixes
-status: in-progress
-stopped_at: Completed 08-01-PLAN.md
-last_updated: "2026-03-16T16:02:00Z"
+status: executing
+stopped_at: Completed 08-02-PLAN.md (checkpoint pending)
+last_updated: "2026-03-16T16:13:03.669Z"
 last_activity: 2026-03-16 -- Completed pipeline API backend (08-01)
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
   percent: 89
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-13)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results. Everything else is secondary to parsing accuracy and data integrity.
-**Current focus:** v1.5 Enrichment Pipeline & Bug Fixes -- Phase 8 plan 1 complete, plan 2 remaining
+**Current focus:** v1.5 Enrichment Pipeline & Bug Fixes -- Phase 8 complete
 
 ## Current Position
 
-Phase: 8 of 9 (Enrichment Pipeline Features) -- IN PROGRESS
-Plan: 1 of 2 complete
-Status: Phase 8 in progress
-Last activity: 2026-03-16 -- Completed pipeline API backend (08-01)
+Phase: 8 of 9 (Enrichment Pipeline Features) -- COMPLETE
+Plan: 2 of 2 complete
+Status: Phase 8 complete
+Last activity: 2026-03-16 -- Completed frontend enrichment pipeline (08-02)
 
 Progress: [████████░░] 89%
 
@@ -46,6 +46,7 @@ Progress: [████████░░] 89%
 | 05-ecf-upload-flow-fix | 1 | 13min | 13min |
 | 07-enrichment-ui-preview-state | 3 | 19min | 6min |
 | 08-enrichment-pipeline-features | 1 | 18min | 18min |
+| Phase 08 P02 | 7min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -63,6 +64,9 @@ Progress: [████████░░] 89%
 - (08-01) Validate endpoint uses validate_address() per entry (not batch) to build ProposedChange diffs without auto-applying
 - (08-01) Field mapping system: per-tool defaults with request-level overrides for consistent API across tools
 - (08-01) Revenue tool returns empty proposed changes for validate (no address fields)
+- [Phase 08-02]: Pipeline API client uses 120s timeout for all three endpoints
+- [Phase 08-02]: ProposedChangesPanel groups changes by entry_index with expandable detail and per-change checkboxes
+- [Phase 08-02]: EnrichmentToolbar backward compatible: canValidate/canEnrich overrides optional
 
 ### Pending Todos
 
@@ -83,6 +87,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-16T16:02:00Z
-Stopped at: Completed 08-01-PLAN.md
-Resume file: .planning/phases/08-enrichment-pipeline-features/08-02-PLAN.md
+Last session: 2026-03-16T16:13:03.667Z
+Stopped at: Completed 08-02-PLAN.md (checkpoint pending)
+Resume file: None

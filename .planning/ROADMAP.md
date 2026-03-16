@@ -38,7 +38,7 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 - [ ] **Phase 5: ECF Upload Flow Fix** - Auto-detect ECF format, defer processing until user clicks Process
 - [ ] **Phase 6: RRC & GHL Fixes** - Repair fetch-missing pipeline and clarify GHL campaign tagging
 - [ ] **Phase 7: Enrichment UI & Preview State** - Shared post-processing buttons, preview table as single source of truth for exports
-- [ ] **Phase 8: Enrichment Pipeline Features** - Wire AI cleanup, address validation, and contact enrichment through the universal UI
+- [x] **Phase 8: Enrichment Pipeline Features** - Wire AI cleanup, address validation, and contact enrichment through the universal UI (completed 2026-03-16)
 - [ ] **Phase 9: Tool-Specific AI Prompts** - Per-tool Gemini QA prompts for name cleanup, figure verification, and accuracy checks
 
 ## Phase Details
@@ -135,5 +135,5 @@ Plans:
 | 5. ECF Upload Flow Fix | 1/2 | In Progress|  | - |
 | 6. RRC & GHL Fixes | v1.5 | 0/2 | Planning complete | - |
 | 7. Enrichment UI & Preview State | 2/3 | In Progress|  | - |
-| 8. Enrichment Pipeline Features | v1.5 | 1/2 | In Progress | - |
+| 8. Enrichment Pipeline Features | 2/2 | Complete   | 2026-03-16 | - |
 | 9. Tool-Specific AI Prompts | v1.5 | 0/? | Not started | - |
