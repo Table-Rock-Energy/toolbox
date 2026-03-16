@@ -51,6 +51,13 @@ DEFAULT_FIELD_MAPPINGS: dict[str, dict[str, str]] = {
         "zip": "zip_code",
     },
     "revenue": {},  # Revenue has no address fields
+    "ecf": {
+        "street": "mailing_address",
+        "street_2": "mailing_address_2",
+        "city": "city",
+        "state": "state",
+        "zip": "zip_code",
+    },
 }
 
 # Default name/address field mappings for enrichment.
@@ -77,6 +84,13 @@ DEFAULT_ENRICH_MAPPINGS: dict[str, dict[str, str]] = {
         "zip_code": "zip_code",
     },
     "revenue": {},
+    "ecf": {
+        "name": "name",
+        "address": "mailing_address",
+        "city": "city",
+        "state": "state",
+        "zip_code": "zip_code",
+    },
 }
 
 
@@ -95,7 +109,25 @@ async def pipeline_cleanup(request: PipelineRequest) -> PipelineResponse:
         )
 
     try:
-        changes = await provider.cleanup_entries(request.tool, request.entries)
+        # Revenue: pre-compute batch median for outlier detection
+        if request.tool == "revenue":
+            from statistics import median as compute_median
+
+            values = [
+                float(e["owner_value"])
+                for e in request.entries
+                if e.get("owner_value") and float(e.get("owner_value", 0)) > 0
+            ]
+            if len(values) >= 3:
+                med = compute_median(values)
+                threshold = med * 3
+                for e in request.entries:
+                    e["_batch_median_value"] = round(med, 2)
+                    e["_outlier_threshold"] = round(threshold, 2)
+
+        changes = await provider.cleanup_entries(
+            request.tool, request.entries, source_data=request.source_data
+        )
         return PipelineResponse(
             success=True,
             proposed_changes=changes,

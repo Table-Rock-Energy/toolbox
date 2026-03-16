@@ -17,7 +17,8 @@ class LLMProvider(Protocol):
     """
 
     async def cleanup_entries(
-        self, tool: str, entries: list[dict]
+        self, tool: str, entries: list[dict],
+        *, source_data: list[dict] | None = None,
     ) -> list[ProposedChange]: ...
 
     def is_available(self) -> bool: ...

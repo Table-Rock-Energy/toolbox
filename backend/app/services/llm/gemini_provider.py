@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 
 
 def _cleanup_batch_sync(
-    client: Client, tool: str, entries: list[dict], batch_offset: int
+    client: Client, tool: str, entries: list[dict], batch_offset: int,
+    source_data: list[dict] | None = None,
 ) -> list[AiSuggestion]:
     """Run cleanup on a batch of entries synchronously.
 
@@ -54,6 +55,12 @@ def _cleanup_batch_sync(
         f'If all entries look correct, return {{"suggestions": []}}.\n\n'
         f"Entries:\n{entries_text}"
     )
+
+    if source_data is not None:
+        source_text = json.dumps(source_data, indent=2, default=str)
+        user_prompt += (
+            f"\n\nOriginal CSV source data for cross-file comparison:\n{source_text}"
+        )
 
     try:
         allowed, _, _ = _check_rate_limit()
@@ -112,7 +119,8 @@ class GeminiProvider:
     """
 
     async def cleanup_entries(
-        self, tool: str, entries: list[dict]
+        self, tool: str, entries: list[dict],
+        *, source_data: list[dict] | None = None,
     ) -> list[ProposedChange]:
         """Send entries to Gemini for cleanup suggestions.
 
@@ -130,7 +138,7 @@ class GeminiProvider:
             batch = entries[start:end]
 
             batch_suggestions = await asyncio.to_thread(
-                _cleanup_batch_sync, client, tool, batch, start
+                _cleanup_batch_sync, client, tool, batch, start, source_data
             )
             all_suggestions.extend(batch_suggestions)
 

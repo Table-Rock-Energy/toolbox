@@ -107,6 +107,9 @@ class ExtractionResult(BaseModel):
     merge_warnings: Optional[list[str]] = Field(
         None, description="Warnings from merge process"
     )
+    original_csv_entries: Optional[list[dict]] = Field(
+        None, description="Original CSV entries before merge (ECF only, for cross-file comparison)"
+    )
     post_process: Optional[PostProcessResult] = Field(
         None, description="Auto-correction results from post-processing pipeline"
     )

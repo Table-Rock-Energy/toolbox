@@ -28,11 +28,15 @@ class ProposedChange(BaseModel):
 class PipelineRequest(BaseModel):
     """Request body for pipeline endpoints."""
 
-    tool: str = Field(description="Tool name: extract, title, proration, or revenue")
+    tool: str = Field(description="Tool name: extract, title, proration, revenue, or ecf")
     entries: list[dict] = Field(description="List of entry dicts to process")
     field_mapping: dict[str, str] = Field(
         default_factory=dict,
         description="Maps abstract field names (street, city, state, zip) to tool-specific field names",
+    )
+    source_data: list[dict] | None = Field(
+        default=None,
+        description="Original source data for cross-file comparison (ECF: original CSV rows)",
     )
 
 
