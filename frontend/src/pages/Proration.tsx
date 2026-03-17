@@ -159,6 +159,7 @@ export default function Proration() {
   }
   const { panelCollapsed, togglePanel, activeStorageKey } = useToolLayout('proration', user?.uid, STORAGE_KEY_PREFIX)
   const [jobs, setJobs] = useState<ProrationJob[]>([])
+  const [jobsLoading, setJobsLoading] = useState(true)
   const [activeJob, setActiveJob] = useState<ProrationJob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isLoadingEntries, setIsLoadingEntries] = useState(false)
@@ -311,6 +312,8 @@ export default function Proration() {
         }
       } catch (err) {
         console.error('Failed to load recent jobs:', err)
+      } finally {
+        setJobsLoading(false)
       }
     }
     loadRecentJobs()
@@ -1003,7 +1006,13 @@ export default function Proration() {
             <div className="px-4 py-3 border-b border-gray-100">
               <h3 className="font-medium text-gray-900">Recent Jobs</h3>
             </div>
-            {jobs.length === 0 ? (
+            {jobsLoading ? (
+              <div className="p-4 space-y-3 animate-pulse">
+                {[1, 2, 3].map(i => (
+                  <div key={i} className="h-12 bg-gray-100 rounded" />
+                ))}
+              </div>
+            ) : jobs.length === 0 ? (
               <div className="p-6 text-center text-gray-500">
                 <Upload className="w-8 h-8 mx-auto mb-2 text-gray-300" />
                 <p className="text-sm">No jobs yet</p>
