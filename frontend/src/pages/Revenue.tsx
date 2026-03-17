@@ -1,8 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { DollarSign, Download, Upload, AlertCircle, CheckCircle, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Edit2, Bug, ChevronDown, ChevronRight, RotateCcw, Filter } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel, MineralExportModal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar, ProposedChangesPanel } from '../components'
-import { aiApi } from '../utils/api'
-import type { AiSuggestion } from '../utils/api'
+import { DollarSign, Download, Upload, AlertCircle, CheckCircle, Columns, X, PanelLeftClose, PanelLeftOpen, Edit2, Bug, ChevronDown, ChevronRight, RotateCcw, Filter } from 'lucide-react'
+import { FileUpload, Modal, MineralExportModal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar, ProposedChangesPanel } from '../components'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
 import { useFeatureFlags } from '../hooks/useFeatureFlags'
@@ -199,10 +197,6 @@ export default function Revenue() {
   const [isLoadingEntries, setIsLoadingEntries] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // AI Review state
-  const [showAiReview, setShowAiReview] = useState(false)
-  const [aiEnabled, setAiEnabled] = useState(false)
-
   // Enrichment feature flags
   const featureFlags = useFeatureFlags()
 
@@ -290,12 +284,6 @@ export default function Revenue() {
     loadJobs()
   }, [])
 
-  // Check AI status on mount
-  useEffect(() => {
-    aiApi.getStatus().then(res => {
-      if (res.data?.enabled) setAiEnabled(true)
-    })
-  }, [])
 
   // Flatten all statements into a single row list
   const flatRows = useMemo((): FlatRow[] => {
@@ -356,41 +344,6 @@ export default function Revenue() {
   const resetFilters = () => {
     setFilterProduct('')
     setFilterProperty('')
-  }
-
-  const handleApplySuggestions = (accepted: AiSuggestion[]) => {
-    if (!activeJob?.result?.statements) return
-
-    const updatedStatements = [...activeJob.result.statements]
-    let flatIdx = 0
-    for (let si = 0; si < updatedStatements.length; si++) {
-      const stmt = { ...updatedStatements[si] }
-      const updatedRows = [...stmt.rows]
-      for (let ri = 0; ri < updatedRows.length; ri++) {
-        const matching = accepted.filter(s => s.entry_index === flatIdx)
-        if (matching.length > 0) {
-          const row = { ...updatedRows[ri] }
-          for (const suggestion of matching) {
-            if (suggestion.field in row) {
-              (row as Record<string, unknown>)[suggestion.field] = suggestion.suggested_value
-            }
-          }
-          updatedRows[ri] = row
-        }
-        flatIdx++
-      }
-      stmt.rows = updatedRows
-      updatedStatements[si] = stmt
-    }
-
-    setActiveJob({
-      ...activeJob,
-      result: {
-        ...activeJob.result,
-        statements: updatedStatements,
-      },
-    })
-    setShowAiReview(false)
   }
 
   const handleUndoCorrections = () => {
@@ -632,11 +585,6 @@ export default function Revenue() {
 
   const isColVisible = (key: string) => visibleColumns.has(key)
 
-  const getAllRows = (): RevenueRow[] => {
-    if (!activeJob?.result?.statements) return []
-    return activeJob.result.statements.flatMap(s => s.rows)
-  }
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -781,24 +729,6 @@ export default function Revenue() {
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    {aiEnabled && (
-                      <button
-                        onClick={() => setShowAiReview(!showAiReview)}
-                        className={`relative flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
-                          showAiReview
-                            ? 'bg-purple-100 text-purple-700 border border-purple-300'
-                            : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
-                        }`}
-                      >
-                        <Sparkles className="w-4 h-4" />
-                        AI Review
-                        {(activeJob?.result?.post_process?.ai_suggestions?.length ?? 0) > 0 && (
-                          <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-purple-600 text-white text-[10px] font-medium rounded-full flex items-center justify-center">
-                            {activeJob!.result!.post_process!.ai_suggestions!.length}
-                          </span>
-                        )}
-                      </button>
-                    )}
                     <EnrichmentToolbar
                       {...featureFlags}
                       onCleanUp={pipeline.onCleanUp}
@@ -1112,15 +1042,6 @@ export default function Revenue() {
               />
             )}
 
-            {/* AI Review Panel */}
-            {showAiReview && activeJob?.result?.statements && (
-              <AiReviewPanel
-                tool="revenue"
-                entries={getAllRows()}
-                onApplySuggestions={handleApplySuggestions}
-                onClose={() => setShowAiReview(false)}
-              />
-            )}
             </>
           ) : activeJob?.result?.errors?.length ? (
             <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">

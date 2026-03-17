@@ -1,8 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw, Filter, Settings, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel, AutoCorrectionsBanner, EnrichmentToolbar, ProposedChangesPanel } from '../components'
-import { aiApi } from '../utils/api'
-import type { AiSuggestion, PostProcessResult } from '../utils/api'
+import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw, Filter, Settings, Edit2, Columns, X, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
+import { FileUpload, Modal, AutoCorrectionsBanner, EnrichmentToolbar, ProposedChangesPanel } from '../components'
+import type { PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
 import { useFeatureFlags } from '../hooks/useFeatureFlags'
@@ -194,10 +193,6 @@ export default function Proration() {
   // Enrichment feature flags
   const featureFlags = useFeatureFlags()
 
-  // AI Review state
-  const [showAiReview, setShowAiReview] = useState(false)
-  const [aiEnabled, setAiEnabled] = useState(false)
-
   // Fetch missing RRC data state
   const [isFetchingMissing, setIsFetchingMissing] = useState(false)
   const [fetchMissingMessage, setFetchMissingMessage] = useState<string | null>(null)
@@ -321,12 +316,6 @@ export default function Proration() {
     loadRecentJobs()
   }, [])
 
-  // Check AI status on mount
-  useEffect(() => {
-    aiApi.getStatus().then(res => {
-      if (res.data?.enabled) setAiEnabled(true)
-    })
-  }, [])
 
   // Add stable _uid keys to rows for preview state
   const rowsWithKeys = useMemo(() => {
@@ -352,27 +341,6 @@ export default function Proration() {
     keyField: '_uid' as keyof MineralHolderRow,
     featureFlags,
   })
-
-  const handleApplySuggestions = (accepted: AiSuggestion[]) => {
-    if (!activeJob?.result?.rows) return
-
-    const updatedRows = [...activeJob.result.rows]
-    for (const suggestion of accepted) {
-      const row = updatedRows[suggestion.entry_index]
-      if (row && suggestion.field in row) {
-        (row as unknown as Record<string, unknown>)[suggestion.field] = suggestion.suggested_value
-      }
-    }
-
-    setActiveJob({
-      ...activeJob,
-      result: {
-        ...activeJob.result,
-        rows: updatedRows,
-      },
-    })
-    setShowAiReview(false)
-  }
 
   const handleUndoCorrections = () => {
     if (!activeJob?.result?.rows || !activeJob.result.post_process?.corrections) return
@@ -1106,24 +1074,6 @@ export default function Proration() {
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    {aiEnabled && (
-                      <button
-                        onClick={() => setShowAiReview(!showAiReview)}
-                        className={`relative flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
-                          showAiReview
-                            ? 'bg-purple-100 text-purple-700 border border-purple-300'
-                            : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
-                        }`}
-                      >
-                        <Sparkles className="w-4 h-4" />
-                        AI Review
-                        {(activeJob?.result?.post_process?.ai_suggestions?.length ?? 0) > 0 && (
-                          <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-purple-600 text-white text-[10px] font-medium rounded-full flex items-center justify-center">
-                            {activeJob!.result!.post_process!.ai_suggestions.length}
-                          </span>
-                        )}
-                      </button>
-                    )}
                     <EnrichmentToolbar
                       {...featureFlags}
                       onCleanUp={pipeline.onCleanUp}
@@ -1466,15 +1416,6 @@ export default function Proration() {
               />
             )}
 
-            {/* AI Review Panel */}
-            {showAiReview && activeJob?.result?.rows && (
-              <AiReviewPanel
-                tool="proration"
-                entries={activeJob.result.rows}
-                onApplySuggestions={handleApplySuggestions}
-                onClose={() => setShowAiReview(false)}
-              />
-            )}
             </>
           ) : activeJob?.result?.error_message ? (
             <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">

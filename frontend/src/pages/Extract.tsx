@@ -1,10 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, Sparkles, X, PanelLeftClose, PanelLeftOpen, Wand2, Search, Play } from 'lucide-react'
-import { FileUpload, Modal, AiReviewPanel, AutoCorrectionsBanner, EnrichmentPanel, EditableCell, EnrichmentToolbar, ProposedChangesPanel } from '../components'
+import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, X, PanelLeftClose, PanelLeftOpen, Play } from 'lucide-react'
+import { FileUpload, Modal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar, ProposedChangesPanel } from '../components'
 import MineralExportModal from '../components/MineralExportModal'
-import EnrichmentProgress, { DEFAULT_STEPS, type EnrichmentStep, type EnrichmentSummary } from '../components/EnrichmentProgress'
-import { aiApi, enrichmentApi, extractApi } from '../utils/api'
-import type { AiSuggestion, PostProcessResult } from '../utils/api'
+import type { PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
 import { useFeatureFlags } from '../hooks/useFeatureFlags'
@@ -138,25 +136,9 @@ export default function Extract() {
   // Enrichment feature flags
   const featureFlags = useFeatureFlags()
 
-  // AI Review state
-  const [showAiReview, setShowAiReview] = useState(false)
-  const [aiEnabled, setAiEnabled] = useState(false)
-
   // Post-process corrections state
   const [postProcess, setPostProcess] = useState<PostProcessResult | null>(null)
   const [preCorrectionEntries, setPreCorrectionEntries] = useState<PartyEntry[] | null>(null)
-
-  // Data validation pipeline state (Google Maps + Gemini)
-  const [isValidating, setIsValidating] = useState(false)
-  const [showValidation, setShowValidation] = useState(false)
-  const [enrichSteps, setEnrichSteps] = useState<EnrichmentStep[]>([])
-  const [enrichSummary, setEnrichSummary] = useState<EnrichmentSummary | null>(null)
-  const [enrichComplete, setEnrichComplete] = useState(false)
-  const [pipelineEnabled, setPipelineEnabled] = useState(false)
-
-  // Contact enrichment state (PDL/SearchBug)
-  const [showEnrichment, setShowEnrichment] = useState(false)
-  const [enrichmentEnabled, setEnrichmentEnabled] = useState(false)
 
   // Mineral export modal state
   const [showMineralModal, setShowMineralModal] = useState(false)
@@ -232,20 +214,6 @@ export default function Extract() {
     loadJobs()
   }, [])
 
-  // Check feature status on mount
-  useEffect(() => {
-    aiApi.getStatus().then(res => {
-      if (res.data?.enabled) setAiEnabled(true)
-    })
-    enrichmentApi.getStatus().then(res => {
-      if (res.data?.enabled) setEnrichmentEnabled(true)
-    })
-    extractApi.getPipelineStatus().then(res => {
-      if (res.data?.google_maps_enabled || res.data?.gemini_enabled) {
-        setPipelineEnabled(true)
-      }
-    })
-  }, [])
 
   // Clear CSV file when switching away from ECF format
   useEffect(() => {
@@ -253,27 +221,6 @@ export default function Extract() {
       setCsvFile(null)
     }
   }, [formatHint])
-
-  const handleApplySuggestions = (accepted: AiSuggestion[]) => {
-    if (!activeJob?.result?.entries) return
-
-    const updatedEntries = [...activeJob.result.entries]
-    for (const suggestion of accepted) {
-      const entry = updatedEntries[suggestion.entry_index]
-      if (entry && suggestion.field in entry) {
-        (entry as unknown as Record<string, unknown>)[suggestion.field] = suggestion.suggested_value
-      }
-    }
-
-    setActiveJob({
-      ...activeJob,
-      result: {
-        ...activeJob.result,
-        entries: updatedEntries,
-      },
-    })
-    setShowAiReview(false)
-  }
 
   const handleUndoCorrections = () => {
     if (!preCorrectionEntries || !activeJob?.result) return
@@ -287,83 +234,6 @@ export default function Extract() {
     })
     setPostProcess(null)
     setPreCorrectionEntries(null)
-  }
-
-  const handleValidate = async () => {
-    if (!activeJob?.result?.entries || activeJob.result.entries.length === 0) return
-
-    setIsValidating(true)
-    setShowValidation(true)
-    setEnrichComplete(false)
-    setEnrichSummary(null)
-    setEnrichSteps(DEFAULT_STEPS.map(s => ({ ...s, status: 'pending' as const })))
-
-    try {
-      const enrichHeaders = await authHeaders()
-      const response = await fetch(`${API_BASE}/extract/enrich`, {
-        method: 'POST',
-        headers: { ...enrichHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entries: activeJob.result.entries }),
-      })
-
-      if (!response.ok) throw new Error('Enrichment failed')
-
-      const reader = response.body!.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      const summary: EnrichmentSummary = { originalCount: activeJob.result.entries.length, finalCount: activeJob.result.entries.length }
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-
-        for (const line of lines) {
-          if (!line.trim()) continue
-          try {
-            const event = JSON.parse(line)
-
-            if (event.step === 'addresses' || event.step === 'property' || event.step === 'names' || event.step === 'splitting') {
-              setEnrichSteps(prev => prev.map(s => {
-                if (s.id !== event.step) return s
-                if (event.status === 'started') return { ...s, status: 'active', total: event.total, progress: 0, message: event.message }
-                if (event.status === 'progress') return { ...s, progress: event.progress, total: event.total, message: event.message }
-                if (event.status === 'completed') {
-                  if (event.step === 'addresses') summary.addressesCorrected = event.corrected || 0
-                  if (event.step === 'names') summary.namesCorrected = event.applied || 0
-                  if (event.step === 'splitting') summary.entriesSplit = event.split_count || 0
-                  return { ...s, status: 'completed', detail: event.message }
-                }
-                if (event.status === 'skipped') return { ...s, status: 'skipped', detail: event.message }
-                if (event.status === 'error') return { ...s, status: 'error', detail: event.message }
-                return s
-              }))
-            }
-
-            if (event.step === 'complete' && event.entries) {
-              summary.finalCount = event.entries.length
-              setEnrichSummary(summary)
-              setActiveJob({
-                ...activeJob,
-                result: {
-                  ...activeJob.result,
-                  entries: event.entries as PartyEntry[],
-                  total_count: event.entries.length,
-                },
-              })
-              setEnrichComplete(true)
-            }
-          } catch { /* skip malformed lines */ }
-        }
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Validation failed')
-      setShowValidation(false)
-    } finally {
-      setIsValidating(false)
-    }
   }
 
   const handleFileStaged = async (files: File[]) => {
@@ -935,44 +805,6 @@ export default function Extract() {
                     )}
                   </div>
                   <div className="flex gap-2">
-                    {pipelineEnabled && (
-                      <button
-                        onClick={handleValidate}
-                        disabled={isValidating}
-                        className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-tre-teal to-tre-teal/80 text-white rounded-lg hover:from-tre-teal/90 hover:to-tre-teal/70 transition-colors text-sm disabled:opacity-50"
-                      >
-                        <Wand2 className="w-4 h-4" />
-                        {isValidating ? 'Validating...' : 'Validate Data'}
-                      </button>
-                    )}
-                    {aiEnabled && (
-                      <button
-                        onClick={() => setShowAiReview(!showAiReview)}
-                        className={`relative flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
-                          showAiReview
-                            ? 'bg-purple-100 text-purple-700 border border-purple-300'
-                            : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
-                        }`}
-                      >
-                        <Sparkles className="w-4 h-4" />
-                        AI Review
-                        {postProcess && postProcess.ai_suggestions.length > 0 && (
-                          <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-purple-600 text-white text-[10px] font-semibold rounded-full leading-none">
-                            {postProcess.ai_suggestions.length}
-                          </span>
-                        )}
-                      </button>
-                    )}
-                    {enrichmentEnabled && (
-                      <button
-                        onClick={() => setShowEnrichment(true)}
-                        disabled={preview.entriesToExport.length === 0}
-                        className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm disabled:opacity-50"
-                      >
-                        <Search className="w-4 h-4" />
-                        Contact Lookup ({preview.entriesToExport.length})
-                      </button>
-                    )}
                     <EnrichmentToolbar
                       {...featureFlags}
                       onCleanUp={pipeline.onCleanUp}
@@ -1376,28 +1208,6 @@ export default function Extract() {
                 onUndo={handleUndoCorrections}
               />
             )}
-            {/* AI Review Panel */}
-            {showAiReview && activeJob?.result?.entries && (
-              <AiReviewPanel
-                tool="extract"
-                entries={activeJob.result.entries}
-                initialSuggestions={postProcess?.ai_suggestions}
-                onApplySuggestions={handleApplySuggestions}
-                onClose={() => setShowAiReview(false)}
-              />
-            )}
-            {/* Enrichment Panel */}
-            <EnrichmentPanel
-              isOpen={showEnrichment}
-              onClose={() => setShowEnrichment(false)}
-              persons={preview.entriesToExport.map((e) => ({
-                name: e.primary_name,
-                address: e.mailing_address || undefined,
-                city: e.city || undefined,
-                state: e.state || undefined,
-                zip_code: e.zip_code || undefined,
-              }))}
-            />
             </>
           ) : activeJob?.result?.error_message ? (
             <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
@@ -1466,15 +1276,6 @@ export default function Extract() {
           )}
         </div>
       )}
-
-      {/* Validation Progress Modal */}
-      <EnrichmentProgress
-        isOpen={showValidation}
-        onClose={() => setShowValidation(false)}
-        steps={enrichSteps}
-        summary={enrichSummary}
-        isComplete={enrichComplete}
-      />
 
       {/* Mineral Export Modal */}
       <MineralExportModal
