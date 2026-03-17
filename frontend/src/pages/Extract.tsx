@@ -921,38 +921,6 @@ export default function Extract() {
                     />
                     <span>Hide Unknown Addresses</span>
                   </label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-600">Type:</span>
-                    <select
-                      value={filterPropertyType}
-                      onChange={(e) => setFilterPropertyType(e.target.value)}
-                      className="text-sm border border-gray-300 rounded px-2 py-1 focus:ring-tre-teal focus:border-tre-teal"
-                    >
-                      <option value="">All Types</option>
-                      <option value="residential">Residential</option>
-                      <option value="commercial">Commercial</option>
-                      <option value="land">Land</option>
-                      <option value="unknown">Unknown</option>
-                    </select>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-600">Value:</span>
-                    <input
-                      type="number"
-                      placeholder="Min"
-                      value={filterMinValue}
-                      onChange={(e) => setFilterMinValue(e.target.value)}
-                      className="w-24 text-sm border border-gray-300 rounded px-2 py-1 focus:ring-tre-teal focus:border-tre-teal"
-                    />
-                    <span className="text-gray-400">-</span>
-                    <input
-                      type="number"
-                      placeholder="Max"
-                      value={filterMaxValue}
-                      onChange={(e) => setFilterMaxValue(e.target.value)}
-                      className="w-24 text-sm border border-gray-300 rounded px-2 py-1 focus:ring-tre-teal focus:border-tre-teal"
-                    />
-                  </div>
                   <button
                     onClick={resetFilters}
                     className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
