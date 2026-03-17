@@ -273,17 +273,11 @@ async def auto_enrich(
     entries: list[dict],
     context: dict | None = None,
 ) -> PostProcessResult:
-    """Automatic post-processing pipeline run during upload.
+    """Fast post-processing pipeline run during upload.
 
-    Pipeline order:
-    1. Programmatic fixes (name casing, entity type)
-    2. Address verification (skip if address_verified=True)
-    3. Places lookup (flag institutional addresses)
-    4. Data enrichment (PDL + SearchBug contact data)
-    5. AI QA (Gemini — final quality review)
-
-    High-confidence AI suggestions are auto-applied; medium/low go to
-    ai_suggestions for manual review in the AiReviewPanel.
+    Only runs instant programmatic fixes. External API calls (Google Maps,
+    Places, PDL/SearchBug, Gemini) are deferred to the user-triggered
+    Clean Up / Validate / Enrich buttons in the pipeline API.
 
     Args:
         tool: Tool name (extract, title, proration, revenue).
@@ -291,10 +285,9 @@ async def auto_enrich(
         context: Optional context dict (e.g., statement-level info for revenue).
 
     Returns:
-        PostProcessResult with corrections and remaining suggestions.
+        PostProcessResult with corrections applied.
     """
     all_corrections: list[AutoCorrection] = []
-    ai_suggestions: list[AiSuggestion] = []
     steps_completed: list[str] = []
     steps_skipped: list[str] = []
 
@@ -321,212 +314,7 @@ async def auto_enrich(
     else:
         steps_skipped.append("entity_type")
 
-    # ── Step 3: Address validation (Extract, Title) — skip verified ──
-    if tool in ("extract", "title") and settings.use_google_maps:
-        field_map = FIELD_MAPS.get(tool)
-        if field_map:
-            try:
-                from app.services.address_validation_service import validate_address
-
-                addr_fields = field_map
-                corrected = 0
-                skipped_verified = 0
-                for i, entry in enumerate(entries):
-                    # Skip already-verified addresses
-                    if entry.get("address_verified"):
-                        skipped_verified += 1
-                        continue
-
-                    street = entry.get(addr_fields["street"]) or ""
-                    if not street:
-                        continue
-                    result = await asyncio.to_thread(
-                        validate_address,
-                        street=street,
-                        street_2=entry.get(addr_fields["street_2"]) or "",
-                        city=entry.get(addr_fields["city"]) or "",
-                        state=entry.get(addr_fields["state"]) or "",
-                        zip_code=entry.get(addr_fields["zip"]) or "",
-                    )
-                    if result.confidence in ("high", "partial"):
-                        # Store coordinates and property type from geocoding
-                        if result.property_type:
-                            entry["property_type"] = result.property_type
-                        if result.latitude is not None:
-                            entry["latitude"] = result.latitude
-                        if result.longitude is not None:
-                            entry["longitude"] = result.longitude
-
-                        if result.changed:
-                            for src_field, entry_field in [
-                                ("validated_street", addr_fields["street"]),
-                                ("validated_street_2", addr_fields["street_2"]),
-                                ("validated_city", addr_fields["city"]),
-                                ("validated_state", addr_fields["state"]),
-                                ("validated_zip", addr_fields["zip"]),
-                            ]:
-                                new_val = getattr(result, src_field, None)
-                                old_val = entry.get(entry_field) or ""
-                                if new_val and new_val != old_val:
-                                    all_corrections.append(AutoCorrection(
-                                        entry_index=i,
-                                        field=entry_field,
-                                        original_value=old_val,
-                                        corrected_value=new_val,
-                                        source="google_maps",
-                                        confidence=ConfidenceLevel.HIGH,
-                                    ))
-                                    entry[entry_field] = new_val
-                            corrected += 1
-
-                        # Mark address as verified
-                        entry["address_verified"] = True
-
-                if skipped_verified:
-                    logger.info("Skipped %d already-verified addresses", skipped_verified)
-                steps_completed.append("address_validation")
-            except Exception as e:
-                logger.warning("Address validation step failed: %s", e)
-                steps_skipped.append("address_validation")
-        else:
-            steps_skipped.append("address_validation")
-    else:
-        steps_skipped.append("address_validation")
-
-    # ── Step 4: Places lookup (Extract, Title) — flag institutional addresses ──
-    if tool in ("extract", "title") and settings.use_places:
-        try:
-            from app.services.property_lookup_service import lookup_place
-
-            flagged = 0
-            skipped_checked = 0
-            for i, entry in enumerate(entries):
-                # Skip already-checked entries
-                if entry.get("places_checked"):
-                    skipped_checked += 1
-                    continue
-
-                lat = entry.get("latitude")
-                lng = entry.get("longitude")
-                if lat is None or lng is None:
-                    continue
-
-                field_map = FIELD_MAPS.get(tool, {})
-                street = entry.get(field_map.get("street", "")) or ""
-                city = entry.get(field_map.get("city", "")) or ""
-                state = entry.get(field_map.get("state", "")) or ""
-                addr_str = ", ".join(p for p in [street, city, state] if p)
-
-                result = await asyncio.to_thread(
-                    lookup_place,
-                    latitude=lat,
-                    longitude=lng,
-                    address=addr_str,
-                )
-
-                entry["places_checked"] = True
-
-                if result.found:
-                    entry["place_type"] = result.place_type
-                    entry["place_name"] = result.place_name
-                    entry["place_flag"] = result.place_flag
-                    flagged += 1
-
-            if skipped_checked:
-                logger.info("Skipped %d already-checked places", skipped_checked)
-            if flagged:
-                logger.info("Flagged %d entries at institutional addresses", flagged)
-            steps_completed.append("places_lookup")
-        except Exception as e:
-            logger.warning("Places lookup step failed: %s", e)
-            steps_skipped.append("places_lookup")
-    else:
-        steps_skipped.append("places_lookup")
-
-    # ── Step 5: Data enrichment — PDL + SearchBug (Extract, Title) ──
-    if tool in ("extract", "title") and settings.use_enrichment:
-        try:
-            from app.services.enrichment.enrichment_service import (
-                enrich_person,
-                is_enrichment_enabled,
-            )
-
-            if is_enrichment_enabled():
-                field_map = FIELD_MAPS.get(tool, {})
-                enriched_count = 0
-                skipped_enriched = 0
-
-                for i, entry in enumerate(entries):
-                    # Skip already-enriched entries
-                    if entry.get("enrichment_completed"):
-                        skipped_enriched += 1
-                        continue
-
-                    # Only enrich individuals (not entities)
-                    entity_type = entry.get(field_map.get("entity_type", "entity_type")) or ""
-                    if entity_type.upper() not in ("INDIVIDUAL", "UNKNOWN", ""):
-                        continue
-
-                    name = entry.get(field_map.get("name", "")) or ""
-                    if not name:
-                        continue
-
-                    street = entry.get(field_map.get("street", "")) or ""
-                    city = entry.get(field_map.get("city", "")) or ""
-                    state = entry.get(field_map.get("state", "")) or ""
-                    zip_code = entry.get(field_map.get("zip", "")) or ""
-
-                    result = await enrich_person(
-                        name=name,
-                        address=street,
-                        city=city,
-                        state=state,
-                        zip_code=zip_code,
-                    )
-
-                    entry["enrichment_completed"] = True
-
-                    if result.enrichment_sources:
-                        enriched_count += 1
-                        # Store enrichment data on the entry
-                        if result.phones:
-                            entry["enrichment_phones"] = [
-                                {"number": p.number, "type": p.type}
-                                for p in result.phones
-                            ]
-                        if result.emails:
-                            entry["enrichment_emails"] = result.emails
-                        if result.social_profiles:
-                            entry["enrichment_social"] = [
-                                {"platform": s.platform, "url": s.url}
-                                for s in result.social_profiles
-                            ]
-                        if result.public_records:
-                            pr = result.public_records
-                            if pr.is_deceased or pr.has_bankruptcy or pr.has_liens:
-                                entry["enrichment_flags"] = {
-                                    "is_deceased": pr.is_deceased,
-                                    "deceased_date": pr.deceased_date,
-                                    "has_bankruptcy": pr.has_bankruptcy,
-                                    "has_liens": pr.has_liens,
-                                }
-                        entry["enrichment_sources"] = result.enrichment_sources
-                        entry["enrichment_confidence"] = result.match_confidence
-
-                if skipped_enriched:
-                    logger.info("Skipped %d already-enriched entries", skipped_enriched)
-                if enriched_count:
-                    logger.info("Enriched %d entries with contact data", enriched_count)
-                steps_completed.append("data_enrichment")
-            else:
-                steps_skipped.append("data_enrichment")
-        except Exception as e:
-            logger.warning("Data enrichment step failed: %s", e)
-            steps_skipped.append("data_enrichment")
-    else:
-        steps_skipped.append("data_enrichment")
-
-    # ── Step 6: Revenue-specific programmatic fixes ──
+    # ── Step 3: Revenue-specific programmatic fixes ──
     if tool == "revenue":
         code_fixes = _infer_product_code(entries)
         all_corrections.extend(code_fixes)
@@ -541,50 +329,15 @@ async def auto_enrich(
     else:
         steps_skipped.append("revenue_inference")
 
-    # ── Step 7: AI QA (all tools, when Gemini enabled) — final review ──
-    if settings.use_gemini:
-        try:
-            if tool == "revenue":
-                from app.services.gemini_service import verify_revenue_entries
-                ai_result = await verify_revenue_entries(entries, context)
-            else:
-                from app.services.gemini_service import validate_entries
-                ai_result = await validate_entries(tool, entries)
-
-            if ai_result.success:
-                for suggestion in ai_result.suggestions:
-                    idx = suggestion.entry_index
-                    if 0 <= idx < len(entries):
-                        if suggestion.confidence == ConfidenceLevel.HIGH:
-                            # Auto-apply high confidence
-                            old_val = str(entries[idx].get(suggestion.field, ""))
-                            entries[idx][suggestion.field] = suggestion.suggested_value
-                            all_corrections.append(AutoCorrection(
-                                entry_index=idx,
-                                field=suggestion.field,
-                                original_value=old_val,
-                                corrected_value=suggestion.suggested_value,
-                                source="ai",
-                                confidence=ConfidenceLevel.HIGH,
-                            ))
-                        else:
-                            # Medium/low → manual review
-                            ai_suggestions.append(suggestion)
-
-                # Mark entries as AI-reviewed
-                for entry in entries:
-                    entry["ai_reviewed"] = True
-
-            steps_completed.append("ai_verification")
-        except Exception as e:
-            logger.warning("AI verification step failed: %s", e)
-            steps_skipped.append("ai_verification")
-    else:
-        steps_skipped.append("ai_verification")
+    # External API steps (address validation, places, enrichment, AI QA)
+    # are deferred to user-triggered pipeline buttons (Clean Up / Validate / Enrich)
+    steps_skipped.extend([
+        "address_validation", "places_lookup", "data_enrichment", "ai_verification",
+    ])
 
     return PostProcessResult(
         corrections=all_corrections,
-        ai_suggestions=ai_suggestions,
+        ai_suggestions=[],
         steps_completed=steps_completed,
         steps_skipped=steps_skipped,
     )
