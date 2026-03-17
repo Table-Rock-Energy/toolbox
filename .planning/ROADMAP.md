@@ -138,4 +138,4 @@ Plans:
 | 6. RRC & GHL Fixes | v1.5 | 0/2 | Planning complete | - |
 | 7. Enrichment UI & Preview State | 2/3 | In Progress|  | - |
 | 8. Enrichment Pipeline Features | 3/3 | Complete    | 2026-03-16 | - |
-| 9. Tool-Specific AI Prompts | 2/2 | Complete   | 2026-03-17 | - |
+| 9. Tool-Specific AI Prompts | 2/2 | Complete    | 2026-03-17 | - |
