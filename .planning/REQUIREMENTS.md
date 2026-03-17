@@ -53,6 +53,8 @@ Deferred to v1.6 (On-Prem & ETL Pipeline).
 - **DEFER-02**: Frontend test suite
 - **DEFER-03**: Rate limiting
 - **DEFER-04**: Structured logging / request tracing
+- **DEFER-05**: Step-by-step processing progress — replace spinner-only with SSE-driven step indicators showing current operation (e.g., "Extracting PDF...", "Parsing CSV...", "Merging...") above preview area on all tool pages
+- **DEFER-06**: Cancellable operations — stop button on all tool processing that aborts in-progress work and clears partial state
 
 ## Out of Scope
 
