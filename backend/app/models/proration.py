@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
-if TYPE_CHECKING:
-    from app.models.ai_validation import PostProcessResult
+from app.models.ai_validation import PostProcessResult  # noqa: F401
 
 
 class WellType(str, Enum):
