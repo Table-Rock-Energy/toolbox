@@ -20,6 +20,7 @@ export interface UseEnrichmentPipelineReturn {
   checkedIndices: Set<number>
   completedSteps: Set<PipelineStep>
   recentlyAppliedKeys: Set<string>
+  errorMessage: string | null
   canCleanUp: boolean
   canValidate: boolean
   canEnrich: boolean
@@ -44,6 +45,7 @@ export function useEnrichmentPipeline<T extends object>(
   const [checkedIndices, setCheckedIndices] = useState<Set<number>>(new Set())
   const [recentlyAppliedKeys, setRecentlyAppliedKeys] = useState<Set<string>>(new Set())
   const [lastStep, setLastStep] = useState<PipelineStep | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -70,6 +72,7 @@ export function useEnrichmentPipeline<T extends object>(
 
     setActiveAction(step)
     setProposedChanges(null)
+    setErrorMessage(null)
 
     try {
       const entries = previewEntries.map((e) => ({ ...e } as Record<string, unknown>))
@@ -88,10 +91,11 @@ export function useEnrichmentPipeline<T extends object>(
         setLastStep(step)
       } else {
         const errorMsg = response.data?.error || response.error || 'Pipeline step failed'
-        console.error(`Pipeline ${step} error:`, errorMsg)
+        setErrorMessage(errorMsg)
       }
     } catch (err) {
-      console.error(`Pipeline ${step} error:`, err)
+      const msg = err instanceof Error ? err.message : 'Pipeline step failed'
+      setErrorMessage(msg)
     } finally {
       setActiveAction(null)
     }
@@ -151,6 +155,7 @@ export function useEnrichmentPipeline<T extends object>(
     setProposedChanges(null)
     setCheckedIndices(new Set())
     setLastStep(null)
+    setErrorMessage(null)
   }, [])
 
   const toggleCheck = useCallback((index: number) => {
@@ -181,6 +186,7 @@ export function useEnrichmentPipeline<T extends object>(
     checkedIndices,
     completedSteps,
     recentlyAppliedKeys,
+    errorMessage,
     canCleanUp,
     canValidate,
     canEnrich,

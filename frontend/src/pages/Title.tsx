@@ -841,6 +841,14 @@ export default function Title() {
                 </div>
               </div>
 
+              {/* Pipeline Error */}
+              {pipeline.errorMessage && (
+                <div className="px-6 py-3 border-b border-red-200 bg-red-50 flex items-center justify-between">
+                  <p className="text-sm text-red-700">{pipeline.errorMessage}</p>
+                  <button onClick={pipeline.onDismiss} className="text-sm text-red-500 hover:underline">Dismiss</button>
+                </div>
+              )}
+
               {/* Proposed Changes Panel */}
               {pipeline.proposedChanges && (
                 <div className="px-6 py-4 border-b border-gray-100">

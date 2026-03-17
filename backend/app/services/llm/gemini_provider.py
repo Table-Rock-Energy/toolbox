@@ -62,53 +62,48 @@ def _cleanup_batch_sync(
             f"\n\nOriginal CSV source data for cross-file comparison:\n{source_text}"
         )
 
-    try:
-        allowed, _, _ = _check_rate_limit()
-        if not allowed:
-            logger.warning("Rate limited during cleanup batch at offset %d", batch_offset)
-            return []
+    allowed, _, _ = _check_rate_limit()
+    if not allowed:
+        logger.warning("Rate limited during cleanup batch at offset %d", batch_offset)
+        raise RuntimeError("Gemini rate limit reached. Please wait a minute and try again.")
 
-        _record_request()
-        response = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=user_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                response_mime_type="application/json",
-                response_json_schema=CLEANUP_RESPONSE_SCHEMA,
-                temperature=0.1,
-            ),
+    _record_request()
+    response = client.models.generate_content(
+        model=settings.gemini_model,
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            response_mime_type="application/json",
+            response_json_schema=CLEANUP_RESPONSE_SCHEMA,
+            temperature=0.1,
+        ),
+    )
+
+    if hasattr(response, "usage_metadata") and response.usage_metadata:
+        _record_spend(
+            response.usage_metadata.prompt_token_count or 0,
+            response.usage_metadata.candidates_token_count or 0,
         )
 
-        if hasattr(response, "usage_metadata") and response.usage_metadata:
-            _record_spend(
-                response.usage_metadata.prompt_token_count or 0,
-                response.usage_metadata.candidates_token_count or 0,
-            )
-
-        data = json.loads(response.text)
-        suggestions = []
-        for s in data.get("suggestions", []):
-            try:
-                suggestions.append(
-                    AiSuggestion(
-                        entry_index=s["entry_index"],
-                        field=s["field"],
-                        current_value=str(s.get("current_value", "")),
-                        suggested_value=str(s.get("suggested_value", "")),
-                        reason=s.get("reason", ""),
-                        confidence=ConfidenceLevel(s.get("confidence", "medium")),
-                    )
+    data = json.loads(response.text)
+    suggestions = []
+    for s in data.get("suggestions", []):
+        try:
+            suggestions.append(
+                AiSuggestion(
+                    entry_index=s["entry_index"],
+                    field=s["field"],
+                    current_value=str(s.get("current_value", "")),
+                    suggested_value=str(s.get("suggested_value", "")),
+                    reason=s.get("reason", ""),
+                    confidence=ConfidenceLevel(s.get("confidence", "medium")),
                 )
-            except (ValueError, KeyError) as e:
-                logger.warning("Skipping malformed cleanup suggestion: %s", e)
-                continue
+            )
+        except (ValueError, KeyError) as e:
+            logger.warning("Skipping malformed cleanup suggestion: %s", e)
+            continue
 
-        return suggestions
-
-    except Exception as e:
-        logger.error("Gemini cleanup error at offset %d: %s", batch_offset, e)
-        return []
+    return suggestions
 
 
 class GeminiProvider:
