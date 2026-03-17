@@ -773,7 +773,12 @@ export default function Proration() {
       </div>
 
       {/* RRC Data Status - informational only */}
-      {!rrcLoading && (
+      {rrcLoading ? (
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-gray-50 border border-gray-200 animate-pulse">
+          <Database className="w-4 h-4 text-gray-400 flex-shrink-0" />
+          <span className="text-sm text-gray-400">Loading RRC data status...</span>
+        </div>
+      ) : (
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-green-50 border border-green-200">
           <Database className="w-4 h-4 text-green-600 flex-shrink-0" />
           <span className="text-sm text-green-800">
