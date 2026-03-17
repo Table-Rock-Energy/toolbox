@@ -812,9 +812,6 @@ export default function Extract() {
                       onEnrich={pipeline.onEnrich}
                       isProcessing={pipeline.isProcessing}
                       activeAction={pipeline.activeAction}
-                      canValidate={pipeline.canValidate}
-                      canEnrich={pipeline.canEnrich}
-                      hasProposedChanges={pipeline.proposedChanges !== null}
                       entryCount={preview.entriesToExport.length}
                     />
                     <button

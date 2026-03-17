@@ -51,17 +51,10 @@ export function useEnrichmentPipeline<T extends object>(
 
   const isProcessing = activeAction !== null
 
-  // Sequential unlock logic
+  // All buttons are independently usable (no sequential lock)
   const canCleanUp = featureFlags.cleanUpEnabled && !isProcessing
-  const canValidate = featureFlags.validateEnabled
-    && (completedSteps.has('cleanup') || !featureFlags.cleanUpEnabled)
-    && !isProcessing
-  const canEnrich = featureFlags.enrichEnabled
-    && (completedSteps.has('validate') || (
-      !featureFlags.validateEnabled
-      && (completedSteps.has('cleanup') || !featureFlags.cleanUpEnabled)
-    ))
-    && !isProcessing
+  const canValidate = featureFlags.validateEnabled && !isProcessing
+  const canEnrich = featureFlags.enrichEnabled && !isProcessing
 
   const runStep = useCallback(async (step: PipelineStep) => {
     // Re-run confirmation
