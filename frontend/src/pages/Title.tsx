@@ -306,11 +306,13 @@ export default function Title() {
     featureFlags,
   })
 
-  const getEntryStatus =(entry: OwnerEntry): { label: string; color: string } => {
-    if (entry.duplicate_flag && !entry.has_address) {
+  const getEntryStatus = (entry: OwnerEntry): { label: string; color: string } => {
+    // When Hide Duplicates is active, the kept entries shouldn't show "Duplicate"
+    const isDup = entry.duplicate_flag && !hideDuplicates
+    if (isDup && !entry.has_address) {
       return { label: 'Dup + No Addr', color: 'text-purple-600 bg-purple-100' }
     }
-    if (entry.duplicate_flag) {
+    if (isDup) {
       return { label: 'Duplicate', color: 'text-yellow-700 bg-yellow-100' }
     }
     if (!entry.has_address) {
