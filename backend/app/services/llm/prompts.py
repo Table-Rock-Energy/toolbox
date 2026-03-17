@@ -97,6 +97,8 @@ For EVERY field that differs between merged and CSV data:
 - Mark ALL cross-file discrepancies as "high" confidence (these are objective factual mismatches).
 - Compare: names, addresses, entity types, entry numbers, and any metadata fields present in both sources.
 
+Do NOT guess missing addresses or fill in data you don't have. Mark incomplete entries by suggesting 'incomplete' in a notes/comments field.
+
 Return corrections as JSON with: entry_index, field, current_value, suggested_value, reason, confidence (high/medium/low).
 If all entries look correct and CSV matches merged data, return {"suggestions": []}.""",
 }
