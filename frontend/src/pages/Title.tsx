@@ -668,6 +668,15 @@ export default function Title() {
                     </p>
                   </div>
                   <div className="flex gap-2">
+                    <EnrichmentToolbar
+                      {...featureFlags}
+                      onCleanUp={pipeline.onCleanUp}
+                      onValidate={pipeline.onValidate}
+                      onEnrich={pipeline.onEnrich}
+                      isProcessing={pipeline.isProcessing}
+                      activeAction={pipeline.activeAction}
+                      entryCount={preview.entriesToExport.length}
+                    />
                     <button
                       onClick={() => {
                         const hasPerEntryCampaign = preview.entriesToExport.some(e => e.campaign_name)
@@ -686,15 +695,6 @@ export default function Title() {
                       <Download className="w-4 h-4" />
                       Mineral
                     </button>
-                    <EnrichmentToolbar
-                      {...featureFlags}
-                      onCleanUp={pipeline.onCleanUp}
-                      onValidate={pipeline.onValidate}
-                      onEnrich={pipeline.onEnrich}
-                      isProcessing={pipeline.isProcessing}
-                      activeAction={pipeline.activeAction}
-                      entryCount={preview.entriesToExport.length}
-                    />
                   </div>
                 </div>
               </div>
