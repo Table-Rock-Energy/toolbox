@@ -13,7 +13,121 @@ from app.models.proration import MineralHolderRow
 
 
 # ---------------------------------------------------------------------------
-# RRC-02: split_lease_number tests
+# RRC-02: split_compound_lease tests
+# ---------------------------------------------------------------------------
+
+def test_split_compound_lease_district_inheritance():
+    """District from first part propagates to subsequent bare numbers."""
+    from app.api.proration import split_compound_lease
+    assert split_compound_lease("02-12345/12346", "") == [("02", "12345"), ("02", "12346")]
+
+
+def test_split_compound_lease_fallback_district():
+    """Bare numbers use fallback_district when no part has a prefix."""
+    from app.api.proration import split_compound_lease
+    assert split_compound_lease("12345/12346", "08") == [("08", "12345"), ("08", "12346")]
+
+
+def test_split_compound_lease_mixed_districts():
+    """Each part with its own district prefix is resolved independently."""
+    from app.api.proration import split_compound_lease
+    assert split_compound_lease("02-12345,03-67890", "") == [("02", "12345"), ("03", "67890")]
+
+
+def test_split_compound_lease_empty():
+    """Empty string returns empty list."""
+    from app.api.proration import split_compound_lease
+    assert split_compound_lease("", "") == []
+
+
+def test_split_compound_lease_single():
+    """Single lease (no delimiter) returns empty list (not compound)."""
+    from app.api.proration import split_compound_lease
+    assert split_compound_lease("02-12345", "") == []
+
+
+# ---------------------------------------------------------------------------
+# RRC-02: split_lookup status + sub_lease_results annotation
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_split_lookup_status():
+    """Compound lease where one sub-lease found, one not -> split_lookup status."""
+    from unittest.mock import AsyncMock, patch
+
+    async def mock_lookup_rrc_acres(district, lease_number):
+        return None
+
+    async def mock_lookup_rrc_by_lease_number(lease_number):
+        return None
+
+    async def mock_fetch_individual_leases(leases):
+        # Only return data for lease 12345, not 12346
+        results = {}
+        for d, ln, _cc in leases:
+            if ln == "12345":
+                results[(d, ln)] = {"acres": 240.0, "type": "oil"}
+        return results
+
+    async def mock_ensure_counties_fresh(counties):
+        return []
+
+    def mock_lookup_county(name):
+        return ("123", "02", name.upper())
+
+    from app.api import proration as proration_mod
+
+    with patch.object(proration_mod, "fetch_individual_leases", side_effect=mock_fetch_individual_leases), \
+         patch.object(proration_mod, "ensure_counties_fresh", side_effect=mock_ensure_counties_fresh), \
+         patch("app.services.firestore_service.lookup_rrc_acres", side_effect=mock_lookup_rrc_acres, create=True), \
+         patch("app.services.firestore_service.lookup_rrc_by_lease_number", side_effect=mock_lookup_rrc_by_lease_number, create=True), \
+         patch("app.services.proration.rrc_county_codes.lookup_county", side_effect=mock_lookup_county):
+
+        from app.api.proration import fetch_missing_rrc_data
+        from app.models.proration import FetchMissingRequest
+
+        bg = AsyncMock()
+        bg.add_task = lambda *a, **kw: None
+
+        request = FetchMissingRequest(rows=[
+            MineralHolderRow(
+                county="MIDLAND",
+                owner="Compound Owner",
+                interest=0.25,
+                rrc_lease="02-12345/12346",
+            ),
+        ])
+
+        result = await fetch_missing_rrc_data(request, bg)
+
+        row = result.updated_rows[0]
+        assert row.fetch_status == "split_lookup"
+        assert row.sub_lease_results is not None
+        assert len(row.sub_lease_results) == 2
+
+
+def test_sub_lease_results_annotation():
+    """sub_lease_results list has correct structure: district, lease_number, status, acres."""
+    row = MineralHolderRow(
+        county="MIDLAND",
+        owner="Test Owner",
+        interest=0.25,
+        fetch_status="split_lookup",
+        sub_lease_results=[
+            {"district": "02", "lease_number": "12345", "status": "found", "acres": 240.0},
+            {"district": "02", "lease_number": "12346", "status": "not_found", "acres": None},
+        ],
+    )
+    assert len(row.sub_lease_results) == 2
+    for entry in row.sub_lease_results:
+        assert "district" in entry
+        assert "lease_number" in entry
+        assert "status" in entry
+        assert "acres" in entry
+
+
+# ---------------------------------------------------------------------------
+# Legacy split_lease_number tests (kept for backward compat of old function)
 # ---------------------------------------------------------------------------
 
 def test_split_slash_separated():
@@ -81,6 +195,16 @@ def test_model_accepts_all_fetch_status_values():
             fetch_status=status,
         )
         assert row.fetch_status == status
+
+
+def test_model_sub_lease_results_defaults_none():
+    """MineralHolderRow sub_lease_results defaults to None."""
+    row = MineralHolderRow(
+        county="MIDLAND",
+        owner="Test Owner",
+        interest=0.25,
+    )
+    assert row.sub_lease_results is None
 
 
 # ---------------------------------------------------------------------------
