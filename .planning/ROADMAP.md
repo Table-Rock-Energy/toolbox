@@ -65,7 +65,7 @@ See: `.planning/milestones/v1.5-ROADMAP.md` for full details
   3. Non-admin users see only their own jobs in history; admin users see all jobs
   4. Deleting a job that belongs to another user returns 403 (unless requester is admin)
   5. The GHL send modal no longer shows or sends a smart_list_name field
-**Plans**: TBD
+**Plans:** TBD
 
 Plans:
 - [ ] 10-01: GHL smart_list_name removal (frontend first, then backend) (GHL-01, GHL-02)
@@ -80,7 +80,7 @@ Plans:
   1. Lease numbers with slashes or commas (e.g., "02-12345/12346") are split and each part is looked up individually with the district prefix inherited
   2. After fetch-missing completes, found RRC data appears in the proration table without a page reload or re-query
   3. Each row shows its fetch status: found, not found, or multiple matches
-**Plans**: TBD
+**Plans:** 1 plan
 
 Plans:
 - [ ] 11-01: Compound lease splitting with district inheritance + direct data use + per-row status UI (RRC-01, RRC-02, RRC-03)
@@ -95,7 +95,7 @@ Plans:
   3. The modal shows a progress bar with step labels and estimated time remaining
   4. As each step completes, the preview table behind the modal updates in real-time with the new data
   5. Modified cells are highlighted so the user can see exactly what changed after closing the modal
-**Plans**: TBD
+**Plans:** TBD
 
 Plans:
 - [ ] 12-01: useEnrichmentPipeline.runAllSteps() with local variable threading and AbortController (ENRICH-02, ENRICH-03, ENRICH-06)
