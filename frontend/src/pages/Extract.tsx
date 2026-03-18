@@ -1152,9 +1152,14 @@ export default function Extract() {
                             {isColVisible('status') && (
                               <td className="py-2 px-3">
                                 {entry.flagged ? (
-                                  <span className="inline-flex items-center gap-1 text-yellow-600 text-xs" title={entry.flag_reason}>
+                                  <span className="inline-flex items-center gap-1 text-yellow-600 text-xs relative group cursor-help">
                                     <Flag className="w-3 h-3" />
                                     Review
+                                    {entry.flag_reason && (
+                                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-gray-900 text-white text-[10px] rounded px-2 py-1 whitespace-nowrap z-20 shadow-lg">
+                                        {entry.flag_reason}
+                                      </span>
+                                    )}
                                   </span>
                                 ) : (
                                   <span className="text-green-600 text-xs">OK</span>
@@ -1278,15 +1283,27 @@ export default function Extract() {
           </>
         }
       >
-        {editingEntry && (
+        {editingEntry && (() => {
+          // Determine which field triggered the flag
+          const reason = editingEntry.flag_reason || ''
+          const nameHighlight = reason.toLowerCase().includes('name') ? 'ring-2 ring-yellow-400 border-yellow-400 bg-yellow-50' : ''
+          const addrHighlight = reason.toLowerCase().includes('address') ? 'ring-2 ring-yellow-400 border-yellow-400 bg-yellow-50' : ''
+          const inputBase = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal'
+          return (
           <div className="space-y-4">
+            {editingEntry.flagged && editingEntry.flag_reason && (
+              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800 flex items-center gap-2">
+                <Flag className="w-4 h-4 text-yellow-600 flex-shrink-0" />
+                {editingEntry.flag_reason}
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
               <input
                 type="text"
                 value={editingEntry.primary_name}
                 onChange={(e) => setEditingEntry({ ...editingEntry, primary_name: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                className={`${inputBase} ${nameHighlight}`}
               />
             </div>
             <div>
@@ -1295,7 +1312,7 @@ export default function Extract() {
                 type="text"
                 value={editingEntry.mailing_address || ''}
                 onChange={(e) => setEditingEntry({ ...editingEntry, mailing_address: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                className={`${inputBase} ${addrHighlight}`}
                 placeholder="Street address"
               />
             </div>
@@ -1305,7 +1322,7 @@ export default function Extract() {
                 type="text"
                 value={editingEntry.mailing_address_2 || ''}
                 onChange={(e) => setEditingEntry({ ...editingEntry, mailing_address_2: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                className={`${inputBase} ${addrHighlight}`}
                 placeholder="Apt, Suite, Unit, etc."
               />
             </div>
@@ -1316,7 +1333,7 @@ export default function Extract() {
                   type="text"
                   value={editingEntry.city || ''}
                   onChange={(e) => setEditingEntry({ ...editingEntry, city: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                  className={`${inputBase} ${addrHighlight}`}
                 />
               </div>
               <div>
@@ -1326,7 +1343,7 @@ export default function Extract() {
                   value={editingEntry.state || ''}
                   onChange={(e) => setEditingEntry({ ...editingEntry, state: e.target.value.toUpperCase().slice(0, 2) })}
                   maxLength={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                  className={`${inputBase} ${addrHighlight}`}
                 />
               </div>
               <div>
@@ -1336,7 +1353,7 @@ export default function Extract() {
                   value={editingEntry.zip_code || ''}
                   onChange={(e) => setEditingEntry({ ...editingEntry, zip_code: e.target.value })}
                   maxLength={10}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                  className={`${inputBase} ${addrHighlight}`}
                 />
               </div>
             </div>
@@ -1346,11 +1363,12 @@ export default function Extract() {
                 type="text"
                 value={editingEntry.notes || ''}
                 onChange={(e) => setEditingEntry({ ...editingEntry, notes: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal"
+                className={inputBase}
               />
             </div>
           </div>
-        )}
+          )
+        })()}
       </Modal>
     </div>
   )
