@@ -17,9 +17,9 @@ Requirements for v1.6 Pipeline Fixes & Unified Enrichment. Each maps to roadmap 
 
 ### RRC Pipeline
 
-- [ ] **RRC-01**: Compound lease numbers (slash/comma-separated) are split and each lease looked up individually
-- [ ] **RRC-02**: Fetch-missing uses returned RRC data directly instead of re-querying Firestore
-- [ ] **RRC-03**: After fetch-missing, each row shows status: found, not found, or multiple matches
+- [x] **RRC-01**: Compound lease numbers (slash/comma-separated) are split and each lease looked up individually
+- [x] **RRC-02**: Fetch-missing uses returned RRC data directly instead of re-querying Firestore
+- [x] **RRC-03**: After fetch-missing, each row shows status: found, not found, or multiple matches
 
 ### GHL Cleanup
 
@@ -71,9 +71,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-03 | Phase 10 | Pending |
 | AUTH-04 | Phase 10 | Pending |
 | AUTH-05 | Phase 10 | Pending |
-| RRC-01 | Phase 11 | Pending |
-| RRC-02 | Phase 11 | Pending |
-| RRC-03 | Phase 11 | Pending |
+| RRC-01 | Phase 11 | Complete |
+| RRC-02 | Phase 11 | Complete |
+| RRC-03 | Phase 11 | Complete |
 | GHL-01 | Phase 10 | Pending |
 | GHL-02 | Phase 10 | Pending |
 | ENRICH-01 | Phase 12 | Pending |

@@ -50,7 +50,7 @@ See: `.planning/milestones/v1.5-ROADMAP.md` for full details
 **Milestone Goal:** Fix RRC fetch-missing pipeline, harden admin/history auth, clean up GHL legacy fields, and replace 3-button enrichment with a single-button modal that runs all steps with real-time progress and live preview updates.
 
 - [ ] **Phase 10: Auth Hardening & GHL Cleanup** - Secure admin/history endpoints and remove deprecated GHL smart_list_name field
-- [ ] **Phase 11: RRC Pipeline Fix** - Compound lease splitting, direct data use, per-row status feedback
+- [x] **Phase 11: RRC Pipeline Fix** - Compound lease splitting, direct data use, per-row status feedback (completed 2026-03-18)
 - [ ] **Phase 12: Unified Enrichment Modal** - Single-button modal replaces 3-button toolbar with sequential pipeline execution and live preview
 
 ## Phase Details
@@ -80,7 +80,7 @@ Plans:
   1. Lease numbers with slashes or commas (e.g., "02-12345/12346") are split and each part is looked up individually with the district prefix inherited
   2. After fetch-missing completes, found RRC data appears in the proration table without a page reload or re-query
   3. Each row shows its fetch status: found, not found, or multiple matches
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] 11-01: Compound lease splitting with district inheritance + direct data use + per-row status UI (RRC-01, RRC-02, RRC-03)
@@ -120,5 +120,5 @@ Plans:
 | 8. Enrichment Pipeline Features | v1.5 | 3/3 | Complete | 2026-03-16 |
 | 9. Tool-Specific AI Prompts | v1.5 | 2/2 | Complete | 2026-03-17 |
 | 10. Auth Hardening & GHL Cleanup | v1.6 | 0/3 | Not started | - |
-| 11. RRC Pipeline Fix | v1.6 | 0/1 | Not started | - |
+| 11. RRC Pipeline Fix | 1/1 | Complete   | 2026-03-18 | - |
 | 12. Unified Enrichment Modal | v1.6 | 0/2 | Not started | - |
