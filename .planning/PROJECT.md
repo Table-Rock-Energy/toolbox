@@ -49,6 +49,7 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - ✓ Preview state as single source of truth for exports (inline edits, exclusions, enrichment) — v1.5
 - ✓ Tool-specific AI prompts: name cleanup, figure verification, cross-file comparison — v1.5
 - ✓ Provider-agnostic LLM interface (Gemini swappable via admin settings) — v1.5
+- ✓ RRC fetch-missing: compound lease splitting, semaphore-throttled concurrency, direct data return, sub-lease tooltips — v1.6
 
 ### Active
 
@@ -116,4 +117,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Dedicated ecf_parser.py module (not extending parser.py) | Clean separation, ECF has distinct parsing logic | ✓ Good — v1.4 |
 
 ---
-*Last updated: 2026-03-18 after v1.6 milestone start*
+*Last updated: 2026-03-18 after Phase 11 (RRC Pipeline Fix) completion*
