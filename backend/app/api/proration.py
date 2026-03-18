@@ -527,6 +527,15 @@ async def fetch_missing_rrc_data(request: FetchMissingRequest, background_tasks:
                 else:
                     row.fetch_status = "not_found"
 
+    # Background: persist individual results to Firestore for future cache hits
+    if missing_leases:
+        try:
+            individual_results  # noqa: F841 - check it exists
+            if individual_results:
+                background_tasks.add_task(_background_persist_individual, individual_results)
+        except NameError:
+            pass
+
     # Mark rows that are still missing after full fetch attempt
     RRC_SEARCH_URL = "https://webapps2.rrc.texas.gov/EWA/oilProQueryAction.do"
     for row in updated_rows:
@@ -562,6 +571,26 @@ async def fetch_missing_rrc_data(request: FetchMissingRequest, background_tasks:
         still_missing_count=len(request.rows) - matched,
         counties_downloaded=county_download_infos,
     )
+
+
+async def _background_persist_individual(results: dict[tuple[str, str], dict]) -> None:
+    """Persist individually-fetched RRC data to Firestore for cache."""
+    try:
+        from app.services.firestore_service import upsert_rrc_oil_record
+
+        for (district, lease_number), info in results.items():
+            await upsert_rrc_oil_record(
+                district=district,
+                lease_number=lease_number,
+                operator_name=info.get("operator"),
+                lease_name=info.get("lease_name"),
+                field_name=None,
+                county=None,
+                unit_acres=info.get("acres"),
+            )
+        logger.info("Background persist: saved %d individual RRC results to Firestore", len(results))
+    except Exception as e:
+        logger.warning("Background persist failed: %s", e)
 
 
 async def _background_county_download(counties: list[dict]) -> None:
