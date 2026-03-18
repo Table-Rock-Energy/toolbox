@@ -1,11 +1,14 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Repeat, Download, Upload, AlertCircle, Send, XCircle, FileWarning, Pencil } from 'lucide-react'
+import { Repeat, Download, Upload, AlertCircle, Send, XCircle, FileWarning, Pencil, CheckCircle, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { FileUpload, GhlSendModal, Modal } from '../components'
 import { useAuth } from '../contexts/AuthContext'
+import { useToolLayout } from '../hooks/useToolLayout'
 import { ghlApi } from '../utils/api'
 import type { GhlConnectionResponse, FailedContactDetail, DailyRateLimitInfo } from '../utils/api'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
+
+const STORAGE_KEY_PREFIX = 'ghl-prep-visible-columns'
 
 interface TransformResult {
   success: boolean
@@ -31,10 +34,20 @@ interface UploadResponse {
   result?: TransformResult
 }
 
+interface GhlPrepJob {
+  id: string
+  job_id?: string
+  documentName: string
+  user: string
+  timestamp: string
+  result?: TransformResult
+}
+
 type ViewMode = 'normal' | 'flagged' | 'failed-contacts'
 
 export default function GhlPrep() {
   const { user, userName, getIdToken } = useAuth()
+  const { panelCollapsed, togglePanel } = useToolLayout('ghl-prep', user?.uid, STORAGE_KEY_PREFIX)
 
   const authHeaders = async (): Promise<Record<string, string>> => {
     const token = await getIdToken()
@@ -43,16 +56,18 @@ export default function GhlPrep() {
     return headers
   }
 
+  const [jobs, setJobs] = useState<GhlPrepJob[]>([])
+  const [activeJob, setActiveJob] = useState<GhlPrepJob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isLoadingJobs, setIsLoadingJobs] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<TransformResult | null>(null)
   const [sortColumn, setSortColumn] = useState<string | null>(null)
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [connections, setConnections] = useState<GhlConnectionResponse[]>([])
   const [showSendModal, setShowSendModal] = useState(false)
   const [dailyLimit, setDailyLimit] = useState<DailyRateLimitInfo | null>(null)
 
-  // Active job tracking (stored in localStorage for persistence)
+  // Active GHL job tracking (stored in localStorage for persistence)
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
 
   // Failed contacts management
@@ -67,6 +82,40 @@ export default function GhlPrep() {
   const [editingRow, setEditingRow] = useState<Record<string, string> | null>(null)
   const [editingIndex, setEditingIndex] = useState<number>(-1)
 
+  // Convenience: derive result from activeJob
+  const result = activeJob?.result ?? null
+
+  // Load recent jobs from Firestore on mount
+  useEffect(() => {
+    const loadJobs = async () => {
+      setIsLoadingJobs(true)
+      try {
+        const hdrs = await authHeaders()
+        const response = await fetch(`${API_BASE}/history/jobs?tool=ghl-prep&limit=20`, { headers: hdrs })
+        if (!response.ok) return
+        const data = await response.json()
+        const jobsArray = data.jobs || (Array.isArray(data) ? data : [])
+        if (jobsArray.length > 0) {
+          const loaded: GhlPrepJob[] = jobsArray.map((j: Record<string, unknown>) => ({
+            id: j.id as string,
+            job_id: j.id as string,
+            documentName: (j.source_filename as string) || 'Unknown',
+            user: (j.user_id as string) || 'System',
+            timestamp: j.created_at
+              ? new Date(j.created_at as string).toLocaleString()
+              : '',
+          }))
+          setJobs(loaded)
+        }
+      } catch {
+        // Firestore unavailable — continue with empty list
+      } finally {
+        setIsLoadingJobs(false)
+      }
+    }
+    loadJobs()
+  }, [])
+
   // Fetch GHL connections from backend
   useEffect(() => {
     const fetchConnections = async () => {
@@ -78,7 +127,7 @@ export default function GhlPrep() {
     fetchConnections()
   }, [])
 
-  // Fetch daily limit info on mount
+  // Fetch daily limit info after connections load
   useEffect(() => {
     const fetchDailyLimit = async () => {
       if (connections.length === 0) return
@@ -90,7 +139,7 @@ export default function GhlPrep() {
     fetchDailyLimit()
   }, [connections])
 
-  // Check for active job on mount
+  // Check for active GHL send job on mount
   useEffect(() => {
     const checkActiveJob = async () => {
       const storedJobId = localStorage.getItem('ghl_active_job_id')
@@ -100,16 +149,13 @@ export default function GhlPrep() {
         const res = await ghlApi.getJobStatus(storedJobId)
         if (res.data) {
           if (res.data.status === 'processing') {
-            // Job still active - auto-open modal to reconnect
             setActiveJobId(storedJobId)
             setShowSendModal(true)
           } else {
-            // Job completed/failed/cancelled - clear localStorage
             localStorage.removeItem('ghl_active_job_id')
           }
         }
       } catch (err) {
-        // Job not found (404) or error - clear localStorage
         console.error('Failed to check active job:', err)
         localStorage.removeItem('ghl_active_job_id')
       }
@@ -117,6 +163,31 @@ export default function GhlPrep() {
 
     checkActiveJob()
   }, [])
+
+  const handleSelectJob = async (job: GhlPrepJob) => {
+    setActiveJob(job)
+    setError(null)
+    setViewMode('normal')
+    setFailedContacts([])
+    setExcludedRows(new Set())
+    setSortColumn(null)
+    setSortDirection('asc')
+  }
+
+  const handleDeleteJob = async (e: React.MouseEvent, job: GhlPrepJob) => {
+    e.stopPropagation()
+    if (!job.job_id) {
+      setJobs((prev) => prev.filter((j) => j.id !== job.id))
+      if (activeJob?.id === job.id) setActiveJob(null)
+      return
+    }
+    try {
+      const hdrs = await authHeaders()
+      await fetch(`${API_BASE}/history/jobs/${job.job_id}`, { method: 'DELETE', headers: hdrs })
+    } catch { /* best-effort */ }
+    setJobs((prev) => prev.filter((j) => j.id !== job.id))
+    if (activeJob?.id === job.id) setActiveJob(null)
+  }
 
   // Get dynamic columns from current data (normal result, flagged, or failed contacts)
   const columns = useMemo(() => {
@@ -205,10 +276,8 @@ export default function GhlPrep() {
 
   const toggleSelectAll = () => {
     if (isAllSelected) {
-      // Deselect all visible rows
       setExcludedRows(new Set(sortedRows.map((_, i) => i)))
     } else {
-      // Select all
       setExcludedRows(new Set())
     }
   }
@@ -223,10 +292,9 @@ export default function GhlPrep() {
   }
 
   const handleSaveEdit = () => {
-    if (!editingRow || editingIndex < 0 || !result) return
+    if (!editingRow || editingIndex < 0 || !result || !activeJob) return
 
     const updatedRows = [...result.rows]
-    // Find the actual index in result.rows (sortedRows may be reordered)
     const originalRow = sortedRows[editingIndex]
     const realIndex = result.rows.findIndex(r =>
       r['M1neral Contact System ID'] === originalRow['M1neral Contact System ID'] &&
@@ -236,7 +304,10 @@ export default function GhlPrep() {
 
     if (realIndex >= 0) {
       updatedRows[realIndex] = editingRow
-      setResult({ ...result, rows: updatedRows })
+      const updatedResult = { ...result, rows: updatedRows }
+      const updatedJob = { ...activeJob, result: updatedResult }
+      setActiveJob(updatedJob)
+      setJobs((prev) => prev.map((j) => j.id === activeJob.id ? updatedJob : j))
     }
 
     setEditingRow(null)
@@ -249,10 +320,17 @@ export default function GhlPrep() {
     const file = files[0]
     setIsProcessing(true)
     setError(null)
-    setResult(null)
     setViewMode('normal')
     setFailedContacts([])
     setExcludedRows(new Set())
+
+    const newJob: GhlPrepJob = {
+      id: String(Date.now()),
+      documentName: file.name,
+      user: user?.displayName || user?.email || 'Unknown',
+      timestamp: new Date().toLocaleString(),
+    }
+
     try {
       const formData = new FormData()
       formData.append('file', file)
@@ -275,10 +353,31 @@ export default function GhlPrep() {
 
       const data: UploadResponse = await response.json()
       if (data.result) {
-        setResult(data.result)
+        newJob.result = data.result
+        newJob.job_id = data.result.job_id
       }
+
+      setJobs((prev) => [newJob, ...prev])
+      setActiveJob(newJob)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to process file')
+      newJob.result = {
+        success: false,
+        rows: [],
+        total_count: 0,
+        flagged_rows: [],
+        flagged_count: 0,
+        transformed_fields: {
+          title_cased: 0,
+          campaigns_extracted: 0,
+          phone_mapped: 0,
+          contact_owner_added: 0,
+          flagged: 0,
+        },
+        warnings: [],
+        source_filename: file.name,
+      }
+      setJobs((prev) => [newJob, ...prev])
     } finally {
       setIsProcessing(false)
     }
@@ -290,7 +389,6 @@ export default function GhlPrep() {
       return
     }
 
-    // Filter sortedRows (not baseRows) since excludedRows indices correspond to sortedRows positions
     const exportRows = sortedRows
       .filter((_, i) => !excludedRows.has(i))
       .map(
@@ -371,7 +469,6 @@ export default function GhlPrep() {
       return
     }
 
-    // Generate CSV content — include all contact fields plus error info
     const headers = [
       'Mineral Contact System Id',
       'First Name',
@@ -444,7 +541,7 @@ export default function GhlPrep() {
   }
 
   const handleReset = () => {
-    setResult(null)
+    setActiveJob(null)
     setError(null)
     setSortColumn(null)
     setSortDirection('asc')
@@ -469,9 +566,9 @@ export default function GhlPrep() {
 
   // Retry send with failed contacts
   const handleRetrySend = () => {
-    // Convert failed contacts back to rows format for the modal
+    if (!activeJob) return
     const retryRows = failedContacts.map(fc => fc.contact_data)
-    setResult({
+    const retryResult: TransformResult = {
       success: true,
       rows: retryRows,
       total_count: retryRows.length,
@@ -486,7 +583,9 @@ export default function GhlPrep() {
       },
       warnings: [],
       source_filename: 'failed_contacts_retry',
-    })
+    }
+    const updatedJob = { ...activeJob, result: retryResult }
+    setActiveJob(updatedJob)
     setViewMode('normal')
     setShowSendModal(true)
   }
@@ -500,10 +599,8 @@ export default function GhlPrep() {
   // Handle modal close (clear activeJobId if job complete)
   const handleModalClose = async () => {
     setShowSendModal(false)
-    // Clear activeJobId and localStorage (modal only closes after job completes)
     setActiveJobId(null)
     localStorage.removeItem('ghl_active_job_id')
-    // Refresh daily limit after send completes
     const res = await ghlApi.getDailyLimit()
     if (res.data) {
       setDailyLimit(res.data)
@@ -525,17 +622,18 @@ export default function GhlPrep() {
             Transform Mineral export CSVs for GoHighLevel import
           </p>
         </div>
+        <button
+          onClick={togglePanel}
+          className="hidden lg:flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-tre-navy border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          title={panelCollapsed ? 'Show side panel' : 'Hide side panel'}
+        >
+          {panelCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+          {panelCollapsed ? 'Show Panel' : 'Hide Panel'}
+        </button>
       </div>
 
-      {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700">
-          <AlertCircle className="w-5 h-5" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {/* Upload Section */}
-      {!result && (
+      {/* Upload Section - shown above when panel is collapsed and no active result */}
+      {panelCollapsed && !result && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <FileUpload
             onFilesSelected={handleFilesSelected}
@@ -553,283 +651,383 @@ export default function GhlPrep() {
         </div>
       )}
 
-      {/* Results Section */}
-      {result && (
-        <div className="bg-white rounded-xl border border-gray-200">
-          {/* Results Header */}
-          <div className="px-6 py-4 border-b border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-oswald font-semibold text-tre-navy">
-                  {viewMode === 'failed-contacts' ? 'Failed Contacts'
-                    : viewMode === 'flagged' ? 'Mineral Update Report'
-                    : result.source_filename}
-                </h3>
-                <p className="text-sm text-gray-500">
-                  {viewMode === 'failed-contacts' ? 'Review and retry failed contacts'
-                    : viewMode === 'flagged' ? 'These contacts need to be updated in Mineral before GHL import'
-                    : 'Transformation complete'}
-                </p>
-              </div>
-              {viewMode === 'normal' && result && (
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={showIndividualsOnly}
-                      onChange={(e) => setShowIndividualsOnly(e.target.checked)}
-                      className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
-                    />
-                    Individuals only
-                  </label>
-                  <span className="text-xs text-gray-400">
-                    {showIndividualsOnly
-                      ? `${filteredRows.length} of ${currentRows.length} contacts`
-                      : `${currentRows.length} contacts`}
-                  </span>
+      <div className={`grid grid-cols-1 ${panelCollapsed ? '' : 'lg:grid-cols-3'} gap-6`}>
+        {/* Left Column - Upload and History */}
+        {!panelCollapsed && (
+          <div className="space-y-6">
+            {/* Upload Section */}
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <FileUpload
+                onFilesSelected={handleFilesSelected}
+                accept=".csv"
+                multiple={false}
+                label="Upload Mineral Export"
+                description="Drop your Mineral CSV export here"
+              />
+              {isProcessing && (
+                <div className="mt-4 flex items-center gap-2 text-tre-teal">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
+                  <span className="text-sm">Processing...</span>
                 </div>
               )}
-              <div className="flex gap-2">
-                {viewMode === 'flagged' && (
-                  <>
-                    <button
-                      onClick={() => setViewMode('normal')}
-                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-                    >
-                      <XCircle className="w-4 h-4" />
-                      Back to Clean Export
-                    </button>
-                    <button
-                      onClick={handleExportFlagged}
-                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-                    >
-                      <Download className="w-4 h-4" />
-                      Download Mineral Updates
-                    </button>
-                  </>
-                )}
-                {viewMode === 'failed-contacts' && (
-                  <>
-                    <button
-                      onClick={handleBackToNormalView}
-                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-                    >
-                      <XCircle className="w-4 h-4" />
-                      Back to Results
-                    </button>
-                    <button
-                      onClick={handleExportFailedContacts}
-                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-                    >
-                      <Download className="w-4 h-4" />
-                      Download Failed CSV
-                    </button>
-                    <button
-                      onClick={handleRetrySend}
-                      disabled={connections.length === 0 || failedContacts.length === 0}
-                      title={connections.length === 0 ? 'Add a GHL connection in Admin Settings first' : 'Retry sending failed contacts'}
-                      className="flex items-center gap-2 px-3 py-2 bg-tre-teal text-white rounded-lg hover:bg-tre-teal/90 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Send className="w-4 h-4" />
-                      Retry Send
-                    </button>
-                  </>
-                )}
-                {viewMode === 'normal' && (
-                  <>
-                    <button
-                      onClick={handleReset}
-                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-                    >
-                      <Upload className="w-4 h-4" />
-                      Upload New File
-                    </button>
-                    <div className="flex flex-col items-end gap-1">
-                      <button
-                        onClick={() => setShowSendModal(true)}
-                        disabled={connections.length === 0 || connections.every(c => c.validation_status !== 'valid') || (!!activeJobId)}
-                        title={
-                          connections.length === 0
-                            ? 'No GHL connection. Configure in Admin Settings.'
-                            : connections.every(c => c.validation_status !== 'valid')
-                            ? 'No valid GHL connection. Configure in Admin Settings.'
-                            : activeJobId
-                            ? 'Send in progress'
-                            : 'Send contacts to GoHighLevel'
-                        }
-                        className="flex items-center gap-2 px-3 py-2 bg-tre-teal text-white rounded-lg hover:bg-tre-teal/90 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Send className="w-4 h-4" />
-                        Send to GHL
-                      </button>
-                      {dailyLimit && connections.length > 0 && (
-                        <p className={`text-xs ${
-                          dailyLimit.warning_level === 'critical' ? 'text-red-600 font-medium' :
-                          dailyLimit.warning_level === 'warning' ? 'text-yellow-600' :
-                          'text-gray-400'
-                        }`}>
-                          Daily capacity: {dailyLimit.remaining.toLocaleString()} remaining
-                        </p>
-                      )}
-                    </div>
-                    <button
-                      onClick={handleExport}
-                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-                    >
-                      <Download className="w-4 h-4" />
-                      Download CSV
-                    </button>
-                  </>
-                )}
+            </div>
+
+            {/* Recent Jobs */}
+            <div className="bg-white rounded-xl border border-gray-200">
+              <div className="px-4 py-3 border-b border-gray-100">
+                <h3 className="font-medium text-gray-900">Recent Jobs</h3>
               </div>
+              {isLoadingJobs ? (
+                <div className="divide-y divide-gray-100">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className="px-4 py-3 animate-pulse">
+                      <div className="h-3 bg-gray-200 rounded w-3/4 mb-2"></div>
+                      <div className="h-2 bg-gray-100 rounded w-1/2"></div>
+                    </div>
+                  ))}
+                </div>
+              ) : jobs.length === 0 ? (
+                <div className="p-6 text-center text-gray-500">
+                  <Upload className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                  <p className="text-sm">No jobs yet</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
+                  {jobs.map((job) => (
+                    <button
+                      key={job.id}
+                      onClick={() => handleSelectJob(job)}
+                      className={`group w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${
+                        activeJob?.id === job.id ? 'bg-tre-teal/5 border-l-2 border-tre-teal' : ''
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {job.documentName}
+                          </p>
+                          <p className="text-xs text-gray-500">{job.user}</p>
+                          <p className="text-xs text-gray-400">{job.timestamp}</p>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {job.result?.success ? (
+                            <CheckCircle className="w-4 h-4 text-green-500" />
+                          ) : job.result && !job.result.success ? (
+                            <AlertCircle className="w-4 h-4 text-red-500" />
+                          ) : null}
+                          <span
+                            role="button"
+                            onClick={(e) => handleDeleteJob(e, job)}
+                            className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 text-gray-400 hover:text-red-500 transition-all"
+                            title="Delete job"
+                          >
+                            <X className="w-4 h-4" />
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
+        )}
 
-          {/* Warnings */}
-          {viewMode === 'normal' && result.warnings && result.warnings.length > 0 && (
-            <div className="mx-6 mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-yellow-800 mb-1">Warnings:</p>
-                  <ul className="text-sm text-yellow-700 space-y-1">
-                    {result.warnings.map((warning, i) => (
-                      <li key={i}>{warning}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
+        {/* Right Column - Results */}
+        <div className={panelCollapsed ? '' : 'lg:col-span-2'}>
+          {error && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700">
+              <AlertCircle className="w-5 h-5" />
+              <span>{error}</span>
             </div>
           )}
 
-          {/* Flagged Rows Banner */}
-          {viewMode === 'normal' && result.flagged_count > 0 && (
-            <div className="mx-6 mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div className="flex items-start gap-2">
-                  <FileWarning className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          {result?.success ? (
+            <div className="bg-white rounded-xl border border-gray-200">
+              {/* Results Header */}
+              <div className="px-6 py-4 border-b border-gray-100">
+                <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-amber-800">
-                      {result.flagged_count} contact{result.flagged_count !== 1 ? 's' : ''} need updating in Mineral
-                    </p>
-                    <p className="text-xs text-amber-600 mt-0.5">
-                      Deceased entries and trust/entity names in contact fields have been separated from the GHL export
+                    <h3 className="font-oswald font-semibold text-tre-navy">
+                      {viewMode === 'failed-contacts' ? 'Failed Contacts'
+                        : viewMode === 'flagged' ? 'Mineral Update Report'
+                        : activeJob?.documentName ?? result.source_filename}
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      {viewMode === 'failed-contacts' ? 'Review and retry failed contacts'
+                        : viewMode === 'flagged' ? 'These contacts need to be updated in Mineral before GHL import'
+                        : activeJob
+                          ? `Processed by ${activeJob.user} on ${activeJob.timestamp}`
+                          : 'Transformation complete'}
                     </p>
                   </div>
+                  {viewMode === 'normal' && result && (
+                    <div className="flex items-center gap-4 mr-2">
+                      <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={showIndividualsOnly}
+                          onChange={(e) => setShowIndividualsOnly(e.target.checked)}
+                          className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                        />
+                        Individuals only
+                      </label>
+                      <span className="text-xs text-gray-400">
+                        {showIndividualsOnly
+                          ? `${filteredRows.length} of ${currentRows.length} contacts`
+                          : `${currentRows.length} contacts`}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    {viewMode === 'flagged' && (
+                      <>
+                        <button
+                          onClick={() => setViewMode('normal')}
+                          className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                        >
+                          <XCircle className="w-4 h-4" />
+                          Back to Clean Export
+                        </button>
+                        <button
+                          onClick={handleExportFlagged}
+                          className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                        >
+                          <Download className="w-4 h-4" />
+                          Download Mineral Updates
+                        </button>
+                      </>
+                    )}
+                    {viewMode === 'failed-contacts' && (
+                      <>
+                        <button
+                          onClick={handleBackToNormalView}
+                          className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                        >
+                          <XCircle className="w-4 h-4" />
+                          Back to Results
+                        </button>
+                        <button
+                          onClick={handleExportFailedContacts}
+                          className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                        >
+                          <Download className="w-4 h-4" />
+                          Download Failed CSV
+                        </button>
+                        <button
+                          onClick={handleRetrySend}
+                          disabled={connections.length === 0 || failedContacts.length === 0}
+                          title={connections.length === 0 ? 'Add a GHL connection in Admin Settings first' : 'Retry sending failed contacts'}
+                          className="flex items-center gap-2 px-3 py-2 bg-tre-teal text-white rounded-lg hover:bg-tre-teal/90 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Send className="w-4 h-4" />
+                          Retry Send
+                        </button>
+                      </>
+                    )}
+                    {viewMode === 'normal' && (
+                      <>
+                        <button
+                          onClick={handleReset}
+                          className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                        >
+                          <Upload className="w-4 h-4" />
+                          Upload New File
+                        </button>
+                        <div className="flex flex-col items-end gap-1">
+                          <button
+                            onClick={() => setShowSendModal(true)}
+                            disabled={connections.length === 0 || connections.every(c => c.validation_status !== 'valid') || (!!activeJobId)}
+                            title={
+                              connections.length === 0
+                                ? 'No GHL connection. Configure in Admin Settings.'
+                                : connections.every(c => c.validation_status !== 'valid')
+                                ? 'No valid GHL connection. Configure in Admin Settings.'
+                                : activeJobId
+                                ? 'Send in progress'
+                                : 'Send contacts to GoHighLevel'
+                            }
+                            className="flex items-center gap-2 px-3 py-2 bg-tre-teal text-white rounded-lg hover:bg-tre-teal/90 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <Send className="w-4 h-4" />
+                            Send to GHL
+                          </button>
+                          {dailyLimit && connections.length > 0 && (
+                            <p className={`text-xs ${
+                              dailyLimit.warning_level === 'critical' ? 'text-red-600 font-medium' :
+                              dailyLimit.warning_level === 'warning' ? 'text-yellow-600' :
+                              'text-gray-400'
+                            }`}>
+                              Daily capacity: {dailyLimit.remaining.toLocaleString()} remaining
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          onClick={handleExport}
+                          className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                        >
+                          <Download className="w-4 h-4" />
+                          Download CSV
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setViewMode('flagged')}
-                    className="flex items-center gap-2 px-3 py-1.5 text-sm bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200 transition-colors"
-                  >
-                    <FileWarning className="w-4 h-4" />
-                    Review
-                  </button>
-                  <button
-                    onClick={handleExportFlagged}
-                    className="flex items-center gap-2 px-3 py-1.5 text-sm border border-amber-300 text-amber-800 rounded-lg hover:bg-amber-100 transition-colors"
-                  >
-                    <Download className="w-4 h-4" />
-                    Download
-                  </button>
+              </div>
+
+              {/* Warnings */}
+              {viewMode === 'normal' && result.warnings && result.warnings.length > 0 && (
+                <div className="mx-6 mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-yellow-800 mb-1">Warnings:</p>
+                      <ul className="text-sm text-yellow-700 space-y-1">
+                        {result.warnings.map((warning, i) => (
+                          <li key={i}>{warning}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Flagged Rows Banner */}
+              {viewMode === 'normal' && result.flagged_count > 0 && (
+                <div className="mx-6 mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-start gap-2">
+                      <FileWarning className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-amber-800">
+                          {result.flagged_count} contact{result.flagged_count !== 1 ? 's' : ''} need updating in Mineral
+                        </p>
+                        <p className="text-xs text-amber-600 mt-0.5">
+                          Deceased entries and trust/entity names in contact fields have been separated from the GHL export
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setViewMode('flagged')}
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200 transition-colors"
+                      >
+                        <FileWarning className="w-4 h-4" />
+                        Review
+                      </button>
+                      <button
+                        onClick={handleExportFlagged}
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm border border-amber-300 text-amber-800 rounded-lg hover:bg-amber-100 transition-colors"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Preview Table */}
+              <div className="p-6">
+                <h4 className="font-medium text-gray-900 mb-3">
+                  {viewMode === 'normal' && excludedRows.size > 0
+                    ? `${includedCount} of ${sortedRows.length} rows selected for export`
+                    : `${sortedRows.length} rows`}
+                  {showIndividualsOnly ? ` (filtered from ${currentRows.length})` : ''}
+                </h4>
+                <div className="overflow-x-auto overflow-y-auto max-h-[75vh]">
+                  <table className="text-sm">
+                    <thead className="sticky top-0 bg-white z-10">
+                      <tr className="border-b border-gray-200">
+                        {viewMode === 'normal' && (
+                          <th className="text-left py-2 px-3 font-medium text-gray-600 w-10">
+                            <input
+                              type="checkbox"
+                              checked={isAllSelected}
+                              ref={(el) => { if (el) el.indeterminate = isSomeSelected }}
+                              onChange={toggleSelectAll}
+                              className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                            />
+                          </th>
+                        )}
+                        {viewMode === 'normal' && (
+                          <th className="text-left py-2 px-2 font-medium text-gray-600 w-10" />
+                        )}
+                        {columns.map((column) => (
+                          <th
+                            key={column}
+                            onClick={() => handleColumnClick(column)}
+                            className="text-left py-2 px-4 font-medium text-gray-600 cursor-pointer hover:bg-gray-50 transition-colors whitespace-nowrap"
+                            title="Click to sort"
+                          >
+                            <div className="flex items-center gap-1">
+                              {column}
+                              {sortColumn === column && (
+                                <span className="text-tre-teal">
+                                  {sortDirection === 'asc' ? '↑' : '↓'}
+                                </span>
+                              )}
+                            </div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {sortedRows.map((row, i) => {
+                        const isExcluded = excludedRows.has(i)
+                        return (
+                          <tr key={i} className={`${isExcluded ? 'opacity-40 bg-gray-50' : 'hover:bg-gray-50'}`}>
+                            {viewMode === 'normal' && (
+                              <td className="py-2 px-3">
+                                <input
+                                  type="checkbox"
+                                  checked={!isExcluded}
+                                  onChange={() => toggleRow(i)}
+                                  className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                                />
+                              </td>
+                            )}
+                            {viewMode === 'normal' && (
+                              <td className="py-2 px-2">
+                                <button
+                                  onClick={() => handleEditRow(row, i)}
+                                  className="text-gray-400 hover:text-tre-teal transition-colors"
+                                  title="Edit row"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            )}
+                            {columns.map((column) => {
+                              const value = String(row[column] ?? '')
+                              const isError = column === 'Error Category' || column === 'Error Message'
+                              const isFlagReason = column === 'Flag Reason'
+                              return (
+                                <td
+                                  key={column}
+                                  className={`py-2 px-4 whitespace-nowrap ${isError ? 'text-red-600' : isFlagReason ? 'text-amber-700 font-medium' : 'text-gray-600'}`}
+                                >
+                                  {value || <span className="text-gray-400">{'\u2014'}</span>}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
-          )}
-
-          {/* Preview Table */}
-          <div className="p-6">
-            <h4 className="font-medium text-gray-900 mb-3">
-              {viewMode === 'normal' && excludedRows.size > 0
-                ? `${includedCount} of ${sortedRows.length} rows selected for export`
-                : `${sortedRows.length} rows`}
-              {showIndividualsOnly ? ` (filtered from ${currentRows.length})` : ''}
-            </h4>
-            <div className="overflow-x-auto overflow-y-auto max-h-[75vh]">
-              <table className="text-sm">
-                <thead className="sticky top-0 bg-white z-10">
-                  <tr className="border-b border-gray-200">
-                    {viewMode === 'normal' && (
-                      <th className="text-left py-2 px-3 font-medium text-gray-600 w-10">
-                        <input
-                          type="checkbox"
-                          checked={isAllSelected}
-                          ref={(el) => { if (el) el.indeterminate = isSomeSelected }}
-                          onChange={toggleSelectAll}
-                          className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
-                        />
-                      </th>
-                    )}
-                    {viewMode === 'normal' && (
-                      <th className="text-left py-2 px-2 font-medium text-gray-600 w-10" />
-                    )}
-                    {columns.map((column) => (
-                      <th
-                        key={column}
-                        onClick={() => handleColumnClick(column)}
-                        className="text-left py-2 px-4 font-medium text-gray-600 cursor-pointer hover:bg-gray-50 transition-colors whitespace-nowrap"
-                        title="Click to sort"
-                      >
-                        <div className="flex items-center gap-1">
-                          {column}
-                          {sortColumn === column && (
-                            <span className="text-tre-teal">
-                              {sortDirection === 'asc' ? '↑' : '↓'}
-                            </span>
-                          )}
-                        </div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {sortedRows.map((row, i) => {
-                    const isExcluded = excludedRows.has(i)
-                    return (
-                      <tr key={i} className={`${isExcluded ? 'opacity-40 bg-gray-50' : 'hover:bg-gray-50'}`}>
-                        {viewMode === 'normal' && (
-                          <td className="py-2 px-3">
-                            <input
-                              type="checkbox"
-                              checked={!isExcluded}
-                              onChange={() => toggleRow(i)}
-                              className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
-                            />
-                          </td>
-                        )}
-                        {viewMode === 'normal' && (
-                          <td className="py-2 px-2">
-                            <button
-                              onClick={() => handleEditRow(row, i)}
-                              className="text-gray-400 hover:text-tre-teal transition-colors"
-                              title="Edit row"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        )}
-                        {columns.map((column) => {
-                          const value = String(row[column] ?? '')
-                          const isError = column === 'Error Category' || column === 'Error Message'
-                          const isFlagReason = column === 'Flag Reason'
-                          return (
-                            <td
-                              key={column}
-                              className={`py-2 px-4 whitespace-nowrap ${isError ? 'text-red-600' : isFlagReason ? 'text-amber-700 font-medium' : 'text-gray-600'}`}
-                            >
-                              {value || <span className="text-gray-400">{'\u2014'}</span>}
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+          ) : !result && !isProcessing ? (
+            <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-400">
+              <Repeat className="w-12 h-12 mx-auto mb-3 text-gray-200" />
+              <p className="font-medium text-gray-500">No file processed yet</p>
+              <p className="text-sm mt-1">Upload a Mineral export CSV to get started</p>
             </div>
-          </div>
+          ) : null}
         </div>
-      )}
+      </div>
 
       {/* Send to GHL Modal */}
       <GhlSendModal
