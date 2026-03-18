@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useMemo } from 'react'
 import { pipelineApi } from '../utils/api'
 import type { ProposedChange } from '../utils/api'
 
@@ -23,9 +23,14 @@ export interface AutoAppliedChange {
   confidence: string
 }
 
+/** Lookup: entry_index → field → ProposedChange */
+export type ChangesByEntry = Map<number, Map<string, ProposedChange>>
+
 export interface UseEnrichmentPipelineReturn {
   activeAction: PipelineStep | null
   proposedChanges: ProposedChange[] | null
+  changesByEntry: ChangesByEntry
+  affectedEntryIndices: Set<number>
   checkedIndices: Set<number>
   completedSteps: Set<PipelineStep>
   recentlyAppliedKeys: Set<string>
@@ -255,9 +260,31 @@ export function useEnrichmentPipeline<T extends object>(
     })
   }, [proposedChanges])
 
+  // Build lookup maps for inline rendering: entry_index → field → change
+  const changesByEntry = useMemo<ChangesByEntry>(() => {
+    const map: ChangesByEntry = new Map()
+    if (!proposedChanges) return map
+    for (const change of proposedChanges) {
+      let fieldMap = map.get(change.entry_index)
+      if (!fieldMap) {
+        fieldMap = new Map()
+        map.set(change.entry_index, fieldMap)
+      }
+      fieldMap.set(change.field, change)
+    }
+    return map
+  }, [proposedChanges])
+
+  const affectedEntryIndices = useMemo(
+    () => new Set(changesByEntry.keys()),
+    [changesByEntry],
+  )
+
   return {
     activeAction,
     proposedChanges,
+    changesByEntry,
+    affectedEntryIndices,
     checkedIndices,
     completedSteps,
     recentlyAppliedKeys,

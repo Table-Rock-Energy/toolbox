@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw, Filter, Settings, Edit2, Columns, X, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
-import { FileUpload, Modal, AutoCorrectionsBanner, EnrichmentToolbar, ProposedChangesPanel } from '../components'
+import { FileUpload, Modal, AutoCorrectionsBanner, EnrichmentToolbar, ProposedChangesSummary, ProposedChangeCell } from '../components'
 import type { PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
@@ -1143,13 +1143,12 @@ export default function Proration() {
                 </div>
               )}
 
-              {/* Proposed Changes Panel */}
+              {/* Proposed Changes Summary Bar */}
               {pipeline.proposedChanges && (
-                <div className="px-6 py-4 border-b border-gray-100">
-                  <ProposedChangesPanel
+                <div className="px-6 py-3 border-b border-gray-100">
+                  <ProposedChangesSummary
                     proposedChanges={pipeline.proposedChanges}
                     checkedIndices={pipeline.checkedIndices}
-                    onToggleCheck={pipeline.toggleCheck}
                     onToggleCheckAll={pipeline.toggleCheckAll}
                     onApply={pipeline.onApply}
                     onDismiss={pipeline.onDismiss}
@@ -1350,11 +1349,24 @@ export default function Proration() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {preview.previewEntries.map((row) => {
+                      {(() => {
+                        // Build display list with original indices, sort changed rows to top
+                        const indexed = preview.previewEntries.map((entry, idx) => ({ entry, origIdx: idx }))
+                        if (pipeline.affectedEntryIndices.size > 0) {
+                          indexed.sort((a, b) => {
+                            const aChanged = pipeline.affectedEntryIndices.has(a.origIdx) ? 0 : 1
+                            const bChanged = pipeline.affectedEntryIndices.has(b.origIdx) ? 0 : 1
+                            return aChanged - bChanged
+                          })
+                        }
+                        return indexed
+                      })().map(({ entry: row, origIdx: rowIdx }) => {
                         const rowKey = row._uid ?? ''
                         const isExcluded = preview.isExcluded(rowKey)
+                        const rowChanges = pipeline.changesByEntry.get(rowIdx)
+                        const hasChanges = !!rowChanges && rowChanges.size > 0
                         return (
-                        <tr key={rowKey} className={`${pipeline.recentlyAppliedKeys.has(rowKey) ? 'bg-green-100' : !row.rrc_acres ? 'bg-red-50' : ''} ${isExcluded ? 'opacity-50 bg-gray-100' : ''} transition-colors duration-[2000ms]`}>
+                        <tr key={rowKey} className={`${pipeline.recentlyAppliedKeys.has(rowKey) ? 'bg-green-100' : hasChanges ? 'bg-blue-50' : !row.rrc_acres ? 'bg-red-50' : ''} ${isExcluded ? 'opacity-50 bg-gray-100' : ''} transition-colors duration-[2000ms]`}>
                           <td className="py-2 px-3">
                             <input
                               type="checkbox"
@@ -1363,7 +1375,15 @@ export default function Proration() {
                               className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
                             />
                           </td>
-                          {isColumnVisible('owner') && <td className="py-2 px-3 text-gray-900 whitespace-nowrap">{row.owner}</td>}
+                          {isColumnVisible('owner') && (
+                            <td className={`py-2 px-3 text-gray-900 whitespace-nowrap ${rowChanges?.has('owner') ? 'bg-blue-100/50' : ''}`}>
+                              {rowChanges?.has('owner') ? (
+                                <ProposedChangeCell change={rowChanges.get('owner')!} />
+                              ) : (
+                                row.owner
+                              )}
+                            </td>
+                          )}
                           {isColumnVisible('county') && <td className="py-2 px-3 text-gray-600">{row.county}</td>}
                           {isColumnVisible('year') && <td className="py-2 px-3 text-gray-600 text-xs">{row.year ?? '\u2014'}</td>}
                           {isColumnVisible('interest') && (

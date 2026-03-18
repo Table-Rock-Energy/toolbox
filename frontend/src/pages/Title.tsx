@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Filter, RotateCcw, Edit2, Columns, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
-import { FileUpload, Modal, MineralExportModal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar, ProposedChangesPanel } from '../components'
+import { FileUpload, Modal, MineralExportModal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar, ProposedChangesSummary, ProposedChangeCell } from '../components'
 import type { PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
@@ -703,13 +703,12 @@ export default function Title() {
                 </div>
               )}
 
-              {/* Proposed Changes Panel */}
+              {/* Proposed Changes Summary Bar */}
               {pipeline.proposedChanges && (
-                <div className="px-6 py-4 border-b border-gray-100">
-                  <ProposedChangesPanel
+                <div className="px-6 py-3 border-b border-gray-100">
+                  <ProposedChangesSummary
                     proposedChanges={pipeline.proposedChanges}
                     checkedIndices={pipeline.checkedIndices}
-                    onToggleCheck={pipeline.toggleCheck}
                     onToggleCheckAll={pipeline.toggleCheckAll}
                     onApply={pipeline.onApply}
                     onDismiss={pipeline.onDismiss}
@@ -938,15 +937,29 @@ export default function Title() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {preview.previewEntries.map((entry) => {
+                      {(() => {
+                        // Build display list with original indices, sort changed rows to top
+                        const indexed = preview.previewEntries.map((entry, idx) => ({ entry, origIdx: idx }))
+                        if (pipeline.affectedEntryIndices.size > 0) {
+                          indexed.sort((a, b) => {
+                            const aChanged = pipeline.affectedEntryIndices.has(a.origIdx) ? 0 : 1
+                            const bChanged = pipeline.affectedEntryIndices.has(b.origIdx) ? 0 : 1
+                            return aChanged - bChanged
+                          })
+                        }
+                        return indexed
+                      })().map(({ entry, origIdx: rowIdx }) => {
                         const entryKey = entry._uid ?? ''
                         const isExcluded = preview.isExcluded(entryKey)
                         const status = getEntryStatus(entry)
+                        const rowChanges = pipeline.changesByEntry.get(rowIdx)
+                        const hasChanges = !!rowChanges && rowChanges.size > 0
                         return (
                           <tr
                             key={entryKey}
                             className={`
                               ${pipeline.recentlyAppliedKeys.has(entryKey) ? 'bg-green-100' :
+                                hasChanges ? 'bg-blue-50' :
                                 entry.duplicate_flag && !entry.has_address ? 'bg-purple-50' :
                                 entry.duplicate_flag ? 'bg-yellow-50' :
                                 !entry.has_address ? 'bg-red-50' : ''}
@@ -965,11 +978,15 @@ export default function Title() {
                               </td>
                             )}
                             {isColumnVisible('full_name') && (
-                              <td className={`py-2 px-3 text-gray-900 ${isExcluded ? 'line-through' : ''}`} title={entry.full_name}>
-                                <EditableCell
-                                  value={entry.full_name}
-                                  onCommit={(val) => preview.editField(entryKey, 'full_name', val)}
-                                />
+                              <td className={`py-2 px-3 text-gray-900 ${isExcluded ? 'line-through' : ''} ${rowChanges?.has('full_name') ? 'bg-blue-100/50' : ''}`} title={entry.full_name}>
+                                {rowChanges?.has('full_name') ? (
+                                  <ProposedChangeCell change={rowChanges.get('full_name')!} />
+                                ) : (
+                                  <EditableCell
+                                    value={entry.full_name}
+                                    onCommit={(val) => preview.editField(entryKey, 'full_name', val)}
+                                  />
+                                )}
                               </td>
                             )}
                             {isColumnVisible('first_name') && (
@@ -985,43 +1002,63 @@ export default function Title() {
                               <td className="py-2 px-3 text-gray-600 text-xs">{entry.entity_type}</td>
                             )}
                             {isColumnVisible('address') && (
-                              <td className="py-2 px-3 text-gray-600 text-xs">
-                                <EditableCell
-                                  value={entry.address}
-                                  onCommit={(val) => preview.editField(entryKey, 'address', val)}
-                                />
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${rowChanges?.has('address') ? 'bg-blue-100/50' : ''}`}>
+                                {rowChanges?.has('address') ? (
+                                  <ProposedChangeCell change={rowChanges.get('address')!} />
+                                ) : (
+                                  <EditableCell
+                                    value={entry.address}
+                                    onCommit={(val) => preview.editField(entryKey, 'address', val)}
+                                  />
+                                )}
                               </td>
                             )}
                             {isColumnVisible('address_line_2') && (
-                              <td className="py-2 px-3 text-gray-600 text-xs">
-                                <EditableCell
-                                  value={entry.address_line_2}
-                                  onCommit={(val) => preview.editField(entryKey, 'address_line_2', val)}
-                                />
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${rowChanges?.has('address_2') ? 'bg-blue-100/50' : ''}`}>
+                                {rowChanges?.has('address_2') ? (
+                                  <ProposedChangeCell change={rowChanges.get('address_2')!} />
+                                ) : (
+                                  <EditableCell
+                                    value={entry.address_line_2}
+                                    onCommit={(val) => preview.editField(entryKey, 'address_line_2', val)}
+                                  />
+                                )}
                               </td>
                             )}
                             {isColumnVisible('city') && (
-                              <td className="py-2 px-3 text-gray-600 text-xs">
-                                <EditableCell
-                                  value={entry.city}
-                                  onCommit={(val) => preview.editField(entryKey, 'city', val)}
-                                />
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${rowChanges?.has('city') ? 'bg-blue-100/50' : ''}`}>
+                                {rowChanges?.has('city') ? (
+                                  <ProposedChangeCell change={rowChanges.get('city')!} />
+                                ) : (
+                                  <EditableCell
+                                    value={entry.city}
+                                    onCommit={(val) => preview.editField(entryKey, 'city', val)}
+                                  />
+                                )}
                               </td>
                             )}
                             {isColumnVisible('state') && (
-                              <td className="py-2 px-3 text-gray-600 text-xs">
-                                <EditableCell
-                                  value={entry.state}
-                                  onCommit={(val) => preview.editField(entryKey, 'state', val)}
-                                />
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${rowChanges?.has('state') ? 'bg-blue-100/50' : ''}`}>
+                                {rowChanges?.has('state') ? (
+                                  <ProposedChangeCell change={rowChanges.get('state')!} />
+                                ) : (
+                                  <EditableCell
+                                    value={entry.state}
+                                    onCommit={(val) => preview.editField(entryKey, 'state', val)}
+                                  />
+                                )}
                               </td>
                             )}
                             {isColumnVisible('zip_code') && (
-                              <td className="py-2 px-3 text-gray-600 text-xs">
-                                <EditableCell
-                                  value={entry.zip_code}
-                                  onCommit={(val) => preview.editField(entryKey, 'zip_code', val)}
-                                />
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${rowChanges?.has('zip_code') ? 'bg-blue-100/50' : ''}`}>
+                                {rowChanges?.has('zip_code') ? (
+                                  <ProposedChangeCell change={rowChanges.get('zip_code')!} />
+                                ) : (
+                                  <EditableCell
+                                    value={entry.zip_code}
+                                    onCommit={(val) => preview.editField(entryKey, 'zip_code', val)}
+                                  />
+                                )}
                               </td>
                             )}
                             {isColumnVisible('legal_description') && (

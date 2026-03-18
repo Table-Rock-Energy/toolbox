@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { DollarSign, Download, Upload, AlertCircle, CheckCircle, Columns, X, PanelLeftClose, PanelLeftOpen, Edit2, RotateCcw, Filter } from 'lucide-react'
-import { FileUpload, Modal, MineralExportModal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar, ProposedChangesPanel } from '../components'
+import { FileUpload, Modal, MineralExportModal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar, ProposedChangesSummary, ProposedChangeCell } from '../components'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
 import { useFeatureFlags } from '../hooks/useFeatureFlags'
@@ -695,13 +695,12 @@ export default function Revenue() {
                 </div>
               )}
 
-              {/* Proposed Changes Panel */}
+              {/* Proposed Changes Summary Bar */}
               {pipeline.proposedChanges && (
-                <div className="px-6 py-4 border-b border-gray-100">
-                  <ProposedChangesPanel
+                <div className="px-6 py-3 border-b border-gray-100">
+                  <ProposedChangesSummary
                     proposedChanges={pipeline.proposedChanges}
                     checkedIndices={pipeline.checkedIndices}
-                    onToggleCheck={pipeline.toggleCheck}
                     onToggleCheckAll={pipeline.toggleCheckAll}
                     onApply={pipeline.onApply}
                     onDismiss={pipeline.onDismiss}
@@ -856,12 +855,25 @@ export default function Revenue() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {preview.previewEntries.map((row) => {
+                      {(() => {
+                        // Build display list with original indices, sort changed rows to top
+                        const indexed = preview.previewEntries.map((entry, idx) => ({ entry, origIdx: idx }))
+                        if (pipeline.affectedEntryIndices.size > 0) {
+                          indexed.sort((a, b) => {
+                            const aChanged = pipeline.affectedEntryIndices.has(a.origIdx) ? 0 : 1
+                            const bChanged = pipeline.affectedEntryIndices.has(b.origIdx) ? 0 : 1
+                            return aChanged - bChanged
+                          })
+                        }
+                        return indexed
+                      })().map(({ entry: row, origIdx: rowIdx }) => {
                         const isExcluded = preview.isExcluded(row._id)
+                        const rowChanges = pipeline.changesByEntry.get(rowIdx)
+                        const hasChanges = !!rowChanges && rowChanges.size > 0
                         return (
                           <tr
                             key={row._id}
-                            className={`${pipeline.recentlyAppliedKeys.has(row._id) ? 'bg-green-100' : ''} ${isExcluded ? 'opacity-50 bg-gray-100' : ''} transition-colors duration-[2000ms]`}
+                            className={`${pipeline.recentlyAppliedKeys.has(row._id) ? 'bg-green-100' : hasChanges ? 'bg-blue-50' : ''} ${isExcluded ? 'opacity-50 bg-gray-100' : ''} transition-colors duration-[2000ms]`}
                           >
                             <td className="py-2 px-2">
                               <input
@@ -876,28 +888,40 @@ export default function Revenue() {
                             {isColVisible('check_amount') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{formatCurrency(row.check_amount)}</td>}
                             {isColVisible('check_date') && <td className="py-2 px-2 text-gray-600 text-xs">{row.check_date || '\u2014'}</td>}
                             {isColVisible('property_name') && (
-                              <td className="py-2 px-2 text-gray-900 text-xs whitespace-nowrap">
-                                <EditableCell
-                                  value={row.property_name}
-                                  onCommit={(val) => preview.editField(row._id, 'property_name', val)}
-                                />
+                              <td className={`py-2 px-2 text-gray-900 text-xs whitespace-nowrap ${rowChanges?.has('property_name') ? 'bg-blue-100/50' : ''}`}>
+                                {rowChanges?.has('property_name') ? (
+                                  <ProposedChangeCell change={rowChanges.get('property_name')!} />
+                                ) : (
+                                  <EditableCell
+                                    value={row.property_name}
+                                    onCommit={(val) => preview.editField(row._id, 'property_name', val)}
+                                  />
+                                )}
                               </td>
                             )}
                             {isColVisible('property_number') && (
-                              <td className="py-2 px-2 text-gray-600 text-xs">
-                                <EditableCell
-                                  value={row.property_number}
-                                  onCommit={(val) => preview.editField(row._id, 'property_number', val)}
-                                />
+                              <td className={`py-2 px-2 text-gray-600 text-xs ${rowChanges?.has('property_number') ? 'bg-blue-100/50' : ''}`}>
+                                {rowChanges?.has('property_number') ? (
+                                  <ProposedChangeCell change={rowChanges.get('property_number')!} />
+                                ) : (
+                                  <EditableCell
+                                    value={row.property_number}
+                                    onCommit={(val) => preview.editField(row._id, 'property_number', val)}
+                                  />
+                                )}
                               </td>
                             )}
                             {isColVisible('operator_name') && <td className="py-2 px-2 text-gray-600 text-xs whitespace-nowrap">{row.operator_name || '\u2014'}</td>}
                             {isColVisible('owner_name') && (
-                              <td className="py-2 px-2 text-gray-600 text-xs whitespace-nowrap">
-                                <EditableCell
-                                  value={row.owner_name}
-                                  onCommit={(val) => preview.editField(row._id, 'owner_name', val)}
-                                />
+                              <td className={`py-2 px-2 text-gray-600 text-xs whitespace-nowrap ${rowChanges?.has('owner_name') ? 'bg-blue-100/50' : ''}`}>
+                                {rowChanges?.has('owner_name') ? (
+                                  <ProposedChangeCell change={rowChanges.get('owner_name')!} />
+                                ) : (
+                                  <EditableCell
+                                    value={row.owner_name}
+                                    onCommit={(val) => preview.editField(row._id, 'owner_name', val)}
+                                  />
+                                )}
                               </td>
                             )}
                             {isColVisible('owner_number') && <td className="py-2 px-2 text-gray-600 text-xs">{row.owner_number || '\u2014'}</td>}
