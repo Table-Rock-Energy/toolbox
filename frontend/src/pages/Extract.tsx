@@ -1061,7 +1061,22 @@ export default function Extract() {
                               <td className="py-2 px-3 text-gray-600 text-xs">{entry.suffix || <span className="text-gray-400">{'\u2014'}</span>}</td>
                             )}
                             {isColVisible('entity_type') && (
-                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.entity_type}</td>
+                              <td className="py-2 px-3 text-gray-600 text-xs">
+                                <select
+                                  value={entry.entity_type}
+                                  onChange={(e) => preview.editField(entry.entry_number, 'entity_type', e.target.value)}
+                                  className="bg-transparent border-0 p-0 text-xs text-gray-600 focus:ring-0 cursor-pointer hover:text-tre-navy"
+                                >
+                                  <option value="Individual">Individual</option>
+                                  <option value="Trust">Trust</option>
+                                  <option value="LLC">LLC</option>
+                                  <option value="Corporation">Corporation</option>
+                                  <option value="Partnership">Partnership</option>
+                                  <option value="Government">Government</option>
+                                  <option value="Estate">Estate</option>
+                                  <option value="Unknown Heirs">Unknown Heirs</option>
+                                </select>
+                              </td>
                             )}
                             {isColVisible('mailing_address') && (
                               <td className={`py-2 px-3 text-gray-600 text-xs ${rowChanges?.has('mailing_address') ? 'bg-blue-100/50' : ''}`}>
@@ -1297,14 +1312,33 @@ export default function Extract() {
                 {editingEntry.flag_reason}
               </div>
             )}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-              <input
-                type="text"
-                value={editingEntry.primary_name}
-                onChange={(e) => setEditingEntry({ ...editingEntry, primary_name: e.target.value })}
-                className={`${inputBase} ${nameHighlight}`}
-              />
+            <div className="grid grid-cols-3 gap-4">
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={editingEntry.primary_name}
+                  onChange={(e) => setEditingEntry({ ...editingEntry, primary_name: e.target.value })}
+                  className={`${inputBase} ${nameHighlight}`}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Owner Type</label>
+                <select
+                  value={editingEntry.entity_type}
+                  onChange={(e) => setEditingEntry({ ...editingEntry, entity_type: e.target.value })}
+                  className={inputBase}
+                >
+                  <option value="Individual">Individual</option>
+                  <option value="Trust">Trust</option>
+                  <option value="LLC">LLC</option>
+                  <option value="Corporation">Corporation</option>
+                  <option value="Partnership">Partnership</option>
+                  <option value="Government">Government</option>
+                  <option value="Estate">Estate</option>
+                  <option value="Unknown Heirs">Unknown Heirs</option>
+                </select>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>

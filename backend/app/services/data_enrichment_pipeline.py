@@ -136,6 +136,50 @@ def _fix_name_casing(
     return corrections
 
 
+def _fix_po_box(
+    entries: list[dict],
+    address_fields: list[str],
+) -> list[AutoCorrection]:
+    """Standardize PO Box variants to 'P.O. Box XXXXX'."""
+    import re
+
+    # Match common PO Box variants: PO Box, P O Box, P.O.Box, POB, Po Box, etc.
+    po_box_re = re.compile(
+        r'\b(?:P\.?\s*O\.?\s*(?:Box|B)\s*|POB\s+)(\d+)\b',
+        re.IGNORECASE,
+    )
+
+    corrections: list[AutoCorrection] = []
+    for i, entry in enumerate(entries):
+        for field in address_fields:
+            value = entry.get(field)
+            if not value or not isinstance(value, str):
+                continue
+
+            match = po_box_re.search(value)
+            if not match:
+                continue
+
+            box_number = match.group(1)
+            standard = f"P.O. Box {box_number}"
+
+            # Replace the matched portion
+            fixed = value[:match.start()] + standard + value[match.end():]
+            fixed = fixed.strip()
+
+            if fixed != value:
+                corrections.append(AutoCorrection(
+                    entry_index=i,
+                    field=field,
+                    original_value=value,
+                    corrected_value=fixed,
+                    source="programmatic",
+                    confidence=ConfidenceLevel.HIGH,
+                ))
+                entry[field] = fixed
+    return corrections
+
+
 def _fix_entity_type(
     entries: list[dict],
     name_field: str,
@@ -308,6 +352,18 @@ async def auto_enrich(
         steps_completed.append("name_casing")
     else:
         steps_skipped.append("name_casing")
+
+    # ── Step 1b: P.O. Box standardization (Extract, Title) ──
+    if tool in ("extract", "title"):
+        addr_fields_map = {
+            "extract": ["mailing_address", "mailing_address_2"],
+            "title": ["address", "address_line_2"],
+        }
+        po_fixes = _fix_po_box(entries, addr_fields_map[tool])
+        all_corrections.extend(po_fixes)
+        steps_completed.append("po_box")
+    else:
+        steps_skipped.append("po_box")
 
     # ── Step 2: Entity type re-detection (Extract, Title) ──
     if tool in ("extract", "title"):

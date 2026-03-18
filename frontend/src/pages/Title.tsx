@@ -999,7 +999,23 @@ export default function Title() {
                               <td className="py-2 px-3 text-gray-600 text-xs">{entry.last_name || <span className="text-gray-400">{'\u2014'}</span>}</td>
                             )}
                             {isColumnVisible('entity_type') && (
-                              <td className="py-2 px-3 text-gray-600 text-xs">{entry.entity_type}</td>
+                              <td className="py-2 px-3 text-gray-600 text-xs">
+                                <select
+                                  value={entry.entity_type}
+                                  onChange={(e) => preview.editField(entryKey, 'entity_type', e.target.value)}
+                                  className="bg-transparent border-0 p-0 text-xs text-gray-600 focus:ring-0 cursor-pointer hover:text-tre-navy"
+                                >
+                                  <option value="INDIVIDUAL">INDIVIDUAL</option>
+                                  <option value="CORPORATION">CORPORATION</option>
+                                  <option value="TRUST">TRUST</option>
+                                  <option value="ESTATE">ESTATE</option>
+                                  <option value="FOUNDATION">FOUNDATION</option>
+                                  <option value="MINERAL CO">MINERAL CO</option>
+                                  <option value="UNIVERSITY">UNIVERSITY</option>
+                                  <option value="CHURCH">CHURCH</option>
+                                  <option value="UNKNOWN">UNKNOWN</option>
+                                </select>
+                              </td>
                             )}
                             {isColumnVisible('address') && (
                               <td className={`py-2 px-3 text-gray-600 text-xs ${rowChanges?.has('address') ? 'bg-blue-100/50' : ''}`}>
