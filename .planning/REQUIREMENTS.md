@@ -66,29 +66,29 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | — | Pending |
-| AUTH-02 | — | Pending |
-| AUTH-03 | — | Pending |
-| AUTH-04 | — | Pending |
-| AUTH-05 | — | Pending |
-| RRC-01 | — | Pending |
-| RRC-02 | — | Pending |
-| RRC-03 | — | Pending |
-| GHL-01 | — | Pending |
-| GHL-02 | — | Pending |
-| ENRICH-01 | — | Pending |
-| ENRICH-02 | — | Pending |
-| ENRICH-03 | — | Pending |
-| ENRICH-04 | — | Pending |
-| ENRICH-05 | — | Pending |
-| ENRICH-06 | — | Pending |
-| ENRICH-07 | — | Pending |
+| AUTH-01 | Phase 10 | Pending |
+| AUTH-02 | Phase 10 | Pending |
+| AUTH-03 | Phase 10 | Pending |
+| AUTH-04 | Phase 10 | Pending |
+| AUTH-05 | Phase 10 | Pending |
+| RRC-01 | Phase 11 | Pending |
+| RRC-02 | Phase 11 | Pending |
+| RRC-03 | Phase 11 | Pending |
+| GHL-01 | Phase 10 | Pending |
+| GHL-02 | Phase 10 | Pending |
+| ENRICH-01 | Phase 12 | Pending |
+| ENRICH-02 | Phase 12 | Pending |
+| ENRICH-03 | Phase 12 | Pending |
+| ENRICH-04 | Phase 12 | Pending |
+| ENRICH-05 | Phase 12 | Pending |
+| ENRICH-06 | Phase 12 | Pending |
+| ENRICH-07 | Phase 12 | Pending |
 
 **Coverage:**
 - v1.6 requirements: 17 total
-- Mapped to phases: 0
-- Unmapped: 17 ⚠️
+- Mapped to phases: 17
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-18*
-*Last updated: 2026-03-18 after initial definition*
+*Last updated: 2026-03-18 after roadmap creation*

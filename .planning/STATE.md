@@ -5,11 +5,11 @@ milestone_name: Pipeline Fixes & Unified Enrichment
 status: active
 stopped_at: null
 last_updated: "2026-03-18"
-last_activity: 2026-03-18 -- Milestone v1.6 started
+last_activity: 2026-03-18 -- Roadmap created for v1.6
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
-  total_plans: 0
+  total_plans: 6
   completed_plans: 0
   percent: 0
 ---
@@ -20,21 +20,26 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-03-18)
 
-**Core value:** The tools must reliably process uploaded documents and return accurate, exportable results. Everything else is secondary to parsing accuracy and data integrity.
+**Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
 **Current focus:** v1.6 Pipeline Fixes & Unified Enrichment
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-18 — Milestone v1.6 started
+Phase: 10 of 12 (Auth Hardening & GHL Cleanup)
+Plan: 0 of 6 total plans in v1.6 (3 phases)
+Status: Ready to plan
+Last activity: 2026-03-18 -- Roadmap created for v1.6
+
+Progress: [░░░░░░░░░░] 0% (v1.6)
 
 ## Accumulated Context
 
 ### Decisions
 
-(None yet)
+- v1.6: Per-endpoint Depends() for admin auth, not router-level (avoids check_user deadlock)
+- v1.6: GHL smart_list_name two-step removal (frontend first, backend second) to avoid 422 on cached frontends
+- v1.6: Enrichment modal uses sequential await, not SSE (steps are 2-15s each)
+- v1.6: runAllSteps() uses local variable threading, not React state (avoids stale closure)
 
 ### Pending Todos
 
@@ -42,10 +47,8 @@ None.
 
 ### Blockers/Concerns
 
-- Fuzzy name matching between PDF/CSV respondents deferred to future release
-- 5 admin endpoints without auth (from v1.3 tech debt, AUTHZ-01)
-- History endpoints not user-scoped (from v1.3 tech debt, AUTHZ-02)
-- Concurrent enrichment button race conditions (to be addressed by unified modal)
+- RRC: `split_lease_number()` exists but never called in production -- verify edge cases before shipping
+- Enrichment: Verify `ApiClient` in `utils/api.ts` can propagate AbortController signal
 
 ### Quick Tasks Completed
 
@@ -53,6 +56,6 @@ None.
 
 ## Session Continuity
 
-Last session: —
-Stopped at: —
+Last session: 2026-03-18
+Stopped at: Roadmap created for v1.6
 Resume file: None

@@ -4,7 +4,8 @@
 
 - ✅ **v1.3 Security Hardening** -- Phases 1-3 (shipped 2026-03-11)
 - ✅ **v1.4 ECF Extraction** -- Phases 1-4 (shipped 2026-03-12)
-- 🚧 **v1.5 Enrichment Pipeline & Bug Fixes** -- Phases 5-9 (in progress)
+- ✅ **v1.5 Enrichment Pipeline & Bug Fixes** -- Phases 5-9 (shipped 2026-03-17)
+- 🚧 **v1.6 Pipeline Fixes & Unified Enrichment** -- Phases 10-12 (in progress)
 
 ## Phases
 
@@ -31,99 +32,78 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 
 </details>
 
-### v1.5 Enrichment Pipeline & Bug Fixes (In Progress)
+<details>
+<summary>v1.5 Enrichment Pipeline & Bug Fixes (Phases 5-9) -- SHIPPED 2026-03-17</summary>
 
-**Milestone Goal:** Fix broken enrichment/validation flows, add universal 3-button post-processing UI across all tools, fix ECF upload UX, and repair RRC fetch-missing pipeline.
+- [x] Phase 5: ECF Upload Flow Fix (2/2 plans) -- completed 2026-03-14
+- [x] Phase 6: RRC & GHL Fixes (2/2 plans) -- completed 2026-03-14
+- [x] Phase 7: Enrichment UI & Preview State (3/3 plans) -- completed 2026-03-15
+- [x] Phase 8: Enrichment Pipeline Features (3/3 plans) -- completed 2026-03-16
+- [x] Phase 9: Tool-Specific AI Prompts (2/2 plans) -- completed 2026-03-17
 
-- [ ] **Phase 5: ECF Upload Flow Fix** - Auto-detect ECF format, defer processing until user clicks Process
-- [ ] **Phase 6: RRC & GHL Fixes** - Repair fetch-missing pipeline and clarify GHL campaign tagging
-- [ ] **Phase 7: Enrichment UI & Preview State** - Shared post-processing buttons, preview table as single source of truth for exports
-- [x] **Phase 8: Enrichment Pipeline Features** - Wire AI cleanup, address validation, and contact enrichment through the universal UI (completed 2026-03-16)
-- [x] **Phase 9: Tool-Specific AI Prompts** - Per-tool Gemini QA prompts for name cleanup, figure verification, and accuracy checks (completed 2026-03-17)
+See: `.planning/milestones/v1.5-ROADMAP.md` for full details
+
+</details>
+
+### v1.6 Pipeline Fixes & Unified Enrichment (In Progress)
+
+**Milestone Goal:** Fix RRC fetch-missing pipeline, harden admin/history auth, clean up GHL legacy fields, and replace 3-button enrichment with a single-button modal that runs all steps with real-time progress and live preview updates.
+
+- [ ] **Phase 10: Auth Hardening & GHL Cleanup** - Secure admin/history endpoints and remove deprecated GHL smart_list_name field
+- [ ] **Phase 11: RRC Pipeline Fix** - Compound lease splitting, direct data use, per-row status feedback
+- [ ] **Phase 12: Unified Enrichment Modal** - Single-button modal replaces 3-button toolbar with sequential pipeline execution and live preview
 
 ## Phase Details
 
-### Phase 5: ECF Upload Flow Fix
-**Goal**: Users can upload ECF filings with the correct format pre-selected and optional CSV added before processing begins
-**Depends on**: Nothing (independent bug fix)
-**Requirements**: ECF-01, ECF-02, ECF-03, ECF-04
+### Phase 10: Auth Hardening & GHL Cleanup
+**Goal**: Admin settings and job history are properly authenticated, user-scoped, and the deprecated GHL field is removed
+**Depends on**: Nothing (independent fixes)
+**Requirements**: AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05, GHL-01, GHL-02
 **Success Criteria** (what must be TRUE):
-  1. When user uploads a PDF that is auto-detected as ECF format, the format dropdown switches to "ECF Filing" without user intervention
-  2. After ECF detection, the Convey 640 CSV upload area appears automatically so user can optionally add CSV before processing
-  3. No processing occurs until user explicitly clicks the Process button (uploading a file alone does not trigger extraction)
-  4. When both PDF and CSV are provided, the merged results show PDF-corrected data with CSV head-start fields filled in
-**Plans**: 2 plans
+  1. Unauthenticated requests to admin GET endpoints (/options, /users, /settings/*) return 401
+  2. The check_user endpoint still works without authentication (login flow unbroken)
+  3. Non-admin users see only their own jobs in history; admin users see all jobs
+  4. Deleting a job that belongs to another user returns 403 (unless requester is admin)
+  5. The GHL send modal no longer shows or sends a smart_list_name field
+**Plans**: TBD
 
 Plans:
-- [ ] 05-01-PLAN.md -- Backend detect-format endpoint + tests (ECF-01)
-- [ ] 05-02-PLAN.md -- Frontend staged upload flow with Process button (ECF-02, ECF-03, ECF-04)
+- [ ] 10-01: GHL smart_list_name removal (frontend first, then backend) (GHL-01, GHL-02)
+- [ ] 10-02: Admin endpoint auth with per-endpoint Depends (AUTH-01, AUTH-02)
+- [ ] 10-03: History user-scoping and delete ownership (AUTH-03, AUTH-04, AUTH-05)
 
-### Phase 6: RRC & GHL Fixes
-**Goal**: Users get usable results from RRC fetch-missing and understand how GHL campaign tagging works
-**Depends on**: Nothing (independent bug fixes)
-**Requirements**: RRC-01, RRC-02, RRC-03, GHL-01, GHL-02
+### Phase 11: RRC Pipeline Fix
+**Goal**: Fetch-missing correctly handles compound lease numbers and returns usable results directly
+**Depends on**: Nothing (independent of Phase 10, but sequenced after for build order discipline)
+**Requirements**: RRC-01, RRC-02, RRC-03
 **Success Criteria** (what must be TRUE):
-  1. When fetch-missing completes, found RRC data appears directly in the proration preview without requiring a page reload or second lookup
-  2. Lease numbers containing slashes or commas (e.g., "02-12345/02-12346") are split and each lease is looked up individually
-  3. After fetch-missing, user sees clear feedback per row: found, not found, or multiple matches
-  4. The GHL send modal shows "Campaign Tag" (not "SmartList Name") with a tooltip explaining that SmartLists are created manually in GHL filtered by this tag
-**Plans**: 2 plans
+  1. Lease numbers with slashes or commas (e.g., "02-12345/12346") are split and each part is looked up individually with the district prefix inherited
+  2. After fetch-missing completes, found RRC data appears in the proration table without a page reload or re-query
+  3. Each row shows its fetch status: found, not found, or multiple matches
+**Plans**: TBD
 
 Plans:
-- [ ] 06-01-PLAN.md -- Fix RRC fetch-missing pipeline: direct data use, compound lease splitting, per-row status (RRC-01, RRC-02, RRC-03)
-- [ ] 06-02-PLAN.md -- Rename GHL Campaign Tag label with tooltip, deprecate smart_list_name (GHL-01, GHL-02)
+- [ ] 11-01: Compound lease splitting with district inheritance + direct data use + per-row status UI (RRC-01, RRC-02, RRC-03)
 
-### Phase 7: Enrichment UI & Preview State
-**Goal**: Users see three conditional enrichment buttons across all tool pages, and the preview table becomes the single source of truth for exports
-**Depends on**: Nothing (can start in parallel with 5-6, but sequencing after them is preferred)
-**Requirements**: ENRICH-01, ENRICH-02, ENRICH-07, ENRICH-08, ENRICH-09
+### Phase 12: Unified Enrichment Modal
+**Goal**: Users run all enrichment steps from a single button with real-time progress and live preview updates
+**Depends on**: Phase 10 and Phase 11 (backend must be stable before building modal UX on top)
+**Requirements**: ENRICH-01, ENRICH-02, ENRICH-03, ENRICH-04, ENRICH-05, ENRICH-06, ENRICH-07
 **Success Criteria** (what must be TRUE):
-  1. Clean Up, Validate, and Enrich buttons appear on Extract, Title, Proration, and Revenue pages when their corresponding API keys and feature switches are configured
-  2. Buttons are hidden when their required API keys or feature switches are missing (no broken buttons visible to users)
-  3. Rows flagged during enrichment (e.g., validation mismatches) sort to the top of the preview table for user review
-  4. User can uncheck flagged rows to omit them from export, edit cells inline, and export always reflects the current preview state (edits + unchecks + enrichment results)
-  5. Infrastructure for preview-table-updates-after-enrichment is in place (updateEntries method) -- actual enrichment data flow delivered in Phase 8 (ENRICH-06)
-**Plans**: 3 plans
+  1. A single "Enrich" button replaces the 3-button toolbar on Extract, Title, Proration, and Revenue pages
+  2. Clicking Enrich opens a modal that runs cleanup, validate, and enrich steps sequentially without user intervention
+  3. The modal shows a progress bar with step labels and estimated time remaining
+  4. As each step completes, the preview table behind the modal updates in real-time with the new data
+  5. Modified cells are highlighted so the user can see exactly what changed after closing the modal
+**Plans**: TBD
 
 Plans:
-- [ ] 07-01-PLAN.md -- Backend feature status endpoint + EnrichmentToolbar component + useFeatureFlags hook (ENRICH-01, ENRICH-02)
-- [ ] 07-02-PLAN.md -- usePreviewState hook + EditableCell component (ENRICH-07, ENRICH-08, ENRICH-09)
-- [ ] 07-03-PLAN.md -- Wire shared components into all 4 tool pages (ENRICH-01, ENRICH-02, ENRICH-07, ENRICH-08, ENRICH-09)
-
-### Phase 8: Enrichment Pipeline Features
-**Goal**: Users can run AI cleanup, address validation, and contact enrichment in sequence through the universal enrichment buttons
-**Depends on**: Phase 7 (enrichment UI must exist)
-**Requirements**: ENRICH-03, ENRICH-04, ENRICH-05, ENRICH-06, ENRICH-10
-**Success Criteria** (what must be TRUE):
-  1. Clean Up button sends entries to AI service which fixes names, strips c/o from addresses, moves extras to notes, and attempts to complete partial entries -- results appear in preview
-  2. Validate button sends cleaned entries to Google Maps address validation and flags mismatches -- flagged rows sort to top
-  3. Enrich button sends validated entries to PDL/SearchBug and fills phone/email fields -- results appear in preview
-  4. After each enrichment step completes, the preview table immediately reflects the updated data without page reload (ENRICH-06 -- uses updateEntries infrastructure from Phase 7)
-  5. AI cleanup service uses a provider-agnostic LLM interface so Gemini can be swapped for Ollama/Qwen in v1.6 via admin settings without code changes
-**Plans**: 3 plans
-
-Plans:
-- [x] 08-01-PLAN.md -- LLM protocol + pipeline API endpoints (cleanup, validate, enrich) with unified ProposedChange format (ENRICH-03, ENRICH-04, ENRICH-05, ENRICH-10)
-- [x] 08-02-PLAN.md -- Frontend useEnrichmentPipeline hook, ProposedChangesPanel, wire into all 4 tool pages (ENRICH-06)
-- [ ] 08-03-PLAN.md -- Gap closure: wire recentlyAppliedKeys green row highlight into all 4 tool pages (ENRICH-06)
-
-### Phase 9: Tool-Specific AI Prompts
-**Goal**: Each tool gets tailored AI QA prompts that leverage tool-specific data patterns for better cleanup and validation
-**Depends on**: Phase 8 (AI cleanup must be functional)
-**Requirements**: ENRICH-11
-**Success Criteria** (what must be TRUE):
-  1. Extract and Title tools use name-focused cleanup prompts (fix casing, standardize suffixes, detect entity types from name patterns)
-  2. Revenue tool uses figure-verification prompts (cross-check amounts, flag outliers, validate decimal positions)
-  3. ECF tool uses cross-file accuracy prompts (compare PDF-extracted vs CSV-provided data, flag discrepancies between sources)
-**Plans**: 2 plans
-
-Plans:
-- [ ] 09-01-PLAN.md -- Backend pipeline plumbing + ECF/prompt refinements (ENRICH-11)
-- [ ] 09-02-PLAN.md -- Frontend ECF routing + confidence badges in ProposedChangesPanel (ENRICH-11)
+- [ ] 12-01: useEnrichmentPipeline.runAllSteps() with local variable threading and AbortController (ENRICH-02, ENRICH-03, ENRICH-06)
+- [ ] 12-02: EnrichmentModal component with progress UI, step labels, and ETA (ENRICH-01, ENRICH-03, ENRICH-04, ENRICH-05, ENRICH-07)
 
 ## Progress
 
-**Execution Order:** Phases 5 and 6 are independent and can execute in parallel. Phases 7-9 are sequential.
+**Execution Order:** Phases 10 and 11 are independent and can execute in parallel. Phase 12 depends on both completing first.
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -134,8 +114,11 @@ Plans:
 | 2. Convey 640 Processing | v1.4 | 1/1 | Complete | 2026-03-12 |
 | 3. Merge and Export | v1.4 | 2/2 | Complete | 2026-03-12 |
 | 4. Frontend Integration | v1.4 | 2/2 | Complete | 2026-03-11 |
-| 5. ECF Upload Flow Fix | 1/2 | In Progress|  | - |
-| 6. RRC & GHL Fixes | v1.5 | 0/2 | Planning complete | - |
-| 7. Enrichment UI & Preview State | 2/3 | In Progress|  | - |
-| 8. Enrichment Pipeline Features | 3/3 | Complete    | 2026-03-16 | - |
-| 9. Tool-Specific AI Prompts | 2/2 | Complete    | 2026-03-17 | - |
+| 5. ECF Upload Flow Fix | v1.5 | 2/2 | Complete | 2026-03-14 |
+| 6. RRC & GHL Fixes | v1.5 | 2/2 | Complete | 2026-03-14 |
+| 7. Enrichment UI & Preview State | v1.5 | 3/3 | Complete | 2026-03-15 |
+| 8. Enrichment Pipeline Features | v1.5 | 3/3 | Complete | 2026-03-16 |
+| 9. Tool-Specific AI Prompts | v1.5 | 2/2 | Complete | 2026-03-17 |
+| 10. Auth Hardening & GHL Cleanup | v1.6 | 0/3 | Not started | - |
+| 11. RRC Pipeline Fix | v1.6 | 0/1 | Not started | - |
+| 12. Unified Enrichment Modal | v1.6 | 0/2 | Not started | - |
