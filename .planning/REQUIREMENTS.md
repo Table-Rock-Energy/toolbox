@@ -1,70 +1,64 @@
 # Requirements: Table Rock Tools
 
-**Defined:** 2026-03-13
+**Defined:** 2026-03-18
 **Core Value:** The tools must reliably process uploaded documents and return accurate, exportable results. Everything else is secondary to parsing accuracy and data integrity.
 
-## v1.5 Requirements
+## v1.6 Requirements
 
-Requirements for v1.5 Enrichment Pipeline & Bug Fixes. Each maps to roadmap phases.
+Requirements for v1.6 Pipeline Fixes & Unified Enrichment. Each maps to roadmap phases.
 
-### Extract (ECF Upload Flow)
+### Security & Auth
 
-- [x] **ECF-01**: When ECF format is auto-detected from uploaded PDF, system auto-selects ECF filing type in format dropdown
-- [ ] **ECF-02**: After ECF detection, Convey 640 CSV upload area opens automatically before processing begins
-- [ ] **ECF-03**: Processing waits for explicit "Process" button click (no auto-processing on file upload)
-- [ ] **ECF-04**: CSV provides head-start data; PDF fills remaining fields and corrects inaccuracies from CSV (PDF is authoritative)
+- [ ] **AUTH-01**: Admin GET endpoints (/options, /users, /settings/*) require `require_admin` authentication
+- [ ] **AUTH-02**: `check_user` endpoint remains unauthenticated for login flow
+- [ ] **AUTH-03**: History GET /jobs returns only jobs belonging to the authenticated user
+- [ ] **AUTH-04**: Admin users can view all users' jobs in history
+- [ ] **AUTH-05**: History DELETE /jobs/{id} restricted to job owner or admin
 
-### GHL (Smart List Clarification)
+### RRC Pipeline
 
-- [ ] **GHL-01**: Verify current GHL API v2 docs for SmartList/saved-search creation endpoints
-- [ ] **GHL-02**: Rename `smart_list_name` field to `campaign_name` with tooltip explaining SmartList is created manually in GHL filtered by this tag (pending GHL-01 verification)
+- [ ] **RRC-01**: Compound lease numbers (slash/comma-separated) are split and each lease looked up individually
+- [ ] **RRC-02**: Fetch-missing uses returned RRC data directly instead of re-querying Firestore
+- [ ] **RRC-03**: After fetch-missing, each row shows status: found, not found, or multiple matches
 
-### Enrichment Pipeline
+### GHL Cleanup
 
-- [x] **ENRICH-01**: Three conditional buttons shown across all tool pages: Clean Up, Validate, Enrich
-- [x] **ENRICH-02**: Buttons visible only when corresponding API keys are set and feature switches enabled (Google API key + switches for Clean Up and Validate; PDL/SearchBug keys for Enrich)
-- [x] **ENRICH-03**: Clean Up (AI) runs first: fix names, strip c/o from addresses, move extras to notes, attempt to complete partial entries
-- [x] **ENRICH-04**: Validate (Google Maps) runs second: verify cleaned addresses, flag mismatches
-- [x] **ENRICH-05**: Enrich (PDL/SearchBug) runs third: fill phone/email using clean validated addresses
-- [x] **ENRICH-06**: After each enrichment step, preview table updates with enriched data visible to user
-- [x] **ENRICH-07**: Flagged rows (validation mismatches) sort to top of preview for user review
-- [x] **ENRICH-08**: User can uncheck flagged rows to omit from export, or edit inline to fix
-- [x] **ENRICH-09**: Export always reflects current preview state (edits, unchecks, enrichment results)
-- [x] **ENRICH-10**: AI cleanup service uses provider-agnostic LLM interface (Gemini now, Ollama/Qwen swappable via admin settings in v1.6)
-- [x] **ENRICH-11**: Tool-specific AI QA prompts: name cleanup for Extract/Title, figure verification for Revenue, address cleaning for all, overall accuracy check across both source files for ECF
+- [ ] **GHL-01**: `smart_list_name` field removed from backend model and API
+- [ ] **GHL-02**: `smart_list_name` references removed from frontend types and API client
 
-### RRC/Proration
+### Unified Enrichment
 
-- [ ] **RRC-01**: Fix fetch-missing to use returned data directly instead of re-looking up Firestore
-- [ ] **RRC-02**: Handle multi-lease numbers (slash/comma-separated) in fetch-missing lookups
-- [ ] **RRC-03**: Surface fetch-missing results to user: found, not found, multiple matches per row
+- [ ] **ENRICH-01**: Single "Enrich" button replaces the 3-button toolbar on all tool pages
+- [ ] **ENRICH-02**: Clicking Enrich opens a modal that runs cleanup → validate → enrich sequentially
+- [ ] **ENRICH-03**: Modal shows progress bar with step labels and estimated time remaining
+- [ ] **ENRICH-04**: As each step completes, changes appear in the preview table behind the modal in real-time
+- [ ] **ENRICH-05**: Modified cells are highlighted so user can see exactly what changed
+- [ ] **ENRICH-06**: Modal handles partial failure gracefully (e.g., validate fails but cleanup results preserved)
+- [ ] **ENRICH-07**: User can close modal after completion and review all changes in preview table with highlights
 
 ## Future Requirements
 
-Deferred to v1.6 (On-Prem & ETL Pipeline).
-
-### On-Prem Infrastructure
-- **ONPREM-01**: Ubuntu server deployment with VM setup
-- **ONPREM-02**: Bronze/silver/gold tiered database for ETL pipeline
-- **ONPREM-03**: Local LLM (Ollama/Qwen) replaces Gemini via admin settings provider switch
+Deferred to future milestones.
 
 ### Deferred
 - **DEFER-01**: Fuzzy name matching between PDF/CSV respondents
 - **DEFER-02**: Frontend test suite
 - **DEFER-03**: Rate limiting
 - **DEFER-04**: Structured logging / request tracing
-- **DEFER-05**: Step-by-step processing progress — replace spinner-only with SSE-driven step indicators showing current operation (e.g., "Extracting PDF...", "Parsing CSV...", "Merging...") above preview area on all tool pages
-- **DEFER-06**: Cancellable operations — stop button on all tool processing that aborts in-progress work and clears partial state
+- **DEFER-05**: Step-by-step processing progress for tool uploads (SSE-driven step indicators)
+- **DEFER-06**: Cancellable operations (stop button on tool processing)
+- **DEFER-07**: On-prem Ubuntu server deployment
+- **DEFER-08**: Bronze/silver/gold tiered database for ETL pipeline
+- **DEFER-09**: Local LLM (Ollama/Qwen) provider switch via admin settings
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| GHL SmartList API creation | SmartLists are UI-only saved filters in GHL, not API-creatable (verified in research) |
-| Bronze/silver/gold database tiers | Deferred to v1.6 on-prem milestone |
-| Local LLM deployment (Ollama/Qwen) | v1.5 builds the abstraction layer; v1.6 adds the provider |
-| Batch ECF processing (multiple filings) | One filing per upload is sufficient for current workflow |
-| Enrichment progress via SSE | Simple loading states on buttons sufficient for sub-2-minute operations |
+| GHL SmartList API creation | SmartLists are UI-only saved filters in GHL, not API-creatable (confirmed, abandoned) |
+| SSE for enrichment progress | Sequential await sufficient for 3 discrete steps (2-15s each) |
+| Enrichment abort/cancel mid-step | Steps are short enough that cancellation adds complexity without value |
+| Batch ECF processing | One filing per upload is sufficient for current workflow |
 
 ## Traceability
 
@@ -72,32 +66,29 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ECF-01 | Phase 5 | Complete |
-| ECF-02 | Phase 5 | Pending |
-| ECF-03 | Phase 5 | Pending |
-| ECF-04 | Phase 5 | Pending |
-| GHL-01 | Phase 6 | Pending |
-| GHL-02 | Phase 6 | Pending |
-| ENRICH-01 | Phase 7 | Complete |
-| ENRICH-02 | Phase 7 | Complete |
-| ENRICH-03 | Phase 8 | Complete |
-| ENRICH-04 | Phase 8 | Complete |
-| ENRICH-05 | Phase 8 | Complete |
-| ENRICH-06 | Phase 8 | Complete |
-| ENRICH-07 | Phase 7 | Complete |
-| ENRICH-08 | Phase 7 | Complete |
-| ENRICH-09 | Phase 7 | Complete |
-| ENRICH-10 | Phase 8 | Complete |
-| ENRICH-11 | Phase 9 | Complete |
-| RRC-01 | Phase 6 | Pending |
-| RRC-02 | Phase 6 | Pending |
-| RRC-03 | Phase 6 | Pending |
+| AUTH-01 | — | Pending |
+| AUTH-02 | — | Pending |
+| AUTH-03 | — | Pending |
+| AUTH-04 | — | Pending |
+| AUTH-05 | — | Pending |
+| RRC-01 | — | Pending |
+| RRC-02 | — | Pending |
+| RRC-03 | — | Pending |
+| GHL-01 | — | Pending |
+| GHL-02 | — | Pending |
+| ENRICH-01 | — | Pending |
+| ENRICH-02 | — | Pending |
+| ENRICH-03 | — | Pending |
+| ENRICH-04 | — | Pending |
+| ENRICH-05 | — | Pending |
+| ENRICH-06 | — | Pending |
+| ENRICH-07 | — | Pending |
 
 **Coverage:**
-- v1.5 requirements: 20 total
-- Mapped to phases: 20
-- Unmapped: 0
+- v1.6 requirements: 17 total
+- Mapped to phases: 0
+- Unmapped: 17 ⚠️
 
 ---
-*Requirements defined: 2026-03-13*
-*Last updated: 2026-03-13 after plan revision (ENRICH-06 moved from Phase 7 to Phase 8)*
+*Requirements defined: 2026-03-18*
+*Last updated: 2026-03-18 after initial definition*
