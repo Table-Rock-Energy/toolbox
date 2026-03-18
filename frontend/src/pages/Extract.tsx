@@ -846,16 +846,20 @@ export default function Extract() {
                       </p>
                     </div>
                   )}
-                  {activeJob.result.merge_warnings && activeJob.result.merge_warnings.length > 0 && (
-                    <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
-                      <p className="text-xs font-medium text-yellow-800">Merge Warnings</p>
-                      <ul className="text-xs text-yellow-700 mt-1 space-y-0.5">
-                        {activeJob.result.merge_warnings.map((w, i) => (
-                          <li key={i}>- {w}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                  {(() => {
+                    const warnings = (activeJob.result.merge_warnings || []).filter(w => !w.match(/^0 of 0/))
+                    if (warnings.length === 0) return null
+                    return (
+                      <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <p className="text-xs font-medium text-yellow-800">Merge Warnings</p>
+                        <ul className="text-xs text-yellow-700 mt-1 space-y-0.5">
+                          {warnings.map((w, i) => (
+                            <li key={i}>- {w}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )
+                  })()}
                 </div>
               )}
 
@@ -911,13 +915,13 @@ export default function Extract() {
               <div className="grid grid-cols-3 gap-4 p-6 border-b border-gray-100">
                 <div className="text-center">
                   <p className="text-2xl font-oswald font-semibold text-tre-navy">
-                    {activeJob.result.total_count}
+                    {filteredEntries.length}
                   </p>
                   <p className="text-sm text-gray-500">Total Parties</p>
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-oswald font-semibold text-yellow-600">
-                    {activeJob.result.flagged_count}
+                    {preview.flaggedCount}
                   </p>
                   <p className="text-sm text-gray-500">Flagged for Review</p>
                 </div>

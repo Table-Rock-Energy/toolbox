@@ -140,10 +140,9 @@ def _fix_entity_type(
     entries: list[dict],
     name_field: str,
     entity_type_field: str,
+    tool: str = "title",
 ) -> list[AutoCorrection]:
     """Re-run entity detection on corrected names to fix mismatched entity types."""
-    from app.services.title.entity_detector import detect_entity_type
-
     corrections: list[AutoCorrection] = []
     for i, entry in enumerate(entries):
         name = entry.get(name_field)
@@ -151,8 +150,13 @@ def _fix_entity_type(
         if not name:
             continue
 
-        detected = detect_entity_type(name)
-        detected_val = detected.value
+        # Use the correct detector per tool to match enum values
+        if tool == "extract":
+            from app.utils.patterns import detect_entity_type as detect_extract
+            detected_val = detect_extract(name)
+        else:
+            from app.services.title.entity_detector import detect_entity_type as detect_title
+            detected_val = detect_title(name).value
 
         # Normalize comparison — extract and title use different enum value casing
         if current_type and str(current_type).upper() != detected_val.upper() and detected_val.upper() != "INDIVIDUAL":
@@ -308,7 +312,7 @@ async def auto_enrich(
     # ── Step 2: Entity type re-detection (Extract, Title) ──
     if tool in ("extract", "title"):
         name_field = "primary_name" if tool == "extract" else "full_name"
-        entity_fixes = _fix_entity_type(entries, name_field, "entity_type")
+        entity_fixes = _fix_entity_type(entries, name_field, "entity_type", tool=tool)
         all_corrections.extend(entity_fixes)
         steps_completed.append("entity_type")
     else:
