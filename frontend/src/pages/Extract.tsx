@@ -136,9 +136,6 @@ export default function Extract() {
   // Enrichment feature flags
   const featureFlags = useFeatureFlags()
 
-  // Post-process corrections state
-  const [postProcess, setPostProcess] = useState<PostProcessResult | null>(null)
-  const [preCorrectionEntries, setPreCorrectionEntries] = useState<PartyEntry[] | null>(null)
 
   // Mineral export modal state
   const [showMineralModal, setShowMineralModal] = useState(false)
@@ -222,19 +219,6 @@ export default function Extract() {
     }
   }, [formatHint])
 
-  const handleUndoCorrections = () => {
-    if (!preCorrectionEntries || !activeJob?.result) return
-
-    setActiveJob({
-      ...activeJob,
-      result: {
-        ...activeJob.result,
-        entries: preCorrectionEntries,
-      },
-    })
-    setPostProcess(null)
-    setPreCorrectionEntries(null)
-  }
 
   const handleFileStaged = async (files: File[]) => {
     if (files.length === 0) return
@@ -320,28 +304,6 @@ export default function Extract() {
       newJob.job_id = data.result?.job_id
 
       // Capture post-process corrections from the result
-      if (data.result?.post_process) {
-        setPostProcess(data.result.post_process)
-        // Store a snapshot of entries before corrections so we can undo
-        if (data.result.entries && data.result.post_process.corrections.length > 0) {
-          const snapshot = data.result.entries.map((entry) => {
-            const entryWithCorrections: Record<string, unknown> = { ...entry }
-            for (const correction of data.result!.post_process!.corrections) {
-              if (correction.entry_index === data.result!.entries!.indexOf(entry)) {
-                entryWithCorrections[correction.field] = correction.original_value
-              }
-            }
-            return entryWithCorrections as unknown as PartyEntry
-          })
-          setPreCorrectionEntries(snapshot)
-        } else {
-          setPreCorrectionEntries(null)
-        }
-      } else {
-        setPostProcess(null)
-        setPreCorrectionEntries(null)
-      }
-
       // Capture original CSV entries for ECF cross-file comparison
       if (data.result?.original_csv_entries) {
         setOriginalCsvEntries(data.result.original_csv_entries)
@@ -550,8 +512,8 @@ export default function Extract() {
         </button>
       </div>
 
-      {/* Upload Section - compact row when panel collapsed */}
-      {panelCollapsed && (
+      {/* Upload Section - compact row when panel collapsed and no active results */}
+      {panelCollapsed && !activeJob?.result && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <FileUpload
             onFilesSelected={handleFileStaged}
@@ -824,6 +786,16 @@ export default function Extract() {
                   </div>
                 </div>
               </div>
+
+              {/* Auto-Applied Cleanup Changes */}
+              {pipeline.autoAppliedChanges.length > 0 && (
+                <div className="px-6 py-2 border-b border-gray-100">
+                  <AutoCorrectionsBanner
+                    corrections={pipeline.autoAppliedChanges}
+                    onUndo={pipeline.onUndoAutoApplied}
+                  />
+                </div>
+              )}
 
               {/* Pipeline Error */}
               {pipeline.errorMessage && (
@@ -1166,13 +1138,6 @@ export default function Extract() {
                 </div>
               </div>
             </div>
-            {/* Auto-Corrections Banner */}
-            {postProcess && postProcess.corrections.length > 0 && (
-              <AutoCorrectionsBanner
-                postProcess={postProcess}
-                onUndo={handleUndoCorrections}
-              />
-            )}
             </>
           ) : activeJob?.result?.error_message ? (
             <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
@@ -1190,8 +1155,8 @@ export default function Extract() {
         </div>
       </div>
 
-      {/* Recent Jobs - shown at bottom when panel collapsed */}
-      {panelCollapsed && (
+      {/* Recent Jobs - shown at bottom when panel collapsed and no active results */}
+      {panelCollapsed && !activeJob?.result && (
         <div className="bg-white rounded-xl border border-gray-200">
           <div className="px-4 py-3 border-b border-gray-100">
             <h3 className="font-medium text-gray-900">Recent Jobs</h3>

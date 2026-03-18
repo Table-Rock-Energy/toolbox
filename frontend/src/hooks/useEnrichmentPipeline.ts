@@ -14,12 +14,22 @@ export interface UseEnrichmentPipelineOptions<T> {
   sourceData?: Record<string, unknown>[]
 }
 
+export interface AutoAppliedChange {
+  entry_index: number
+  field: string
+  original_value: string
+  corrected_value: string
+  source: string
+  confidence: string
+}
+
 export interface UseEnrichmentPipelineReturn {
   activeAction: PipelineStep | null
   proposedChanges: ProposedChange[] | null
   checkedIndices: Set<number>
   completedSteps: Set<PipelineStep>
   recentlyAppliedKeys: Set<string>
+  autoAppliedChanges: AutoAppliedChange[]
   errorMessage: string | null
   canCleanUp: boolean
   canValidate: boolean
@@ -30,6 +40,7 @@ export interface UseEnrichmentPipelineReturn {
   onEnrich: () => void
   onApply: () => void
   onDismiss: () => void
+  onUndoAutoApplied: () => void
   toggleCheck: (index: number) => void
   toggleCheckAll: () => void
 }
@@ -44,6 +55,8 @@ export function useEnrichmentPipeline<T extends object>(
   const [proposedChanges, setProposedChanges] = useState<ProposedChange[] | null>(null)
   const [checkedIndices, setCheckedIndices] = useState<Set<number>>(new Set())
   const [recentlyAppliedKeys, setRecentlyAppliedKeys] = useState<Set<string>>(new Set())
+  const [autoAppliedChanges, setAutoAppliedChanges] = useState<AutoAppliedChange[]>([])
+  const [preAutoApplySnapshot, setPreAutoApplySnapshot] = useState<T[] | null>(null)
   const [lastStep, setLastStep] = useState<PipelineStep | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -78,10 +91,71 @@ export function useEnrichmentPipeline<T extends object>(
       const response = await apiMethod(tool, entries, undefined, step === 'cleanup' ? sourceData : undefined)
 
       if (response.data && response.data.success) {
-        const changes = response.data.proposed_changes
-        setProposedChanges(changes)
-        setCheckedIndices(new Set(changes.map((_, i) => i)))
-        setLastStep(step)
+        const allChanges = response.data.proposed_changes
+
+        // For cleanup: auto-apply high-confidence changes, only show medium/low for review
+        if (step === 'cleanup' && allChanges.length > 0) {
+          const highConfidence = allChanges.filter((c) => c.confidence === 'high')
+          const needsReview = allChanges.filter((c) => c.confidence !== 'high')
+
+          if (highConfidence.length > 0) {
+            // Snapshot entries before auto-apply for undo support
+            setPreAutoApplySnapshot(previewEntries.map((e) => ({ ...e })))
+
+            // Auto-apply high-confidence changes directly
+            const updatedEntries = previewEntries.map((e) => ({ ...e }))
+            const appliedKeys = new Set<string>()
+            const applied: AutoAppliedChange[] = []
+
+            for (const change of highConfidence) {
+              const entry = updatedEntries[change.entry_index]
+              if (!entry) continue
+
+              const entryKey = String(entry[keyField])
+              const userEdits = editedFields.get(entryKey)
+
+              // Respect manual edits
+              if (userEdits && change.field in userEdits) continue
+
+              ;(entry as Record<string, unknown>)[change.field] = change.proposed_value
+              appliedKeys.add(entryKey)
+              applied.push({
+                entry_index: change.entry_index,
+                field: change.field,
+                original_value: change.current_value,
+                corrected_value: change.proposed_value,
+                source: change.source,
+                confidence: change.confidence,
+              })
+            }
+
+            if (applied.length > 0) {
+              updateEntries(updatedEntries)
+              setAutoAppliedChanges(applied)
+
+              // Flash green highlight on auto-applied rows
+              setRecentlyAppliedKeys(appliedKeys)
+              if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current)
+              highlightTimeoutRef.current = setTimeout(() => {
+                setRecentlyAppliedKeys(new Set())
+              }, 2000)
+            }
+          }
+
+          // Show remaining changes for manual review (or nothing if all were high)
+          if (needsReview.length > 0) {
+            setProposedChanges(needsReview)
+            setCheckedIndices(new Set(needsReview.map((_, i) => i)))
+            setLastStep(step)
+          } else {
+            setCompletedSteps((prev) => new Set([...prev, step]))
+          }
+        } else {
+          // Validate / Enrich: show all changes for review as before
+          setProposedChanges(allChanges)
+          setCheckedIndices(new Set(allChanges.map((_, i) => i)))
+          setLastStep(step)
+        }
       } else {
         const errorMsg = response.data?.error || response.error || 'Pipeline step failed'
         setErrorMessage(errorMsg)
@@ -144,6 +218,14 @@ export function useEnrichmentPipeline<T extends object>(
     setLastStep(null)
   }, [proposedChanges, lastStep, previewEntries, checkedIndices, keyField, editedFields, updateEntries])
 
+  const onUndoAutoApplied = useCallback(() => {
+    if (preAutoApplySnapshot) {
+      updateEntries(preAutoApplySnapshot)
+      setPreAutoApplySnapshot(null)
+      setAutoAppliedChanges([])
+    }
+  }, [preAutoApplySnapshot, updateEntries])
+
   const onDismiss = useCallback(() => {
     setProposedChanges(null)
     setCheckedIndices(new Set())
@@ -179,6 +261,7 @@ export function useEnrichmentPipeline<T extends object>(
     checkedIndices,
     completedSteps,
     recentlyAppliedKeys,
+    autoAppliedChanges,
     errorMessage,
     canCleanUp,
     canValidate,
@@ -189,6 +272,7 @@ export function useEnrichmentPipeline<T extends object>(
     onEnrich,
     onApply,
     onDismiss,
+    onUndoAutoApplied,
     toggleCheck,
     toggleCheckAll,
   }

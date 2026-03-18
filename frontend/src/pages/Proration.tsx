@@ -197,6 +197,7 @@ export default function Proration() {
   // Fetch missing RRC data state
   const [isFetchingMissing, setIsFetchingMissing] = useState(false)
   const [fetchMissingMessage, setFetchMissingMessage] = useState<string | null>(null)
+  const [hideMissingRrc, setHideMissingRrc] = useState(false)
 
   // Edit Row Modal State
   const [editingRow, setEditingRow] = useState<MineralHolderRow | null>(null)
@@ -320,14 +321,27 @@ export default function Proration() {
   }, [])
 
 
-  // Add stable _uid keys to rows for preview state
+  // Add stable _uid keys, sort missing RRC to top, apply filter
   const rowsWithKeys = useMemo(() => {
     if (!activeJob?.result?.rows) return []
-    return activeJob.result.rows.map((row, i) => ({
+    let rows = activeJob.result.rows.map((row, i) => ({
       ...row,
       _uid: row._uid ?? `pror-${i}`,
     }))
-  }, [activeJob?.result?.rows])
+
+    // Sort missing RRC data to top so they're visible
+    rows.sort((a, b) => {
+      const aMissing = !a.rrc_acres ? 0 : 1
+      const bMissing = !b.rrc_acres ? 0 : 1
+      return aMissing - bMissing
+    })
+
+    if (hideMissingRrc) {
+      rows = rows.filter(r => r.rrc_acres)
+    }
+
+    return rows
+  }, [activeJob?.result?.rows, hideMissingRrc])
 
   // Preview state: exclusion, row sorting
   const preview = usePreviewState({
@@ -345,23 +359,6 @@ export default function Proration() {
     featureFlags,
   })
 
-  const handleUndoCorrections = () => {
-    if (!activeJob?.result?.rows || !activeJob.result.post_process?.corrections) return
-
-    const updatedRows = [...activeJob.result.rows]
-    const corrections = [...activeJob.result.post_process.corrections].reverse()
-    for (const correction of corrections) {
-      const row = updatedRows[correction.entry_index]
-      if (row && correction.field in row) {
-        (row as unknown as Record<string, unknown>)[correction.field] = correction.original_value
-      }
-    }
-
-    const updatedResult = { ...activeJob.result, rows: updatedRows, post_process: null }
-    const updatedJob = { ...activeJob, result: updatedResult }
-    setActiveJob(updatedJob)
-    setJobs(prev => prev.map(j => j.id === activeJob.id ? updatedJob : j))
-  }
 
   const startPolling = (jobId: string) => {
     // Clear any existing poll interval
@@ -791,8 +788,8 @@ export default function Proration() {
         </div>
       )}
 
-      {/* Upload Section - compact row when panel collapsed */}
-      {panelCollapsed && (
+      {/* Upload Section - compact row when panel collapsed and no active results */}
+      {panelCollapsed && !activeJob?.result && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           {!showProcessingOptions ? (
             <>
@@ -827,6 +824,16 @@ export default function Proration() {
                   <Filter className="w-4 h-4" />
                   <span>Filters</span>
                 </div>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={hideMissingRrc}
+                    onChange={(e) => setHideMissingRrc(e.target.checked)}
+                    className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                  />
+                  <span>Hide Missing RRC</span>
+                </label>
 
                 <label className="flex items-center gap-2 text-sm">
                   <input
@@ -934,6 +941,16 @@ export default function Proration() {
                     <Filter className="w-4 h-4" />
                     <span>Filters</span>
                   </div>
+
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={hideMissingRrc}
+                      onChange={(e) => setHideMissingRrc(e.target.checked)}
+                      className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                    />
+                    <span>Hide Missing RRC</span>
+                  </label>
 
                   <label className="flex items-center gap-2 text-sm">
                     <input
@@ -1107,6 +1124,16 @@ export default function Proration() {
                   </div>
                 </div>
               </div>
+
+              {/* Auto-Applied Cleanup Changes */}
+              {pipeline.autoAppliedChanges.length > 0 && (
+                <div className="px-6 py-2 border-b border-gray-100">
+                  <AutoCorrectionsBanner
+                    corrections={pipeline.autoAppliedChanges}
+                    onUndo={pipeline.onUndoAutoApplied}
+                  />
+                </div>
+              )}
 
               {/* Pipeline Error */}
               {pipeline.errorMessage && (
@@ -1419,13 +1446,6 @@ export default function Proration() {
               </div>
             </div>
 
-            {/* Auto-Corrections Banner */}
-            {(activeJob?.result?.post_process?.corrections?.length ?? 0) > 0 && (
-              <AutoCorrectionsBanner
-                postProcess={activeJob!.result!.post_process!}
-                onUndo={handleUndoCorrections}
-              />
-            )}
 
             </>
           ) : activeJob?.result?.error_message ? (
@@ -1444,8 +1464,8 @@ export default function Proration() {
         </div>
       </div>
 
-      {/* Recent Jobs - shown at bottom when panel collapsed */}
-      {panelCollapsed && (
+      {/* Recent Jobs - shown at bottom when panel collapsed and no active results */}
+      {panelCollapsed && !activeJob?.result && (
         <div className="bg-white rounded-xl border border-gray-200">
           <div className="px-4 py-3 border-b border-gray-100">
             <h3 className="font-medium text-gray-900">Recent Jobs</h3>

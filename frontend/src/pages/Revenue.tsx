@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { DollarSign, Download, Upload, AlertCircle, CheckCircle, Columns, X, PanelLeftClose, PanelLeftOpen, Edit2, Bug, ChevronDown, ChevronRight, RotateCcw, Filter } from 'lucide-react'
+import { DollarSign, Download, Upload, AlertCircle, CheckCircle, Columns, X, PanelLeftClose, PanelLeftOpen, Edit2, ChevronDown, ChevronRight, RotateCcw, Filter } from 'lucide-react'
 import { FileUpload, Modal, MineralExportModal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar, ProposedChangesPanel } from '../components'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
@@ -64,43 +64,6 @@ interface RevenueJob {
   user: string
   timestamp: string
   result?: UploadResponse
-}
-
-interface DebugGarbledAnalysis {
-  garbled: boolean
-  score: number
-  indicators: string[]
-}
-
-interface DebugExtractorResult {
-  success: boolean
-  char_count: number
-  text: string
-  garbled_analysis?: DebugGarbledAnalysis
-  error?: string
-}
-
-interface DebugFontInfo {
-  page: number
-  xref: number
-  ext: string
-  type: string
-  basefont: string
-  name: string
-  encoding: string | null
-}
-
-interface DebugResult {
-  filename: string
-  size_bytes: number
-  pymupdf?: DebugExtractorResult
-  pdfplumber?: DebugExtractorResult
-  pdfplumber_tables?: { success: boolean; table_count: number; tables: unknown[] }
-  structured?: unknown
-  fonts?: DebugFontInfo[]
-  detected_format?: string
-  recommendation?: string
-  error?: string
 }
 
 // A flattened row that includes statement-level fields
@@ -206,10 +169,6 @@ export default function Revenue() {
   // Edit modal state
   const [editingRow, setEditingRow] = useState<{ statementIdx: number; rowIdx: number; row: RevenueRow } | null>(null)
 
-  // Debug panel state
-  const [showDebug, setShowDebug] = useState(false)
-  const [debugResult, setDebugResult] = useState<DebugResult | null>(null)
-  const [debugLoading, setDebugLoading] = useState(false)
 
   // Filter state
   const [filterProduct, setFilterProduct] = useState<string>('')
@@ -346,16 +305,6 @@ export default function Revenue() {
     setFilterProperty('')
   }
 
-  const handleUndoCorrections = () => {
-    if (!activeJob?.result) return
-    setActiveJob({
-      ...activeJob,
-      result: {
-        ...activeJob.result,
-        post_process: null,
-      },
-    })
-  }
 
   const handleFilesSelected = async (files: File[]) => {
     if (files.length === 0) return
@@ -504,28 +453,6 @@ export default function Revenue() {
     if (activeJob?.id === job.id) setActiveJob(null)
   }
 
-  const handleDebugUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setDebugLoading(true)
-    setDebugResult(null)
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const response = await fetch(`${API_BASE}/revenue/debug/extract-text`, {
-        method: 'POST',
-        headers: await authHeaders(),
-        body: formData,
-      })
-      const data = await response.json()
-      setDebugResult(data)
-    } catch (err) {
-      setDebugResult({ filename: '', size_bytes: 0, error: err instanceof Error ? err.message : 'Debug request failed' })
-    } finally {
-      setDebugLoading(false)
-      e.target.value = ''
-    }
-  }
 
   const toNum = (v: unknown): number | undefined => {
     if (v === undefined || v === null) return undefined
@@ -610,8 +537,8 @@ export default function Revenue() {
         </button>
       </div>
 
-      {/* Upload Section - compact row when panel collapsed */}
-      {panelCollapsed && (
+      {/* Upload Section - compact row when panel collapsed and no active results */}
+      {panelCollapsed && !activeJob?.result && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <FileUpload
             onFilesSelected={handleFilesSelected}
@@ -749,6 +676,16 @@ export default function Revenue() {
                   </div>
                 </div>
               </div>
+
+              {/* Auto-Applied Cleanup Changes */}
+              {pipeline.autoAppliedChanges.length > 0 && (
+                <div className="px-6 py-2 border-b border-gray-100">
+                  <AutoCorrectionsBanner
+                    corrections={pipeline.autoAppliedChanges}
+                    onUndo={pipeline.onUndoAutoApplied}
+                  />
+                </div>
+              )}
 
               {/* Pipeline Error */}
               {pipeline.errorMessage && (
@@ -1031,13 +968,6 @@ export default function Revenue() {
               </div>
             </div>
 
-            {/* Auto-corrections Banner */}
-            {(activeJob?.result?.post_process?.corrections?.length ?? 0) > 0 && (
-              <AutoCorrectionsBanner
-                postProcess={activeJob!.result!.post_process!}
-                onUndo={handleUndoCorrections}
-              />
-            )}
 
             </>
           ) : activeJob?.result?.errors?.length ? (
@@ -1056,8 +986,8 @@ export default function Revenue() {
         </div>
       </div>
 
-      {/* Recent Jobs - shown at bottom when panel collapsed */}
-      {panelCollapsed && (
+      {/* Recent Jobs - shown at bottom when panel collapsed and no active results */}
+      {panelCollapsed && !activeJob?.result && (
         <div className="bg-white rounded-xl border border-gray-200">
           <div className="px-4 py-3 border-b border-gray-100">
             <h3 className="font-medium text-gray-900">Recent Jobs</h3>
@@ -1108,141 +1038,6 @@ export default function Revenue() {
         </div>
       )}
 
-      {/* Debug Extraction Panel */}
-      <div className="bg-white rounded-xl border border-gray-200">
-        <button
-          onClick={() => setShowDebug(!showDebug)}
-          className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
-        >
-          <div className="flex items-center gap-2 text-sm font-medium text-gray-600">
-            <Bug className="w-4 h-4" />
-            Debug PDF Extraction
-          </div>
-          {showDebug ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-        </button>
-        {showDebug && (
-          <div className="px-4 pb-4 space-y-4">
-            <p className="text-xs text-gray-500">
-              Upload a PDF to see raw extracted text from each extraction method. Helps diagnose font encoding issues.
-            </p>
-            <div className="flex items-center gap-3">
-              <label className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm cursor-pointer">
-                <input
-                  type="file"
-                  accept=".pdf"
-                  onChange={handleDebugUpload}
-                  className="hidden"
-                />
-                Choose PDF
-              </label>
-              {debugLoading && (
-                <div className="flex items-center gap-2 text-sm text-gray-500">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
-                  Analyzing...
-                </div>
-              )}
-            </div>
-            {debugResult && (
-              <div className="space-y-3">
-                {debugResult.recommendation && (
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
-                    {debugResult.recommendation}
-                  </div>
-                )}
-
-                {([
-                  { data: debugResult.pymupdf, label: 'PyMuPDF' },
-                  { data: debugResult.pdfplumber, label: 'pdfplumber' },
-                ] as const).map(({ data, label }) => {
-                  if (!data) return null
-                  const garbled = data.garbled_analysis
-                  return (
-                    <div key={label} className="border border-gray-200 rounded-lg overflow-hidden">
-                      <div className="px-3 py-2 bg-gray-50 flex items-center justify-between">
-                        <span className="text-sm font-medium text-gray-700">{label}</span>
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className="text-gray-500">{data.char_count} chars</span>
-                          {garbled && (
-                            <span className={`px-2 py-0.5 rounded-full ${
-                              garbled.garbled ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
-                            }`}>
-                              {garbled.garbled ? `Garbled (score: ${garbled.score})` : 'Clean'}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      {garbled && garbled.indicators.length > 0 && (
-                        <div className="px-3 py-2 bg-yellow-50 border-b border-gray-200">
-                          <ul className="text-xs text-yellow-800 space-y-0.5">
-                            {garbled.indicators.map((ind, i) => (
-                              <li key={i}>{ind}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      <pre className="px-3 py-2 text-xs text-gray-700 max-h-60 overflow-auto whitespace-pre-wrap font-mono bg-gray-50/50">
-                        {data.text?.substring(0, 3000) || 'No text extracted'}
-                        {data.text?.length > 3000 && '\n... (truncated)'}
-                      </pre>
-                    </div>
-                  )
-                })}
-
-                {debugResult.pdfplumber_tables && (
-                  <div className="border border-gray-200 rounded-lg overflow-hidden">
-                    <div className="px-3 py-2 bg-gray-50">
-                      <span className="text-sm font-medium text-gray-700">
-                        pdfplumber Tables ({debugResult.pdfplumber_tables.table_count} found)
-                      </span>
-                    </div>
-                    <pre className="px-3 py-2 text-xs text-gray-700 max-h-60 overflow-auto whitespace-pre-wrap font-mono bg-gray-50/50">
-                      {JSON.stringify(debugResult.pdfplumber_tables.tables, null, 2)?.substring(0, 3000) || 'No tables'}
-                    </pre>
-                  </div>
-                )}
-
-                {debugResult.fonts && debugResult.fonts.length > 0 && (
-                  <div className="border border-gray-200 rounded-lg overflow-hidden">
-                    <div className="px-3 py-2 bg-gray-50">
-                      <span className="text-sm font-medium text-gray-700">
-                        Fonts ({debugResult.fonts.length})
-                      </span>
-                    </div>
-                    <div className="px-3 py-2 text-xs">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="text-left text-gray-500">
-                            <th className="pb-1">Name</th>
-                            <th className="pb-1">Type</th>
-                            <th className="pb-1">Base Font</th>
-                            <th className="pb-1">Encoding</th>
-                          </tr>
-                        </thead>
-                        <tbody className="text-gray-700">
-                          {debugResult.fonts.map((f, i) => (
-                            <tr key={i}>
-                              <td className="py-0.5">{f.name}</td>
-                              <td className="py-0.5">{f.type}</td>
-                              <td className="py-0.5">{f.basefont}</td>
-                              <td className="py-0.5">{f.encoding || '\u2014'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {debugResult.detected_format && (
-                  <div className="text-sm text-gray-600">
-                    Detected format: <span className="font-medium">{debugResult.detected_format}</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
 
       {/* Mineral Export Modal */}
       <MineralExportModal

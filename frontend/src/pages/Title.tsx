@@ -252,7 +252,8 @@ export default function Title() {
     }))
 
     if (hideNoAddress) {
-      filtered = filtered.filter(e => e.has_address)
+      const isBlank = (v: string | undefined | null) => !v || v === 'null' || v === 'None' || v.trim() === ''
+      filtered = filtered.filter(e => e.has_address && !isBlank(e.address) && (!isBlank(e.city) || !isBlank(e.state) || !isBlank(e.zip_code)))
     }
 
     if (hideDuplicates) {
@@ -323,23 +324,6 @@ export default function Title() {
 
 
 
-  const handleUndoCorrections = () => {
-    if (!activeJob?.result?.entries || !activeJob.result.post_process?.corrections) return
-
-    const updatedEntries = [...activeJob.result.entries]
-    const corrections = [...activeJob.result.post_process.corrections].reverse()
-    for (const correction of corrections) {
-      const entry = updatedEntries[correction.entry_index]
-      if (entry && correction.field in entry) {
-        (entry as unknown as Record<string, unknown>)[correction.field] = correction.original_value
-      }
-    }
-
-    const updatedResult = { ...activeJob.result, entries: updatedEntries, post_process: null }
-    const updatedJob = { ...activeJob, result: updatedResult }
-    setActiveJob(updatedJob)
-    setJobs(prev => prev.map(j => j.id === activeJob.id ? updatedJob : j))
-  }
 
   const handleFilesSelected = async (files: File[]) => {
     if (files.length === 0) return
@@ -551,8 +535,8 @@ export default function Title() {
         </button>
       </div>
 
-      {/* Upload Section - compact row when panel collapsed */}
-      {panelCollapsed && (
+      {/* Upload Section - compact row when panel collapsed and no active results */}
+      {panelCollapsed && !activeJob?.result && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <FileUpload
             onFilesSelected={handleFilesSelected}
@@ -700,6 +684,16 @@ export default function Title() {
                   </div>
                 </div>
               </div>
+
+              {/* Auto-Applied Cleanup Changes */}
+              {pipeline.autoAppliedChanges.length > 0 && (
+                <div className="px-6 py-2 border-b border-gray-100">
+                  <AutoCorrectionsBanner
+                    corrections={pipeline.autoAppliedChanges}
+                    onUndo={pipeline.onUndoAutoApplied}
+                  />
+                </div>
+              )}
 
               {/* Pipeline Error */}
               {pipeline.errorMessage && (
@@ -1116,13 +1110,6 @@ export default function Title() {
               </div>
             </div>
 
-            {/* Auto-Corrections Banner */}
-            {(activeJob?.result?.post_process?.corrections?.length ?? 0) > 0 && (
-              <AutoCorrectionsBanner
-                postProcess={activeJob!.result!.post_process!}
-                onUndo={handleUndoCorrections}
-              />
-            )}
 
             </>
           ) : activeJob?.result?.error_message ? (
@@ -1141,8 +1128,8 @@ export default function Title() {
         </div>
       </div>
 
-      {/* Recent Jobs - shown at bottom when panel collapsed */}
-      {panelCollapsed && (
+      {/* Recent Jobs - shown at bottom when panel collapsed and no active results */}
+      {panelCollapsed && !activeJob?.result && (
         <div className="bg-white rounded-xl border border-gray-200">
           <div className="px-4 py-3 border-b border-gray-100">
             <h3 className="font-medium text-gray-900">Recent Jobs</h3>

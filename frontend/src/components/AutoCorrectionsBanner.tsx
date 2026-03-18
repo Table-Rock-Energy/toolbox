@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { CheckCircle, ChevronDown, ChevronUp, Undo2 } from 'lucide-react'
 
-interface AutoCorrection {
+export interface AutoCorrection {
   entry_index: number
   field: string
   original_value: string
@@ -18,7 +18,8 @@ interface PostProcessResult {
 }
 
 interface AutoCorrectionsBannerProps {
-  postProcess: PostProcessResult
+  postProcess?: PostProcessResult
+  corrections?: AutoCorrection[]
   onUndo: () => void
 }
 
@@ -26,18 +27,20 @@ const SOURCE_LABELS: Record<string, string> = {
   programmatic: 'Auto',
   google_maps: 'Maps',
   ai: 'AI',
+  ai_cleanup: 'AI',
 }
 
 const SOURCE_STYLES: Record<string, string> = {
   programmatic: 'bg-blue-100 text-blue-700',
   google_maps: 'bg-green-100 text-green-700',
   ai: 'bg-purple-100 text-purple-700',
+  ai_cleanup: 'bg-purple-100 text-purple-700',
 }
 
-export default function AutoCorrectionsBanner({ postProcess, onUndo }: AutoCorrectionsBannerProps) {
+export default function AutoCorrectionsBanner({ postProcess, corrections: directCorrections, onUndo }: AutoCorrectionsBannerProps) {
   const [expanded, setExpanded] = useState(false)
 
-  const { corrections } = postProcess
+  const corrections = directCorrections ?? postProcess?.corrections ?? []
   if (!corrections.length) return null
 
   // Group by source
