@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Pipeline Fixes & Unified Enrichment
-status: active
-stopped_at: null
-last_updated: "2026-03-18"
+status: planning
+stopped_at: Phase 10 context gathered
+last_updated: "2026-03-18T19:28:12.203Z"
 last_activity: 2026-03-18 -- Roadmap created for v1.6
 progress:
   total_phases: 3
   completed_phases: 0
-  total_plans: 6
+  total_plans: 0
   completed_plans: 0
   percent: 0
 ---
@@ -56,6 +56,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-18
-Stopped at: Roadmap created for v1.6
-Resume file: None
+Last session: 2026-03-18T19:28:12.196Z
+Stopped at: Phase 10 context gathered
+Resume file: .planning/phases/10-auth-hardening-ghl-cleanup/10-CONTEXT.md
