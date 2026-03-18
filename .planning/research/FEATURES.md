@@ -1,192 +1,131 @@
-# Feature Landscape: ECF/Convey 640 Extraction
+# Feature Landscape
 
-**Domain:** OCC multiunit horizontal well application processing with optional CSV/Excel data merge
-**Researched:** 2026-03-11
+**Domain:** v1.6 Pipeline Fixes & Unified Enrichment
+**Researched:** 2026-03-18
 
 ## Table Stakes
 
-Features users expect. Missing = product feels incomplete.
+Features that are broken or incomplete in the current build. Fixing these is prerequisite work, not optional.
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| ECF PDF text extraction | Core functionality — PDF is authoritative data source | Low | Reuses existing PyMuPDF extraction from Extract tool |
-| Respondent name parsing | Expected from existing Extract tool (OCC Exhibit A) | Low | Reuses existing name_parser.py infrastructure |
-| Respondent address parsing | Expected from existing Extract tool | Low | Reuses existing address_parser.py infrastructure |
-| Entity type detection | Expected from existing Extract tool | Low | Reuses existing entity_detector.py patterns |
-| Numbered entry extraction | Respondent lists are numbered 1, 2, 3... in ECF filings | Medium | New pattern — numbered list with name + address blocks |
-| PDF header metadata extraction | County, legal description, applicant, case number visible in header | Medium | New — OCC filing headers have structured metadata |
-| Convey 640 CSV/Excel upload (optional) | Users already have Convey 640 data, expect to use it | Low | Reuses existing pandas CSV/Excel processing |
-| PDF-authoritative merge | When PDF and CSV disagree, PDF wins (Convey 640 has OCR errors) | Medium | New merge logic — match by entry number, use PDF for names/addresses |
-| Mineral export output | Expected format for all Extract/Title outputs | Low | Reuses existing MINERAL_EXPORT_COLUMNS (50+ fields) |
-| Dual-file upload UI | PDF required, CSV/Excel optional accelerator | Medium | Extends existing FileUpload component to support secondary optional file |
-| Export to CSV/Excel | Standard output format across all tools | Low | Reuses existing export_service.py utilities |
-| Entry flagging for low confidence | Users expect warnings when parsing is uncertain | Low | Reuses existing flagging mechanism from Extract |
+| Feature | Why Expected | Complexity | Dependencies |
+|---------|--------------|------------|--------------|
+| RRC compound lease splitting | Users enter "08-12345/12346" as a single lease field. `split_lease_number()` exists but isn't wired into the `fetch_missing_rrc_data` loop -- each compound value queries as-is and fails | Low | Existing `split_lease_number()` in proration.py line 41 |
+| RRC direct data use (skip Firestore re-lookup) | After individual HTML scrape, compound split leases may still re-query Firestore. The RRC-01 fix (line 445) handles simple leases but compound splits need the same treatment | Low | fetch_missing endpoint, compound splitting |
+| RRC per-row status feedback | `fetch_status` field exists on `MineralHolderRow` model but frontend doesn't surface it. User can't tell which rows matched, failed, or were never queried | Low | `MineralHolderRow.fetch_status` field already on model |
+| Admin GET endpoint auth | `get_gemini_settings`, `get_google_cloud_settings`, `get_google_maps_settings`, and `get_users` lack `require_admin` dependency. Any authenticated user can read API keys (masked but still config leak) | Low | `require_admin` already imported and used on write endpoints |
+| History user-scoping | `/api/history/jobs` returns ALL users' jobs with no `user_id` filter. `delete_job` has no ownership check -- any user can delete any job | Med | `require_auth` already on router (main.py:81), need to extract user_id and pass to Firestore query |
+| GHL `smart_list_name` removal | Deprecated field in model (explicit docstring says "Use campaign_tag instead") but still used in `ghl.py` send logic (line 343) and frontend type (api.ts:457) | Low | 6 code files reference it; 13 refs are in old planning docs |
 
 ## Differentiators
 
-Features that set product apart. Not expected, but valued.
+The unified enrichment modal is the headline feature. It replaces a 3-button + review panel workflow with a single-click automated flow.
 
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Convey 640 metadata enrichment | CSV provides county, STR, case number — augments PDF data | Medium | Maps Convey 640 columns (county, legal_description, applicant, case_number) to mineral export |
-| OCR error correction via PDF | Convey 640 has OCR errors; PDF text is cleaner — auto-corrects names | High | Fuzzy match respondent names between PDF and CSV, use PDF as ground truth |
-| Address standardization | Cleaner addresses improve CRM import quality | Low | Reuses existing address_parser.py standardization |
-| Multi-respondent row expansion | Single CSV row with multiple names → separate mineral export rows | Medium | Reuses existing split_multiple_names logic from Extract |
-| STR field mapping | Section-Township-Range data from Convey 640 → mineral export Notes field | Low | Direct column mapping from CSV to export |
-| Case number tracking | OCC case number from header/CSV → export for future reference | Low | New field — track application ID for compliance |
-| Applicant name extraction | Identifies who filed the application (operator context) | Medium | New — header parsing for "Applicant:" field |
-| County auto-population | Convey 640 or PDF header county → auto-fills County field in export | Low | Direct mapping to existing mineral export County column |
+| Feature | Value Proposition | Complexity | Dependencies |
+|---------|-------------------|------------|--------------|
+| **Unified enrichment modal** | Replace 3 separate buttons + confirmation dialogs + ProposedChangesPanel flow with single "Enrich" button that opens a modal, runs all enabled steps sequentially, shows real-time progress, and streams changes to table | High | Replaces EnrichmentToolbar; refactors useEnrichmentPipeline; new EnrichmentModal component |
+| Sequential step execution with progress | Modal runs cleanup -> validate -> enrich as a single flow. Each step shows: step name, progress indicator, running count of changes found | Med | State machine inside modal or refactored useEnrichmentPipeline |
+| Live preview updates during pipeline | As each step completes, high-confidence changes auto-apply to the table behind the modal. User sees rows highlight green in real-time | Med | Existing `updateEntries` + `recentlyAppliedKeys` pattern already supports this |
+| Time estimate per step | "~30s remaining" based on entry count. Cleanup is LLM-bound (~2s/entry), validate is Google Maps-bound (~0.5s/entry), enrich is PDL-bound (~1s/entry) | Low | Static multipliers based on entry count, no server-side timing needed |
+| Step-level error recovery | If validate fails (no API key configured), modal skips to enrich instead of aborting entire flow. Shows which steps succeeded vs failed | Med | Error handling per step in sequential runner |
+| Change summary on completion | After all steps complete, modal shows: "12 names corrected, 8 addresses validated, 5 phones found" with breakdown by source and confidence | Low | Aggregate counts from ProposedChange arrays returned by each step |
 
 ## Anti-Features
 
-Features to explicitly NOT build.
+Features to explicitly NOT build for v1.6.
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| AI-powered OCR correction | PDF text extraction via PyMuPDF is sufficient for OCC filings | Use existing PyMuPDF extraction — filings are born-digital PDFs with clean text |
-| Automatic Convey 640 download | Third-party tool, user already has file locally | Require manual CSV/Excel upload — no scraping/API integration |
-| Batch processing (multiple ECF filings at once) | Adds UI complexity, rare use case (one filing per well unit) | Process one filing per upload — user re-uploads for additional filings |
-| GoHighLevel direct send from ECF results | Existing GHL Prep workflow handles this | Export to mineral format → use existing GHL Prep tool for import |
-| Convey 640 format validation | Unknown CSV schema, varies by vendor version | Accept any CSV/Excel with reasonable column names — best-effort parsing |
-| Real-time RRC data lookup for ECF respondents | RRC API is for proration, not party contact info | Extract contact data only — no RRC integration in Extract tool |
-| Duplicate respondent detection across filings | No persistence of historical respondent data | Single-filing scope — duplicates within one filing only (if any) |
-| Address geocoding/validation | Defer to optional enrichment services (Google Maps API) | Basic address parsing only — no API calls during extraction |
+| SSE/WebSocket for pipeline progress | Pipeline steps are HTTP POST calls that take 5-30s each. Not long-running jobs. The existing `useSSEProgress` pattern is for GHL bulk send (minutes), not pipeline steps (seconds) | Keep existing async/await per step. Show progress via state updates between steps |
+| Granular per-entry progress within a step | Backend processes all entries in one API call (LLM batch, Maps batch). No per-entry streaming exists in pipeline.py | Show step-level progress (1/3, 2/3, 3/3), not entry-level |
+| User-selectable pipeline steps in modal | "Choose which steps to run" checkbox UI adds decision friction for a 3-person team | Run all enabled steps automatically. Skip disabled ones (no API key) silently |
+| Undo individual auto-applied changes | Current undo restores entire pre-snapshot. Per-change undo requires field-level undo stack | Keep existing bulk undo via `preAutoApplySnapshot` pattern |
+| RRC background county download progress | Already runs in background thread via `rrc_background.py`. Adding progress tracking adds complexity with minimal user value | Keep fire-and-forget background county refresh |
+| Pipeline result caching/persistence | Enrichment results are ephemeral -- they modify preview state, which gets exported. No need to persist intermediate pipeline state to Firestore | Preview state IS the persistence layer (until export) |
+| New backend endpoints for unified modal | The 3 existing pipeline endpoints (cleanup/validate/enrich) work fine. The modal just calls them sequentially from the frontend | No backend changes for the modal feature |
 
 ## Feature Dependencies
 
 ```
-ECF PDF upload → PDF text extraction (PyMuPDF)
-PDF text extraction → Respondent list parsing
-Respondent list parsing → Entry number detection
-Respondent list parsing → Name extraction → Entity type detection
-Respondent list parsing → Address extraction
-PDF header extraction → Metadata fields (county, case#, applicant)
+Admin GET auth hardening       (independent, no deps)
+History user-scoping           (independent, needs user_id from require_auth)
+GHL smart_list_name removal    (independent, no deps)
 
-Convey 640 upload (optional) → CSV/Excel parsing (pandas)
-CSV parsing → Column mapping (county, STR, case_number, respondents)
-CSV respondent data → Merge with PDF data (PDF wins)
-Merge logic → Fuzzy name matching (if names differ)
+RRC compound lease splitting  --> RRC direct data use (splitting feeds into lookup loop)
+RRC direct data use           --> RRC per-row status feedback (status only meaningful with correct lookups)
 
-Merged data → Mineral export mapping (50+ columns)
-Mineral export → CSV/Excel export
+Unified enrichment modal      --> Sequential step execution (modal IS the step runner)
+Sequential step execution     --> Live preview updates (updates happen between steps)
+Sequential step execution     --> Step-level error recovery (recovery happens between steps)
+Live preview updates          --> Change summary in modal (summary aggregates all step results)
+Time estimate per step            (independent, cosmetic, wire in after modal works)
 ```
 
 ## MVP Recommendation
 
-Prioritize (in order):
+**Phase 1 -- Fix broken things (no UX changes):**
+1. Admin GET endpoint auth (add `Depends(require_admin)` to 4 GET handlers)
+2. History user-scoping (filter by `user_id` from auth token, ownership check on delete)
+3. GHL `smart_list_name` removal (delete from model, API fallback logic, frontend type)
+4. RRC compound lease splitting (wire `split_lease_number` into fetch-missing loop, iterate results)
+5. RRC direct data use (ensure split lease results use fetched data directly)
+6. RRC per-row status feedback (surface `fetch_status` in Proration.tsx table)
 
-1. **ECF PDF respondent list extraction** — Core feature, table stakes
-2. **Numbered entry parsing** — Required pattern for ECF filings
-3. **PDF header metadata extraction** — County, case number, applicant (differentiator)
-4. **Convey 640 CSV/Excel upload (optional)** — User expects accelerator path
-5. **PDF-authoritative merge logic** — Correct OCR errors, fill gaps
-6. **Mineral export output** — Standard format for downstream GHL Prep workflow
-7. **Dual-file upload UI** — PDF required, CSV optional
+**Phase 2 -- Unified enrichment modal:**
+1. New `EnrichmentModal` component (modal shell with step indicator)
+2. Sequential pipeline runner (refactor `useEnrichmentPipeline` to auto-chain enabled steps)
+3. Progress UI: 3-step indicator + time estimate + change count per step
+4. Live preview: auto-apply high-confidence changes between steps (existing pattern)
+5. Change summary on completion
+6. Error recovery: skip failed steps, continue to next, show status per step
+7. Remove `EnrichmentToolbar` 3-button UI, replace with single "Enrich" trigger
 
-Defer:
+**Defer:**
+- Per-entry progress within pipeline steps (backend doesn't support streaming)
+- Pipeline result persistence (unnecessary for internal tool)
 
-- **Fuzzy name matching for OCR correction** — Complex, start with exact match, flag mismatches
-- **STR field mapping** — Low value, defer to v2 if users request it
-- **Address geocoding** — Use existing optional enrichment services
-- **Multi-respondent row expansion** — Depends on Convey 640 format (unknown schema)
+## Existing Code to Reuse
 
-## Implementation Notes
+| Component/Hook | Current Role | v1.6 Role |
+|----------------|-------------|-----------|
+| `useEnrichmentPipeline` | Manages 3 independent buttons, tracks completed steps, auto-applies high-confidence | Core logic stays. Refactor `runStep` to chain automatically instead of user-triggered |
+| `usePreviewState.updateEntries` | Updates table data from enrichment callbacks | Same -- modal calls this between steps for live preview |
+| `ProposedChangesPanel` | Shows changes for review after each step | Replaced by in-modal summary. Keep for post-modal review of remaining low-confidence changes |
+| `EnrichmentToolbar` | 3 buttons (Clean Up, Validate, Enrich) | Replaced entirely by single "Enrich" button |
+| `ProposedChangeCell` | Inline diff rendering in table cells | Keep as-is for live preview highlighting during modal run |
+| `AutoCorrectionsBanner` | Shows auto-applied high-confidence changes count | Move into modal's completion summary |
+| `pipelineApi` (cleanup/validate/enrich) | HTTP calls to 3 backend endpoints | No change -- modal calls same endpoints sequentially |
+| `recentlyAppliedKeys` + green highlight | 2-second green flash on applied rows | Keep as-is, trigger between steps |
 
-### ECF PDF Structure (Based on Research)
+## Unified Enrichment Modal UX Spec
 
-OCC multiunit horizontal well applications follow a standard format:
-- **Header section:** Applicant name, county, legal description, case number
-- **Exhibit A:** Numbered respondent list (parties being notified)
-  - Format: Entry number (1, 2, 3...) followed by name and mailing address
-  - Example: "1. D.J. Lane, P.O. Box 123, City, State ZIP"
-  - May include entity names: "Michael J. Weeks, Trustee"
-- **Service requirements:** First class US mail to all respondents
+**Trigger:** Single "Enrich" button in toolbar area (replaces 3 buttons). Styled like current `cleanUpEnabled` button (gradient teal).
 
-### Convey 640 CSV/Excel Structure (Inferred from Context)
+**Modal states:**
 
-Convey 640 is a third-party tool that scrapes OCC filing data. Expected columns:
-- **Metadata:** county, legal_description, applicant, case_number
-- **Respondent data:** Numbered entries with names and addresses (often OCR'd with errors)
-- **Property data:** Section-Township-Range (STR), lease info
+1. **Ready:** Shows which steps will run based on feature flags/API keys. Example: "AI Cleanup (enabled), Address Validation (enabled), Contact Enrichment (not configured)". Entry count. "Start Enrichment" button.
 
-**Key challenge:** OCR errors in respondent names and addresses. PDF is cleaner (born-digital text).
+2. **Running:** Vertical step list with current step highlighted. Each step shows:
+   - Step name + icon (Wand2 for cleanup, MapPin for validate, Search for enrich)
+   - Status: pending (gray), running (spinner), complete (green check), failed (red X), skipped (gray dash)
+   - When complete: "4 changes found" or "No changes"
+   - Time estimate for current step: "~{entryCount * multiplier}s remaining"
 
-### Merge Strategy
+3. **Complete:** All steps show final status. Summary card: "18 changes applied automatically, 3 changes need review". "Close" button. Table behind modal already shows green highlights on auto-applied rows.
 
-1. **Parse PDF respondent list** → authoritative names + addresses
-2. **Parse Convey 640 CSV (if provided)** → metadata (county, STR, case#) + respondent data
-3. **Match by entry number** (1:1 mapping between PDF and CSV rows)
-4. **Use PDF for names/addresses** (always — PDF is source of truth)
-5. **Use CSV for metadata** (county, case#, STR) — augments PDF header data
-6. **Flag mismatches** — if entry counts differ or names don't fuzzy-match
+4. **Partial failure:** Failed step shows error inline (e.g., "Google Maps API key not configured"). Other steps still complete. User gets partial results.
 
-### Mineral Export Mapping
+**Auto-apply behavior (carried forward from existing `useEnrichmentPipeline`):**
+- Cleanup: high-confidence changes auto-apply immediately. Medium/low queue for review.
+- Validate: authoritative (Google Maps) changes auto-apply.
+- Enrich: phone/email changes queue for review (additive data, user should confirm).
 
-| ECF/Convey Field | Mineral Export Column | Notes |
-|------------------|----------------------|-------|
-| Respondent name | Full Name | From PDF (cleaned) |
-| First/middle/last/suffix | First Name, Middle Name, Last Name, Suffix | Parsed from PDF name |
-| Mailing address | Primary Address 1 | From PDF |
-| Mailing address 2 | Primary Address 2 | From PDF (apt, suite, etc.) |
-| City | Primary Address City | From PDF |
-| State | Primary Address State | From PDF |
-| ZIP | Primary Address Zip | From PDF |
-| Entity type | Owner Type | Detected from PDF name |
-| County (header/CSV) | County | From PDF header OR Convey 640 |
-| Case number (header/CSV) | Notes/Comments | Append "Case #: 123456" |
-| Legal description (CSV) | Notes/Comments | Append STR or legal description |
-| Applicant (header) | Notes/Comments | Append "Applicant: Company Name" |
-
-### UI Flow
-
-1. **Upload screen:** "Upload ECF PDF (required)" + "Upload Convey 640 CSV/Excel (optional)"
-2. **Processing:** Extract PDF → Parse CSV (if provided) → Merge → Export
-3. **Results table:** Show respondent entries with columns: #, Full Name, Owner Type, Address, City, State, ZIP, Status
-4. **Export options:** CSV, Excel (mineral format with 50+ columns)
-5. **Metadata display:** Show detected county, case number, applicant above results table
-
-### Existing Infrastructure to Reuse
-
-| Component | Location | Purpose |
-|-----------|----------|---------|
-| PDF extraction | services/extract/pdf_extractor.py | PyMuPDF text extraction |
-| Name parsing | services/extract/name_parser.py | Parse first/middle/last/suffix, detect entity type |
-| Address parsing | services/extract/address_parser.py | Parse address, city, state, ZIP |
-| Entity detection | services/extract/entity_detector.py | Detect Individual, Trust, LLC, Estate, etc. |
-| Export service | services/extract/export_service.py | CSV/Excel export with mineral format |
-| Format detection | services/extract/format_detector.py | Detect PDF layout patterns |
-| FileUpload component | frontend/components/FileUpload.tsx | Drag-drop upload with validation |
-| Mineral export columns | services/shared/export_utils.py | MINERAL_EXPORT_COLUMNS (50+ fields) |
-| Pandas CSV/Excel | services/title/csv_processor.py | Parse CSV/Excel files |
-
-### New Components Required
-
-| Component | Purpose | Complexity |
-|-----------|---------|------------|
-| ECF format detector | Detect ECF filing format (numbered respondent list) | Medium |
-| Numbered entry parser | Extract entry number + name/address blocks | Medium |
-| PDF header parser | Extract county, case#, applicant from header text | Medium |
-| Convey 640 CSV parser | Map CSV columns to respondent data + metadata | Medium |
-| Merge service | Combine PDF and CSV data (PDF authoritative) | High |
-| Dual-file upload UI | Accept PDF (required) + CSV (optional) | Medium |
-
-## Confidence Assessment
-
-| Area | Confidence | Notes |
-|------|------------|-------|
-| ECF PDF structure | **MEDIUM** | Based on OCC filing examples from WebSearch, actual PDF samples needed |
-| Convey 640 schema | **LOW** | No public documentation found, inferred from project context only |
-| PDF text quality | **HIGH** | OCC filings are born-digital PDFs with clean text (not scanned) |
-| Merge strategy | **MEDIUM** | PDF-authoritative approach is standard, fuzzy matching adds complexity |
-| Mineral export mapping | **HIGH** | MINERAL_EXPORT_COLUMNS format is well-defined and tested |
-| Existing infrastructure reuse | **HIGH** | Extract tool has all core parsing components already built |
+**After modal closes:** If any changes need review, show `ProposedChangesSummary` bar (existing component) in the toolbar area with remaining unapplied changes. User reviews and applies/dismisses as today.
 
 ## Sources
 
-Research findings based on:
-- [BEFORE THE CORPORATION COMMISSION OF THE STATE OF OKLAHOMA](https://imaging.occ.ok.gov/AP/CaseFiles/occ30451709.pdf) — OCC multiunit well application example
-- [What is a Pooling Application before the Oklahoma Corporation Commission?](https://winblad.law.com/pooling/) — OCC pooling process background
-- [OAC 165:5 CORPORATION COMMISSION](https://oklahoma.gov/content/dam/ok/en/occ/documents/ajls/jls-courts/rules/2023/current-rules/chapter-05-rules-effective-10-01-2023.pdf) — Respondent list requirements
-- [Strategies for Reducing and Correcting OCR Errors](https://link.springer.com/chapter/10.1007/978-3-642-20227-8_1) — PDF/OCR merge strategies
-- [Extracting data from PDFs: A comprehensive guide](https://www.nutrient.io/blog/pdf-data-extraction-developer-guide/) — PDF text extraction techniques
-- Existing Extract tool codebase (models/extract.py, services/extract/, frontend/pages/Extract.tsx)
+- Codebase analysis: `useEnrichmentPipeline.ts` (307 lines), `EnrichmentToolbar.tsx` (77 lines), `ProposedChangesPanel.tsx` (241 lines), `pipeline.py` (366 lines), `proration.py` fetch-missing endpoint (lines 343-472)
+- Existing patterns: `useSSEProgress.ts` (SSE progress model), `usePreviewState.ts` (entry update + highlight model)
+- Project context: `.planning/PROJECT.md` v1.6 milestone definition
+- Admin auth gaps: `admin.py` GET handlers at lines 280, 290, 393, 411, 475, 535 lack `require_admin`
+- History gaps: `history.py` has no user filtering, router-level `require_auth` only verifies token
+- GHL legacy: `ghl.py` line 343 uses `campaign_tag`, line 343 falls back to `smart_list_name`

@@ -1,224 +1,164 @@
-# Technology Stack — v1.5 Enrichment Pipeline & Bug Fixes
+# Technology Stack
 
-**Project:** Table Rock Tools v1.5
-**Researched:** 2026-03-13
+**Project:** Table Rock Tools v1.6 - Pipeline Fixes & Unified Enrichment
+**Researched:** 2026-03-18
 
-## Summary
+## Verdict: No New Dependencies Required
 
-**NO NEW DEPENDENCIES REQUIRED.** All v1.5 features are bug fixes, API integration corrections, and UI wiring using existing libraries. The key challenge is understanding external API capabilities and limitations, not adding new packages.
+Every capability needed for v1.6 is achievable with the existing stack. The features are architectural changes (combining existing pipeline steps, adding auth guards, fixing data flow), not new technology integrations.
 
-## Critical Finding: GHL Smart Lists
+## What Already Exists (DO NOT ADD)
 
-**GHL SmartLists are NOT creatable via API.** This was documented in earlier research (FEATURES-GHL-API.md) and confirmed by codebase review. SmartLists in GoHighLevel are filter-based saved views, not membership lists. The GHL API v2 (version `2021-07-28`, base URL `https://services.leadconnectorhq.com`) does not expose endpoints for creating or managing SmartLists.
+| Technology | Already In | Used For |
+|------------|-----------|----------|
+| sse-starlette 2.0+ | requirements.txt | SSE streaming (GHL bulk send progress) |
+| React 19 useState/useCallback | package.json | Local state management |
+| FastAPI Depends(require_auth) | main.py | Router-level auth enforcement |
+| FastAPI Depends(require_admin) | auth.py | Admin-only endpoint protection |
+| Pydantic BaseModel | pipeline.py | ProposedChange, PipelineRequest, PipelineResponse |
+| usePreviewState hook | hooks/ | Entry state, edits, exclusions |
+| useSSEProgress hook | hooks/ | SSE event consumption with reconnect |
+| EnrichmentToolbar | components/ | 3-button enrichment UI (being replaced) |
+| pipeline.py endpoints | api/ | /cleanup, /validate, /enrich returning PipelineResponse |
 
-**What the app currently does:** Applies a `campaign_tag` to all contacts during bulk send. The `smart_list_name` field in `BulkSendRequest` is stored for reference only -- it is never sent to GHL as a SmartList creation call.
+## Changes Per Feature
 
-**The fix is a workflow, not code:**
-1. Tag contacts with campaign tag (already works)
-2. User creates SmartList in GHL UI filtered by that tag (manual step)
-3. Document this workflow clearly in the app's Help page and send confirmation modal
+### 1. Unified Enrichment Modal
 
-**Confidence:** HIGH -- Prior research confirmed this, codebase confirms `smart_list_name` is only used for Firestore job persistence (`campaign_name = data.smart_list_name or data.campaign_tag`), never sent to GHL API.
+**Backend: New combined pipeline endpoint**
 
-## Stack for Each v1.5 Feature
+No new deps. Combine the three existing pipeline steps (`/cleanup`, `/validate`, `/enrich`) into a single SSE-streaming endpoint.
 
-### 1. GHL Smart List "Fix" (Workflow Documentation)
+| What | How | Uses |
+|------|-----|------|
+| `POST /api/pipeline/run-all` | New endpoint, streams SSE events as each step completes | `sse-starlette` (already installed) |
+| Step progress events | `EventSourceResponse` with `step`, `progress`, `total`, `changes_so_far` fields | `sse-starlette` + `asyncio` |
+| Per-step proposed changes | Stream `ProposedChange` batches after each step finishes | Existing `PipelineResponse` model |
+| ETA calculation | Track elapsed time per step, extrapolate remaining | Python `time.monotonic()` (stdlib) |
 
-| Technology | Already Installed | Purpose | What Changes |
-|------------|------------------|---------|--------------|
-| GHL API v2 | Yes (`services/ghl/client.py`) | Contact upsert with tags | No change -- tagging already works |
-| React frontend | Yes | Send modal UI | Clarify UI text: "Campaign Tag" creates a GHL tag, user creates SmartList manually |
+**Frontend: Modal component + progress hook**
 
-**No new endpoints, no new libraries.** The "fix" is:
-- Rename "SmartList Name" field to "Campaign Tag" in `GhlSendModal.tsx` (it already IS a tag)
-- Add help text explaining the SmartList creation workflow
-- Optionally add a post-send instruction: "Create a SmartList in GHL filtered by tag: [campaign_tag]"
+No new deps. Build with existing React primitives.
 
-### 2. Three-Button Enrichment UI (Validate / Clean Up / Enrich)
+| What | How | Uses |
+|------|-----|------|
+| `EnrichmentModal.tsx` | Modal overlay with 3-step progress bar | Existing `Modal.tsx` pattern |
+| Step indicator | Three labeled stages (Clean Up -> Validate -> Enrich) with active/complete/pending states | Tailwind CSS classes |
+| Progress bar with ETA | `width` percentage + "~Xs remaining" text | `useState` + `Date.now()` arithmetic |
+| Live preview updates | Apply `ProposedChange` batches to `usePreviewState.updateEntries()` as they stream in | Existing `usePreviewState` hook |
+| Change highlighting | CSS transition on cells that received proposed changes, fade after 3s | Tailwind `transition-colors` + `setTimeout` |
+| SSE consumption | Adapt `useSSEProgress` pattern for pipeline events (or inline EventSource in modal) | Native `EventSource` API |
 
-| Technology | Already Installed | Purpose | What Changes |
-|------------|------------------|---------|--------------|
-| Gemini AI (`google-genai`) | Yes | "Validate" button -- QA pass | Tool-specific prompts already exist in `TOOL_PROMPTS` dict. Need to extend with "cleanup" prompts. |
-| Google Maps Geocoding API | Yes (`address_validation_service.py`) | "Clean Up" button -- address standardization | Already implemented as `validate_addresses_batch()`. Need to wire to frontend. |
-| PDL + SearchBug | Yes (`enrichment/`) | "Enrich" button -- contact data enrichment | Already implemented as `enrichment_service.py`. Need to wire to frontend. |
-| React | Yes | Button bar component | New shared component: `EnrichmentButtonBar.tsx` with three conditional buttons |
+**Key design decision:** Use SSE (not polling) because `sse-starlette` is already proven in the GHL flow and keeps the pattern consistent. The `/run-all` endpoint yields events as each step completes, so the frontend can update the preview table incrementally.
 
-**Key integration points (already exist in backend):**
+**Why NOT WebSockets:** SSE is simpler, unidirectional (server->client only, which is all we need), already works through the Vite proxy, and matches the GHL pattern. No reason to introduce `websockets` or `socket.io`.
 
-| Service | Endpoint | Status |
-|---------|----------|--------|
-| Gemini validation | `POST /api/ai/review` | Working -- accepts `{tool, entries}` |
-| Address validation | None (service-only) | Needs new endpoint: `POST /api/validate/addresses` |
-| Contact enrichment | `POST /api/enrichment/enrich` | Working -- needs wiring to tool pages |
+### 2. RRC Fetch-Missing Fixes
 
-**Feature switches (already exist in `config.py`):**
+**No new deps.** All fixes are logic changes in existing code.
 
-| Setting | Property | Controls |
-|---------|----------|----------|
-| `gemini_enabled` + `gemini_api_key` | `settings.use_gemini` | Validate button visibility |
-| `google_maps_enabled` + `google_maps_api_key` | `settings.use_google_maps` | Clean Up button visibility |
-| `enrichment_enabled` + `pdl_api_key`/`searchbug_api_key` | `settings.use_enrichment` | Enrich button visibility |
+| Fix | File | Change |
+|-----|------|--------|
+| Compound lease splitting | `api/proration.py` | Split "12345/12346" into separate lookups before Firestore query |
+| Direct data use | `api/proration.py` | When RRC query returns data, apply it to the row immediately instead of requiring a second lookup |
+| Per-row status feedback | `models/proration.py` | `fetch_status` field already exists on row model; ensure it's set to "found"/"not_found"/"error" for every row |
 
-**No new dependencies.** All three services are already installed and have backend implementations.
+**Existing tools used:** `pandas` for DataFrame operations, `beautifulsoup4` for HTML scraping, `requests` for RRC HTTP calls.
 
-### 3. Preview Update Mechanism After Enrichment Steps
+### 3. Admin/History Auth Hardening
 
-| Technology | Already Installed | Purpose | What Changes |
-|------------|------------------|---------|--------------|
-| React state | Yes | Update preview data after each step | Pattern: POST entries to service endpoint, receive updated entries, replace React state |
-| Pydantic models | Yes | Request/response models | `AiValidationResult` already has suggestions; address validation needs a batch response model |
+**No new deps.** Pure routing configuration changes.
 
-**The pattern for all three buttons:**
-```
-Frontend state (entries[])
-  --> POST to backend service endpoint
-  --> Backend returns updated entries[] + change summary
-  --> Frontend replaces state with updated entries[]
-  --> DataTable re-renders with new data
-```
+| Fix | File | Change |
+|-----|------|--------|
+| Admin router auth | `main.py` | Add `dependencies=[Depends(require_auth)]` to admin router include. Currently missing -- all admin GET endpoints (settings, users list, options, preferences, profile images) are unprotected. |
+| Admin read endpoints need auth | `api/admin.py` | GET `/users`, `/settings/*`, `/preferences/*`, `/options` currently have no auth dependency. Router-level auth from main.py fixes all of them. |
+| `check_user` exception | `api/admin.py` | The `/users/{email}/check` endpoint must remain unauthenticated (used during login flow). Move it to a separate mini-router or add explicit auth skip. |
+| History user-scoping | `api/history.py` | Add `user: dict = Depends(require_auth)` to `get_jobs()`, filter by `user["email"]` unless user is admin. History router already has router-level auth via main.py. |
+| History delete needs admin | `api/history.py` | Add `Depends(require_admin)` to `delete_job()` -- currently any authenticated user can delete any job. |
 
-**Existing model that works for this:** `PostProcessResult` in `models/ai_validation.py` already has `corrections` (auto-applied) and `ai_suggestions` (manual review). This pattern can be reused for all three enrichment steps.
+**Existing tools used:** `require_auth`, `require_admin` from `app.core.auth`, `Depends` from FastAPI.
 
-**No new dependencies.** React state management with `useState` is sufficient -- no need for Redux/Zustand.
+### 4. GHL smart_list_name Cleanup
 
-### 4. Tool-Specific Gemini QA Prompts
+**No new deps.** Field removal across models and API.
 
-| Technology | Already Installed | Purpose | What Changes |
-|------------|------------------|---------|--------------|
-| `google-genai` | Yes | Gemini API client | No package changes |
-| Gemini 2.5 Flash | Yes (model: `gemini-2.5-flash`) | QA validation | No model changes |
-
-**Current prompts already exist in `gemini_service.py`:**
-
-| Tool | Prompt Key | Current Focus | v1.5 Enhancement |
-|------|-----------|---------------|------------------|
-| `extract` | `TOOL_PROMPTS["extract"]` | Name casing, entity type, address completeness | Add: cleanup-specific prompt for ALL CAPS to Title Case batch correction |
-| `title` | `TOOL_PROMPTS["title"]` | Name casing, entity type, duplicate detection | Add: cleanup-specific prompt for first/last name splitting |
-| `proration` | `TOOL_PROMPTS["proration"]` | County spelling, interest range, legal description | Add: cleanup-specific prompt for county name standardization |
-| `revenue` | `TOOL_PROMPTS["revenue"]` | Product code, interest sanity, financial math | No change needed -- `REVENUE_VERIFY_PROMPT` already handles verification |
-
-**Implementation approach:** Add a second prompt set (`CLEANUP_PROMPTS`) alongside existing `TOOL_PROMPTS`. The "Validate" button uses `TOOL_PROMPTS` (review-only, suggestions). The "Clean Up" button uses `CLEANUP_PROMPTS` (apply corrections directly).
-
-**Structured output already works:** `RESPONSE_SCHEMA` defines the JSON schema for Gemini responses. `response_mime_type="application/json"` and `response_json_schema=RESPONSE_SCHEMA` are already configured. Temperature is 0.1 (deterministic). No changes needed to the API call pattern.
-
-**Rate limiting already handled:** `_check_rate_limit()` enforces MAX_RPM=10, MAX_RPD=250, monthly budget cap. Batch size is 25 entries per API call with 6s delay between batches.
-
-**No new dependencies.** Prompt engineering only.
-
-### 5. Google Maps Address Validation (Clean Up Button)
-
-| Technology | Already Installed | Purpose | What Changes |
-|------------|------------------|---------|--------------|
-| Google Maps Geocoding API | Yes | Address standardization | Already implemented in `address_validation_service.py` |
-| `requests` | Yes | HTTP client for Maps API | Already used by the service |
-
-**Current implementation is complete and production-ready:**
-- `validate_address()` -- single address validation via Geocoding API
-- `validate_addresses_batch()` -- batch validation with progress callback
-- Rate limiting at 40 QPS (under Google's 50 QPS limit)
-- Change detection with before/after comparison
-- Property type classification (residential/commercial/PO box)
-
-**What's missing is only the API endpoint.** The service exists but is only called internally. Need:
-- `POST /api/validate/addresses` endpoint that accepts entries and returns corrected entries
-- Frontend button to trigger it
-
-**Important note on Google Maps Address Validation API vs Geocoding API:**
-The current service uses the **Geocoding API** (`maps.googleapis.com/maps/api/geocode/json`), not the dedicated **Address Validation API** (`addressvalidation.googleapis.com`). The Geocoding API is sufficient for address standardization (correcting street/city/state/zip). The Address Validation API provides deeper validation (USPS deliverability, component-level confirmation) but costs $0.005/request vs Geocoding's $0.005/request (same price tier). The Geocoding API approach is already working -- no reason to switch.
-
-**Confidence:** HIGH -- existing service is tested and functional. The Geocoding API is the correct choice for address cleanup (standardize components, detect changes). Switching to Address Validation API would add complexity without meaningful benefit for this use case.
-
-### 6. RRC Multi-Lease Number Lookups
-
-| Technology | Already Installed | Purpose | What Changes |
-|------------|------------------|---------|--------------|
-| `requests` | Yes | HTTP to RRC website | Already used in `rrc_data_service.py` and `rrc_county_download_service.py` |
-| BeautifulSoup4 + lxml | Yes | HTML parsing | Already used for individual lease lookups |
-| pandas | Yes | CSV parsing | Already used for RRC data processing |
-
-**Multi-lease lookup already works in-memory:**
-`rrc_data_service.lookup_multiple_acres()` already handles comma-separated RRC lease strings (e.g., `"08-41100, 08-41101"`), parsing them and summing acres from the in-memory DataFrame.
-
-**The bug is in `fetch_individual_leases()`:** When a row has multiple RRC lease numbers (comma-separated), the fetch-missing endpoint parses only the first district-lease pair from `rrc_lease`. The fix:
-1. Parse ALL lease numbers from `row.rrc_lease` or `row.raw_rrc` (using existing `parse_all_rrc_leases()`)
-2. Query each lease individually (already supported by `fetch_individual_leases()`)
-3. Sum acres across all matched leases (pattern already in `lookup_multiple_acres()`)
-
-**RRC scraping constraints (already coded):**
-- `MAX_INDIVIDUAL_QUERIES = 25` per fetch-missing call
-- `COUNTY_BUDGET_SECONDS = 180` (3 min per county)
-- `TOTAL_BUDGET_SECONDS = 300` (5 min total)
-- Human-like delays between queries (2-5s)
-- Custom SSL adapter required (`RRCSSLAdapter` with `verify=False`)
-
-**No new dependencies.** Bug fix in parsing logic only.
-
-### 7. ECF Upload Flow Fix
-
-| Technology | Already Installed | Purpose | What Changes |
-|------------|------------------|---------|--------------|
-| React | Yes | Upload UI | Fix auto-detect/auto-select/Process button flow |
-| FastAPI | Yes | Upload endpoint | No backend changes -- fix is frontend-only |
-
-**No new dependencies.** Frontend UX fix only.
+| Fix | File | Change |
+|-----|------|--------|
+| Remove from model | `models/ghl.py` | Delete `smart_list_name` field |
+| Remove from API client | `api/ghl.py` | Remove references in send/bulk endpoints |
+| Remove from frontend | `utils/api.ts` + `GhlSendModal.tsx` | Remove field from request types and UI |
 
 ## What NOT to Add
 
-| Technology | Why NOT Needed |
-|------------|----------------|
-| GoHighLevel SmartList API | Does not exist. SmartLists are filter-based saved views, not API-creatable. Use tags instead. |
-| Google Address Validation API | Geocoding API already provides address standardization. Same pricing, simpler integration. |
-| `google-maps-services-python` | The `requests`-based Geocoding call in `address_validation_service.py` is simpler and already works. No need for a wrapper library. |
-| Redux / Zustand | React `useState` is sufficient for preview state management. App already uses this pattern successfully across all tools. |
-| WebSocket / Socket.IO | SSE (Server-Sent Events) via `sse-starlette` is already used for GHL send progress. No need for full duplex. |
-| Celery / Redis | Background tasks use `asyncio.create_task()` and `BackgroundTasks`. App runs on single Cloud Run instance (1Gi memory). No need for distributed task queue. |
-| New Gemini model | `gemini-2.5-flash` is already configured and working. No need to switch to a different model for QA prompts. |
+| Temptation | Why Not |
+|------------|---------|
+| `zustand` or `jotai` for state | `usePreviewState` hook handles everything; adding a state library for one modal is overkill |
+| `react-query` / `tanstack-query` | Pipeline is a one-shot operation, not cached data fetching; `useEffect` + `EventSource` is sufficient |
+| `framer-motion` for change highlighting | CSS `transition-colors` with Tailwind does the job; 45KB bundle addition not justified |
+| `socket.io` / `ws` for WebSockets | SSE already works, is simpler, and matches existing GHL pattern |
+| `celery` / `dramatiq` for background tasks | Pipeline steps run sequentially in <30s total; no need for a task queue |
+| New progress tracking library | `Date.now()` arithmetic for ETA is ~5 lines of code |
+| `redis` for step state | Steps run in a single SSE stream; no distributed state needed |
 
-## Configuration Status
+## SSE Event Schema for Unified Pipeline
 
-All required environment variables already exist:
+```typescript
+// Frontend types (no library needed)
+interface PipelineSSEEvent {
+  type: 'step_start' | 'step_progress' | 'step_complete' | 'pipeline_complete' | 'error'
+  step?: 'cleanup' | 'validate' | 'enrich'
+  step_index?: number           // 0, 1, 2
+  entries_processed?: number
+  entries_total?: number
+  proposed_changes?: ProposedChange[]  // Batch of changes from completed step
+  elapsed_ms?: number
+  estimated_remaining_ms?: number
+  error?: string
+}
+```
 
-| Variable | Current Status | Needed For |
-|----------|---------------|------------|
-| `GEMINI_API_KEY` | Configured | Validate button |
-| `GEMINI_ENABLED` | `false` (toggle) | Validate button visibility |
-| `GOOGLE_MAPS_API_KEY` | Configured | Clean Up button |
-| `GOOGLE_MAPS_ENABLED` | `false` (toggle) | Clean Up button visibility |
-| `PDL_API_KEY` | Configured | Enrich button |
-| `SEARCHBUG_API_KEY` | Configured | Enrich button |
-| `ENRICHMENT_ENABLED` | `false` (toggle) | Enrich button visibility |
-| `ENCRYPTION_KEY` | Required in production | GHL token encryption |
+```python
+# Backend (uses existing sse-starlette)
+from sse_starlette.sse import EventSourceResponse
 
-**No new environment variables needed.**
+async def pipeline_run_all(request: PipelineRequest):
+    async def event_generator():
+        for step_index, step_fn in enumerate([cleanup, validate, enrich]):
+            yield {"event": "step_start", "data": json.dumps({...})}
+            result = await step_fn(request)
+            yield {"event": "step_complete", "data": json.dumps({...})}
+        yield {"event": "pipeline_complete", "data": json.dumps({...})}
 
-## New Endpoints Needed
+    return EventSourceResponse(event_generator())
+```
 
-| Method | Endpoint | Purpose | Backend Service |
-|--------|----------|---------|-----------------|
-| `POST` | `/api/validate/addresses` | Batch address validation for Clean Up button | `address_validation_service.validate_addresses_batch()` |
-| `GET` | `/api/services/status` | Combined status of all enrichment services | Aggregate `use_gemini`, `use_google_maps`, `use_enrichment` |
+## Installation
 
-All other endpoints already exist.
+No changes to `package.json` or `requirements.txt` needed.
+
+```bash
+# Nothing to install -- all deps already present
+make install  # if starting fresh
+```
 
 ## Confidence Assessment
 
-| Area | Confidence | Rationale |
-|------|------------|-----------|
-| GHL Smart Lists | **HIGH** | Prior research + codebase confirms SmartLists are not API-creatable. The "fix" is UX documentation, not code. |
-| Gemini QA prompts | **HIGH** | `google-genai` SDK with structured JSON output is already working. Adding new prompt templates is low-risk. |
-| Address validation | **HIGH** | `address_validation_service.py` is fully implemented with batch support. Only needs API endpoint wiring. |
-| Contact enrichment | **MEDIUM** | PDL + SearchBug services exist but have not been extensively tested in production. Wiring to frontend may surface edge cases. |
-| RRC multi-lease | **HIGH** | `lookup_multiple_acres()` and `parse_all_rrc_leases()` already handle multi-lease parsing. Bug is in the fetch-missing path not using these functions. |
-| ECF upload flow | **HIGH** | Frontend-only fix. No stack implications. |
-| Preview updates | **MEDIUM** | Pattern is straightforward (POST/response/setState) but needs careful design to handle partial failures and maintain undo capability. |
+| Claim | Confidence | Basis |
+|-------|------------|-------|
+| sse-starlette supports this pattern | HIGH | Already working in GHL bulk send; same EventSourceResponse pattern |
+| No new frontend deps needed | HIGH | Existing React 19 primitives + Tailwind cover modal, progress, highlighting |
+| Admin router lacks auth | HIGH | Verified in main.py line 80: no `dependencies=` on admin router include |
+| History lacks user-scoping | HIGH | Verified in history.py: no user filter on `get_jobs()` query |
+| CSS transitions sufficient for highlighting | MEDIUM | Standard pattern, but may need testing for table row re-renders |
+| Pipeline runs under 30s | MEDIUM | Depends on entry count and external API latency (Google Maps, PDL) |
 
 ## Sources
 
-- Existing codebase analysis (all file paths referenced above)
-- Prior GHL API research: `.planning/research/FEATURES-GHL-API.md` (2026-02-26) -- confirmed SmartLists are filter-based
-- GHL API client: `backend/app/services/ghl/client.py` -- API version `2021-07-28`, base URL `services.leadconnectorhq.com`
-- Google Maps Geocoding API: already integrated at `maps.googleapis.com/maps/api/geocode/json`
-- Gemini SDK: already integrated via `google-genai` with structured output (`response_json_schema`)
-- RRC scraping: `backend/app/services/proration/rrc_county_download_service.py` and `rrc_data_service.py`
-
-**Note:** WebSearch and WebFetch were unavailable during this research. All findings are based on codebase analysis and prior research. GHL API endpoint availability should be re-verified against current GHL API documentation if the team wants to pursue SmartList creation. **Confidence on GHL SmartList unavailability: MEDIUM** -- while prior research and codebase both confirm this, the GHL API may have added new endpoints since the v1.2 research (Feb 2026). Recommend a manual check of `https://highlevel.stoplight.io/docs/integrations` before finalizing.
+- Codebase: `main.py` line 80 -- admin router has no auth dependencies
+- Codebase: `history.py` -- no user filtering on job queries
+- Codebase: `pipeline.py` -- existing /cleanup, /validate, /enrich endpoints
+- Codebase: `useSSEProgress.ts` -- proven SSE consumption pattern
+- Codebase: `usePreviewState.ts` -- `updateEntries()` supports live replacement
+- Codebase: `requirements.txt` -- `sse-starlette>=2.0` already installed
+- Codebase: `package.json` -- no additional frontend deps needed

@@ -1,165 +1,148 @@
 # Project Research Summary
 
-**Project:** Table Rock Tools v1.5 — Enrichment Pipeline & Bug Fixes
-**Domain:** Internal document-processing tools with post-processing enrichment
-**Researched:** 2026-03-13
+**Project:** Table Rock Tools v1.6 — Pipeline Fixes & Unified Enrichment
+**Domain:** Internal web app enhancement — auth hardening, data pipeline UX, backend bug fixes
+**Researched:** 2026-03-18
 **Confidence:** HIGH
 
 ## Executive Summary
 
-v1.5 is a wiring and bug-fix release, not a greenfield effort. All required libraries, services, and backend infrastructure already exist in the codebase. The work is connecting existing backend services (Gemini AI, Google Maps address validation, PDL/SearchBug enrichment) to tool page frontends that currently lack those integrations, and fixing data flow bugs where enrichment results never propagate back to the preview table. No new dependencies are needed. Two new API endpoints are required (address validation batch, service status), and three thin `/enrich` wrappers need adding to existing tool routers.
+v1.6 is a focused hardening and UX improvement release with no new dependencies required. Every capability needed is achievable with the existing stack: `sse-starlette` for SSE, React 19 primitives, FastAPI `Depends()`, and the existing pipeline/preview state hooks. The work splits cleanly into two tracks: (1) backend fixes that close auth gaps, correct broken data flows, and remove a deprecated field; and (2) a single large frontend change replacing a 3-button enrichment workflow with a unified modal that chains all three steps automatically with live preview updates.
 
-The recommended approach is to fix standalone bugs first (ECF upload flow, RRC fetch-missing), then build the universal enrichment UI. The GHL "smart list" feature is not a code fix but a UX clarification -- GHL SmartLists are filter-based saved views, not API-creatable objects. The field should be renamed from "SmartList Name" to "Campaign Tag" with help text explaining the manual SmartList creation workflow in GHL's UI.
+The recommended approach is sequential delivery — fix broken infrastructure first (auth hardening, RRC compound lease lookup, GHL field removal), then build the enrichment modal on top of a stable foundation. The modal is the headline feature but depends on the backend pipeline endpoints being reliable and the auth model being correct. The backend fixes are all independent of each other and independently shippable; the modal is the only piece that requires everything else to be stable first.
 
-The primary risk is **concurrent enrichment operations corrupting shared state**. The universal 3-button enrichment UI (Validate / Clean Up / Enrich) must enforce serial execution -- if two buttons are clicked simultaneously, the last to complete silently overwrites the other's results. A version-counter on the entries array and button-disabling during active operations are the minimum safeguards. Secondary risk is the enrichment service's sequential processing of 50+ persons without progress feedback, which will appear hung on larger datasets.
+The key risks are concentrated in two areas: auth changes that could lock users out of the app (the `check_user` endpoint must remain unauthenticated — router-level auth on the admin router will cause a login deadlock), and the enrichment modal's state management (race conditions from double-clicks, stale closures across sequential async steps, and render thrashing). Both risks have clear prevention strategies. The auth risk has a 5-minute recovery path; the modal state issues must be designed correctly from the start.
 
 ## Key Findings
 
 ### Recommended Stack
 
-No new packages, libraries, or environment variables are needed. Every v1.5 feature uses existing infrastructure.
+No new dependencies. All v1.6 capabilities are met by what's already installed. See [STACK.md](STACK.md) for full details.
 
-**Core technologies (all already installed):**
-- **Gemini AI** (`google-genai`, model `gemini-2.5-flash`): Powers "Clean Up" button via existing `TOOL_PROMPTS` with per-tool QA prompts. Structured JSON output already configured.
-- **Google Maps Geocoding API** (`requests`-based): Powers "Validate" button via existing `address_validation_service.py` with batch support at 40 QPS. Only needs an API endpoint wrapper.
-- **PDL + SearchBug** (`enrichment_service.py`): Powers "Enrich" button for contact data enrichment. Exists but needs frontend wiring and progress feedback.
-- **React + useState**: Sufficient for preview state management. No Redux/Zustand needed.
-
-**New endpoints required (2):**
-- `POST /api/validate/addresses` -- wraps existing `validate_addresses_batch()`
-- `GET /api/services/status` -- aggregates feature flag status for conditional button rendering
-
-**New thin endpoints (3):**
-- `POST /api/title/enrich`, `POST /api/proration/enrich`, `POST /api/revenue/enrich` -- 3-line delegates to existing `data_enrichment_pipeline.enrich_entries()`
+**Core technologies in play:**
+- `sse-starlette 2.0+`: Already installed and proven in GHL bulk send — NOT recommended for pipeline modal progress (steps are 2-15s HTTP calls, not long-running jobs; sequential `await` with state updates is sufficient and simpler)
+- `FastAPI Depends()`: Auth pattern already established via `require_auth` / `require_admin`. Fix is adding per-endpoint `Depends()` to unprotected GET handlers — NOT router-level
+- React 19 `useState` + `useCallback`: Sufficient for modal state machine — no `zustand`, `react-query`, or `framer-motion` needed
+- `useEnrichmentPipeline.ts` + `usePreviewState.ts`: Core hooks to modify — add `runAllSteps()` with a local `currentEntries` variable threading cleaned data between steps
 
 ### Expected Features
 
-**Must have (table stakes -- product feels broken without these):**
-- **Preview updates after enrichment** -- Validate/Cleanup buttons exist but results never update the preview table. Core data flow bug across all tools.
-- **ECF upload: explicit Process button** -- ECF auto-processes on PDF upload before user can add CSV. Confusing UX that actively harms the workflow.
-- **RRC fetch-missing returns usable data** -- Endpoint queries RRC but results don't surface to user. Multi-lease parsing broken.
-- **GHL smart list clarification** -- "SmartList Name" field does nothing. Rename to "Campaign Tag" with workflow documentation.
+See [FEATURES.md](FEATURES.md) for full list with complexity, dependency analysis, and UX spec.
+
+**Must have (table stakes — currently broken):**
+- RRC compound lease splitting — `split_lease_number()` exists but is never called in the fetch-missing loop
+- RRC direct data use — split lease results not applied directly, causing unnecessary re-lookups
+- RRC per-row status feedback — `fetch_status` field exists on model but not surfaced in UI
+- Admin GET endpoint auth — `GET /users`, `GET /settings/*` are unauthenticated; exposes configuration
+- History user-scoping — `/api/history/jobs` returns all users' jobs; delete has no ownership check
+- GHL `smart_list_name` removal — deprecated field still used in backend fallback and frontend type
 
 **Should have (differentiators):**
-- **Universal 3-button enrichment bar** -- Validate / Clean Up / Enrich as conditional buttons across all tool pages, gated by API key availability.
-- **Tool-specific Gemini QA prompt refinement** -- Existing prompts work but can be sharpened per tool.
-- **Multi-step enrichment progress modal** -- `EnrichmentProgress.tsx` exists but is only partially wired.
-- **RRC multi-lease parsing** -- Handle combined lease numbers like "02-12345/02-12346".
+- Unified enrichment modal — single "Enrich" button replaces 3-button workflow; runs cleanup -> validate -> enrich sequentially with live preview updates between steps
+- Step-level progress indicator with per-step change counts
+- Step-level error recovery — skip unconfigured steps, surface status per step
+- Change summary on modal completion — aggregate counts by step and confidence level
 
-**Defer (v2+):**
-- Enrichment result caching (don't re-enrich already-enriched entries)
-- Enrichment history/audit trail
-- Direct SmartList API creation (not how GHL SmartLists work)
-- Real-time SSE streaming for enrichment (overkill for current batch sizes)
-- Auto-enrichment on upload (users need to see raw data first)
+**Defer:**
+- Per-entry streaming progress within a step (backend doesn't support it; steps are single batch calls)
+- Pipeline result persistence (preview state IS the persistence layer until export)
+- User-selectable pipeline steps (3-person team; adds decision friction with no benefit)
 
 ### Architecture Approach
 
-v1.5 follows the existing tool-per-module pattern. The only net-new frontend code is a shared `usePostProcess` hook extracted from Extract.tsx's existing enrichment logic. Backend changes are thin wiring -- per-tool `/enrich` endpoints delegate to the existing `data_enrichment_pipeline.enrich_entries()` orchestrator, which already handles tool-specific logic via `FIELD_MAPS` and conditional step execution. The key architectural rule: entries live in frontend state only (no Firestore persistence of intermediate enrichment results), and each enrichment step takes current entries as input and produces updated entries as output in a serial pipeline.
+The architecture is additive with surgical modifications to existing components. No new backend endpoints are needed for the modal — it orchestrates the three existing pipeline endpoints from the frontend. Auth fixes use per-endpoint `Depends()` (not router-level) to preserve the `check_user` exemption. The RRC fix adds a new `lease_parser.py` utility and integrates it into `fetch_missing_rrc_data()` before the query cap check. See [ARCHITECTURE.md](ARCHITECTURE.md) for full component boundaries, state machine diagram, and implementation code sketches.
 
-**Major components (modified, not new):**
-1. **`data_enrichment_pipeline.py`** -- Add `FIELD_MAPS` for proration and revenue tools
-2. **`hooks/usePostProcess.ts`** (NEW) -- Shared hook encapsulating NDJSON streaming, progress tracking, entry state replacement
-3. **Per-tool pages** (Extract, Title, Proration, Revenue) -- Add conditional enrichment buttons using shared hook
-4. **`api/proration.py`** -- Fix fetch-missing to use returned data directly instead of Firestore re-lookup
-5. **`GhlSendModal.tsx`** -- Rename SmartList field, add help text
+**Major components and change types:**
+1. `EnrichmentModal.tsx` (NEW) — Replaces `EnrichmentToolbar.tsx`; orchestrates 3-step pipeline with step-level progress UI and accumulated review state
+2. `useEnrichmentPipeline.ts` (MODIFIED) — Add `runAllSteps()` with local `currentEntries` variable threading cleaned data between steps without relying on React state timing
+3. `lease_parser.py` (NEW) — Compound lease splitting with district inheritance; integrated into `fetch_missing_rrc_data()` before the query budget cap
+4. Admin/History endpoints (MODIFIED) — Per-endpoint `Depends()` additions; admin bypass logic in history query
+5. `BulkSendRequest` model (MODIFIED) — Two-step removal of `smart_list_name`: frontend first, then backend
 
 ### Critical Pitfalls
 
-1. **Concurrent enrichment button clicks cause race condition** -- Two simultaneous operations overwrite each other's results. Fix: disable all buttons during active operation, enforce serial pipeline with version counter.
-2. **Preview state goes stale after async enrichment** -- AI suggestions reference stale entry indices if entries were modified by a prior step. Fix: version-stamp entries, reject suggestions from outdated versions.
-3. **Enrichment service processes sequentially without progress** -- 50 persons at ~2s each = 100+ seconds with no feedback. Fix: add per-person progress events, cap batch at 25, consider parallel execution with semaphore.
-4. **GHL SmartLists are not API-creatable** -- The field exists but does nothing. Fix: rename to "Campaign Tag", document manual SmartList creation workflow.
-5. **RRC HTML parsing breaks on website layout changes** -- Positional column indexing is fragile. Fix: add header row validation before deploying multi-lease lookups.
+Top 5 from [PITFALLS-V1.6.md](PITFALLS-V1.6.md):
+
+1. **`check_user` login deadlock** — Adding auth at the admin router level breaks the login flow entirely. Use per-endpoint `Depends()` only; `check_user` must remain unauthenticated. Test full login flow (sign out -> sign in) after every admin auth change.
+
+2. **Enrichment modal race condition** — Double-click or modal reopen starts concurrent pipeline requests against the same preview state. Prevent with `AbortController` per run and hard-disabling the trigger button while the modal is open.
+
+3. **Stale closure in `runAllSteps()`** — React state doesn't update synchronously between `await` calls. Using `previewEntries` from the hook closure in step 2 means step 2 sees pre-step-1 data. Fix: maintain a local `currentEntries` variable inside `runAllSteps()` and pass it explicitly between steps.
+
+4. **Compound lease district inheritance** — `"02-12345/12346"` splits into `["02-12345", "12346"]`; the second part loses its district prefix. Must propagate district from the first part. Also: expand compound leases BEFORE the `MAX_INDIVIDUAL_QUERIES` cap check, not inside the loop.
+
+5. **`smart_list_name` two-step removal** — Removing from the backend model first causes 422 errors on cached frontends (Pydantic strict mode rejects unknown fields). Remove from frontend first, keep backend field accepted-but-unused for one deploy cycle, then remove backend field.
 
 ## Implications for Roadmap
 
-Based on research, suggested phase structure:
+### Phase 1: Backend Fixes & Security Hardening
 
-### Phase 1: ECF Upload Flow Fix
-**Rationale:** Lowest complexity, zero backend changes, immediate UX improvement. Self-contained in Extract.tsx.
-**Delivers:** Explicit Process button for ECF uploads; standard OCC format unchanged.
-**Addresses:** ECF upload table-stakes bug
-**Avoids:** Auto-processing without confirmation (Pitfall #8)
-**Complexity:** LOW
+**Rationale:** All items are independent of each other and of the enrichment modal. Low-risk, mostly backend-only (GHL has a frontend type component). Closes active security gaps. Should ship before any user-facing feature work so the modal builds on correct infrastructure.
+**Delivers:** Authenticated admin settings, user-scoped job history with admin bypass, clean GHL model without deprecated field, correct RRC compound lease lookups with per-row status feedback.
+**Addresses:** Admin GET auth, history user-scoping + delete ownership, GHL `smart_list_name`, RRC compound lease splitting + direct data use + status feedback.
+**Avoids:** check_user deadlock (Pitfall 2), admin visibility loss (Pitfall 3), 422 from cached frontend (Pitfall 5), compound lease budget exhaustion (Pitfall 9).
+**Effort:** ~4.5h total (0.5h GHL + 1h admin auth + 1h history + 2h RRC).
 
-### Phase 2: RRC Fetch-Missing Repair
-**Rationale:** Fixes an existing broken endpoint. Backend parsing bug is small; frontend state merge follows patterns established elsewhere.
-**Delivers:** Multi-lease parsing, direct use of fetch results (no Firestore re-lookup race), results surfaced in Proration preview.
-**Addresses:** RRC fetch-missing table-stakes bug, multi-lease parsing differentiator
-**Avoids:** Session state leakage (Pitfall #7), HTML parsing fragility (Pitfall #6)
-**Complexity:** MEDIUM
+### Phase 2: Unified Enrichment Modal
 
-### Phase 3: GHL Smart List Clarification
-**Rationale:** Independent of other phases. Low complexity UX fix that removes user confusion. Can run in parallel with Phases 1-2.
-**Delivers:** Renamed "Campaign Tag" field, help text explaining tag-based SmartList workflow, post-send instructions.
-**Addresses:** GHL smart list table-stakes bug
-**Avoids:** Building impossible API integration (Pitfall #2)
-**Complexity:** LOW
-
-### Phase 4: Universal Enrichment UI + Preview Updates
-**Rationale:** Largest scope, depends on understanding Extract.tsx patterns from Phase 1. This is the core v1.5 feature. Preview updates and the 3-button UI are inseparable -- buttons without preview updates are useless.
-**Delivers:** Validate/CleanUp/Enrich buttons on all tool pages, conditional visibility by API key, shared `usePostProcess` hook, entry state replacement after each step, undo capability.
-**Addresses:** Preview update table-stakes bug, universal enrichment bar differentiator, progress modal
-**Avoids:** Race conditions (Pitfall #4), stale preview state (Pitfall #1), sequential processing without progress (Pitfall #3)
-**Complexity:** HIGH (but using established patterns from Extract.tsx)
-
-### Phase 5: Gemini QA Prompt Refinement
-**Rationale:** Low-risk prompt engineering. Can be done anytime after Phase 4 establishes the universal Clean Up button.
-**Delivers:** Sharpened per-tool validation and cleanup prompts, partial validation warning banner.
-**Addresses:** Tool-specific Gemini prompts differentiator
-**Avoids:** Partial validation looking like success (Pitfall #5)
-**Complexity:** LOW
+**Rationale:** Largest frontend change — touches all four tool pages. Benefits from stable backend pipeline and correct auth. The modal's `runAllSteps()` stale closure fix and `AbortController` race condition prevention must be designed upfront; they cannot be added after the fact.
+**Delivers:** Single "Enrich" button replacing the 3-button toolbar; 3-step progress modal with live table updates between steps; accumulated change review on completion; step-level error recovery for unconfigured services.
+**Uses:** Existing `useEnrichmentPipeline`, `usePreviewState.updateEntries()`, `pipelineApi` (3 existing endpoints), `Modal.tsx` pattern, Tailwind `transition-colors` for cell highlighting.
+**Implements:** `EnrichmentModal.tsx` (new), `useEnrichmentPipeline.runAllSteps()` (modified), removes `EnrichmentToolbar.tsx`.
+**Avoids:** Race condition (Pitfall 1), render thrashing (Pitfall 6), cross-page state leakage (Pitfall 8), pipeline timeout UX (Pitfall 12).
+**Effort:** ~4h.
 
 ### Phase Ordering Rationale
 
-- **Phases 1-3 are independent** -- can be built in parallel or any order. All are bug fixes or UX clarifications with no cross-dependencies.
-- **Phase 4 is the core feature work** -- depends on familiarity with Extract.tsx patterns (gained in Phase 1) and must solve the state management pitfalls before any enrichment buttons ship.
-- **Phase 5 is polish** -- prompt text changes only, no structural risk. Natural follow-on after Phase 4 proves the enrichment pipeline works.
-- **Grouping logic:** Bug fixes first (quick wins, user-facing improvements), then feature work (universal enrichment), then refinement (prompts).
+- Phase 1 before Phase 2: auth and data correctness must be stable before building modal UX on top. The modal calls pipeline endpoints; those must return user-scoped, correct data.
+- GHL cleanup first within Phase 1: lowest risk, zero dependencies, two-step removal is straightforward.
+- Admin auth before history scoping: both use the same `require_auth` pattern; doing admin first confirms the pattern works correctly.
+- RRC last in Phase 1: most logic complexity (compound splitting, district inheritance, cap ordering) and a new utility file — isolating it reduces blast radius.
+- Enrichment modal last: touches 4 pages, has the most integration surface, benefits from all other work being stable.
 
 ### Research Flags
 
-Phases likely needing deeper research during planning:
-- **Phase 3 (GHL):** Verify current GHL API v2 documentation for smart list/saved search endpoints. Prior research is from Feb 2026; API may have changed. Check `https://highlevel.stoplight.io/docs/integrations`.
-- **Phase 4 (Universal Enrichment):** The state management pattern (version counter, serial pipeline, undo snapshots) needs careful design. Research Extract.tsx's existing implementation thoroughly before generalizing.
+Phases with standard patterns — no additional research needed:
+- **Phase 1 (GHL cleanup):** Pydantic field deprecation is well-documented; two-step removal pattern is standard.
+- **Phase 1 (admin auth):** FastAPI `Depends()` per-endpoint pattern is documented and already used in this codebase.
+- **Phase 1 (history scoping):** Firestore query filtering plus conditional admin bypass is a simple pattern.
 
-Phases with standard patterns (skip research-phase):
-- **Phase 1 (ECF Fix):** Pure frontend state change. Pattern is well-understood.
-- **Phase 2 (RRC Fix):** Bug fix with known root cause (Firestore re-lookup race). Code changes are targeted.
-- **Phase 5 (Prompts):** Prompt engineering. No architectural decisions needed.
+Areas requiring care during implementation (not formal research, but upfront design):
+- **Phase 1 (RRC compound leases):** District inheritance logic needs testing with real compound lease CSV data before shipping. The `split_lease_number` function has never been called in production — verify its actual behavior on edge cases (`"02-12345/12346"`, `"12345/12346"`, mixed separators).
+- **Phase 2 (enrichment modal):** The `runAllSteps()` stale closure fix is non-obvious. The `AbortController` integration needs verification that the existing `ApiClient` fetch wrapper can propagate the signal. Component boundary decision (per-page vs. shared with key) must be made before implementation begins.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | No new dependencies. All libraries verified as installed and functional in codebase. |
-| Features | MEDIUM | Web search unavailable; feature scope based on codebase analysis and prior research. GHL SmartList limitation needs re-verification against current API docs. |
-| Architecture | HIGH | Based on direct codebase analysis. All proposed patterns extend existing, working implementations. |
-| Pitfalls | HIGH | All critical pitfalls identified from actual code paths. Race condition and stale state issues are deterministic bugs, not edge cases. |
+| Stack | HIGH | Codebase-verified — all deps confirmed installed; no new packages needed |
+| Features | HIGH | All features based on direct codebase analysis of gaps, broken endpoints, and existing implementations |
+| Architecture | HIGH | Code sketches verified against actual function signatures, patterns, and router configs in codebase |
+| Pitfalls | HIGH | All pitfalls identified from direct codebase inspection (line numbers cited); not hypothetical |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **GHL SmartList API availability:** Prior research (Feb 2026) says no API endpoint exists. This should be re-verified against current GHL API v2 documentation before finalizing Phase 3 scope. If an endpoint now exists, Phase 3 becomes a code integration rather than a UX clarification.
-- **Enrichment service production behavior:** PDL + SearchBug services exist but have limited production testing. Phase 4 should include integration testing with real API keys before deploying universally.
-- **Cloud Run scaling + Gemini rate limits:** Module-level rate limit state is per-instance. Acceptable for current scale (small team, max 10 instances) but should be monitored. Not a v1.5 blocker.
-- **RRC website stability:** HTML scraping is inherently fragile. Phase 2 should add header validation but cannot guarantee long-term reliability. Consider monitoring for parsing failures post-deploy.
+- **`split_lease_number` edge case behavior:** Function exists but has no confirmed test coverage for district inheritance edge cases. Test with real compound lease data before shipping Phase 1 RRC work.
+- **`ApiClient` AbortController support:** Verify the existing fetch wrapper in `utils/api.ts` can accept and propagate an `AbortController` signal. If not, a small wrapper update is needed before the modal's race condition prevention will work.
+- **Admin settings GET auth level:** Research recommends `require_auth` (any authenticated user) for GET settings endpoints. Verify the Settings page is accessible to non-admin users — if admin-only, bump those specific endpoints to `require_admin`.
 
 ## Sources
 
-### Primary (HIGH confidence)
-- Direct codebase analysis of all referenced files (services, models, API routes, frontend components)
-- Existing implementation patterns in `Extract.tsx`, `data_enrichment_pipeline.py`, `gemini_service.py`
-
-### Secondary (MEDIUM confidence)
-- Prior GHL API research: `.planning/research/FEATURES-GHL-API.md` (2026-02-26)
-- Prior GHL pitfalls research: `.planning/research/PITFALLS-GHL-API.md` (2026-02-26)
-
-### Tertiary (LOW confidence)
-- GHL SmartList API availability -- needs re-verification against current docs (web search was unavailable)
+### Primary (HIGH confidence — direct codebase inspection)
+- `backend/app/main.py` lines 72-86 — admin router confirmed mounted without auth dependencies
+- `backend/app/api/admin.py` lines 280, 290, 393, 411, 475, 535 — GET handlers confirmed lacking auth
+- `backend/app/api/history.py` — no `user_id` filtering confirmed; `delete_job` has no ownership check
+- `backend/app/api/ghl.py` line 343 — `smart_list_name` fallback usage confirmed active
+- `backend/app/api/proration.py` lines 343-472 — `fetch_missing_rrc_data()` confirms `split_lease_number` defined but uncalled in main loop
+- `backend/app/models/proration.py` — `MineralHolderRow.fetch_status` field confirmed on model
+- `frontend/src/hooks/useEnrichmentPipeline.ts` (307 lines) — sequential `runStep` pattern confirmed
+- `frontend/src/hooks/usePreviewState.ts` — `updateEntries()` and `recentlyAppliedKeys` confirmed
+- `frontend/src/components/EnrichmentToolbar.tsx` (77 lines) — 3-button UI confirmed for replacement
+- `requirements.txt` — `sse-starlette>=2.0` confirmed installed; no new deps needed
+- `package.json` — no additional frontend deps needed confirmed
 
 ---
-*Research completed: 2026-03-13*
+*Research completed: 2026-03-18*
 *Ready for roadmap: yes*
