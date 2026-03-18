@@ -65,12 +65,12 @@ See: `.planning/milestones/v1.5-ROADMAP.md` for full details
   3. Non-admin users see only their own jobs in history; admin users see all jobs
   4. Deleting a job that belongs to another user returns 403 (unless requester is admin)
   5. The GHL send modal no longer shows or sends a smart_list_name field
-**Plans:** TBD
+**Plans:** 3 plans
 
 Plans:
-- [ ] 10-01: GHL smart_list_name removal (frontend first, then backend) (GHL-01, GHL-02)
-- [ ] 10-02: Admin endpoint auth with per-endpoint Depends (AUTH-01, AUTH-02)
-- [ ] 10-03: History user-scoping and delete ownership (AUTH-03, AUTH-04, AUTH-05)
+- [ ] 10-01-PLAN.md -- GHL smart_list_name removal (GHL-01, GHL-02)
+- [ ] 10-02-PLAN.md -- Admin endpoint auth with per-endpoint Depends (AUTH-01, AUTH-02)
+- [ ] 10-03-PLAN.md -- History user-scoping and delete ownership (AUTH-03, AUTH-04, AUTH-05)
 
 ### Phase 11: RRC Pipeline Fix
 **Goal**: Fetch-missing correctly handles compound lease numbers and returns usable results directly
