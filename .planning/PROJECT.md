@@ -43,22 +43,27 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - ✓ Dual-file upload UI in Extract page (PDF required, CSV optional) — v1.4
 - ✓ Entity type detection for ECF respondents (Individual, Trust, LLC, Estate, etc.) — v1.4
 - ✓ Merged results export to mineral CSV/Excel format — v1.4
+- ✓ ECF upload flow fix: auto-detect format, staged upload with explicit Process button — v1.5
+- ✓ Universal enrichment UI: Clean Up / Validate / Enrich buttons across all tool pages — v1.5
+- ✓ Pipeline API: AI cleanup, address validation, contact enrichment with ProposedChange format — v1.5
+- ✓ Preview state as single source of truth for exports (inline edits, exclusions, enrichment) — v1.5
+- ✓ Tool-specific AI prompts: name cleanup, figure verification, cross-file comparison — v1.5
+- ✓ Provider-agnostic LLM interface (Gemini swappable via admin settings) — v1.5
 
 ### Active
 
-<!-- Current milestone: v1.5 Enrichment Pipeline & Bug Fixes -->
+<!-- Current milestone: v1.6 Pipeline Fixes & Unified Enrichment -->
 
-## Current Milestone: v1.5 Enrichment Pipeline & Bug Fixes
+## Current Milestone: v1.6 Pipeline Fixes & Unified Enrichment
 
-**Goal:** Fix broken enrichment/validation flows, add universal 3-button post-processing UI across all tools, fix ECF upload UX, and repair RRC fetch-missing pipeline.
+**Goal:** Fix RRC fetch-missing pipeline, harden admin/history auth, clean up GHL legacy fields, and replace 3-button enrichment with a single-button modal that runs all steps with real-time progress and live preview updates.
 
 **Target features:**
-- Fix GHL bulk send smart list creation
-- Universal Validate / Clean Up / Enrich buttons (conditional on API keys + feature switches)
-- Preview updates after each enrichment step across all tools
-- Tool-specific Gemini QA prompts (name cleanup, figure verification, address cleaning)
-- ECF upload flow fix (auto-detect → auto-select → explicit Process button)
-- RRC fetch-missing repair (multi-lease lookups, surface results to user)
+- RRC fetch-missing: direct data use, compound lease splitting, per-row status feedback
+- Admin endpoint auth hardening (read endpoints leak config)
+- History endpoint user-scoping (jobs visible only to owner)
+- GHL smart_list_name cleanup (remove legacy field, keep campaign_tag)
+- Unified enrichment modal: single button → runs cleanup/validate/enrich sequentially → progress bar with ETA → live preview updates → change highlighting
 
 ### Out of Scope
 
@@ -67,6 +72,7 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - Batch processing of multiple ECF filings at once — one filing per upload
 - GoHighLevel direct send from ECF results — use existing GHL Prep workflow after export
 - Fuzzy name matching between PDF/CSV respondents — entry-number matching is sufficient for now
+- GHL SmartList API creation — SmartLists are UI-only saved filters in GHL, not API-creatable (confirmed, abandoned)
 - Frontend test suite — defer
 - Rate limiting — defer
 - Structured logging / request tracing — defer
@@ -81,7 +87,7 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - **Codebase:** ~476K LOC (TypeScript + Python), React 19 + FastAPI + Firestore
 - **Test suite:** 50+ pytest tests (auth smoke, CORS, extract parsers, revenue parser), CI via GitHub Actions
 - **Extract formats:** Standard OCC Exhibit A, ECF multiunit well filings (with optional Convey 640 CSV/Excel)
-- **Shipped:** v1.3 Security Hardening (2026-03-11), v1.4 ECF Extraction (2026-03-12)
+- **Shipped:** v1.3 Security Hardening (2026-03-11), v1.4 ECF Extraction (2026-03-12), v1.5 Enrichment Pipeline (2026-03-17)
 
 ## Constraints
 
@@ -110,4 +116,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Dedicated ecf_parser.py module (not extending parser.py) | Clean separation, ECF has distinct parsing logic | ✓ Good — v1.4 |
 
 ---
-*Last updated: 2026-03-13 after v1.5 milestone start*
+*Last updated: 2026-03-18 after v1.6 milestone start*
