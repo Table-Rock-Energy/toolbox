@@ -120,5 +120,5 @@ Plans:
 | 8. Enrichment Pipeline Features | v1.5 | 3/3 | Complete | 2026-03-16 |
 | 9. Tool-Specific AI Prompts | v1.5 | 2/2 | Complete | 2026-03-17 |
 | 10. Auth Hardening & GHL Cleanup | v1.6 | 0/3 | Not started | - |
-| 11. RRC Pipeline Fix | 1/1 | Complete   | 2026-03-18 | - |
+| 11. RRC Pipeline Fix | 1/1 | Complete    | 2026-03-18 | - |
 | 12. Unified Enrichment Modal | v1.6 | 0/2 | Not started | - |
