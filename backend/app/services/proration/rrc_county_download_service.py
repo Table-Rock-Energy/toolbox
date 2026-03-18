@@ -418,13 +418,16 @@ def _parse_rrc_html(html: str) -> list[dict]:
     return list(best.values())
 
 
+MAX_CONCURRENT_RRC = 8
+
+
 async def fetch_individual_leases(
     leases: list[tuple[str, str, str]],
 ) -> dict[tuple[str, str], dict]:
-    """Fetch individual leases from RRC by district+lease number+county.
+    """Fetch individual leases from RRC with semaphore-throttled concurrency.
 
-    Parses data directly from the HTML search response instead of
-    downloading CSV, which avoids RRC's slow CSV generation timeouts.
+    Each concurrent worker creates its own requests.Session (thread-safe since
+    each is independent). Semaphore limits to MAX_CONCURRENT_RRC concurrent.
 
     Args:
         leases: List of (district, lease_number, county_code) tuples.
@@ -433,6 +436,8 @@ async def fetch_individual_leases(
     Returns:
         Dict mapping (district, lease_number) -> RRC record data
     """
+    import asyncio
+
     if not leases:
         return {}
 
@@ -442,84 +447,62 @@ async def fetch_individual_leases(
         logger.warning("Firestore not available for individual lease fetch")
         return {}
 
-    session = create_rrc_session()
+    sem = asyncio.Semaphore(MAX_CONCURRENT_RRC)
     results: dict[tuple[str, str], dict] = {}
     individual_timeout = 60
 
-    # Warm up the session like a human visiting the page
-    _warm_rrc_session(session)
-    _human_delay(2.0, 4.0)
-
-    for i, (district, lease_number, county_code) in enumerate(leases):
-        try:
-            # Human-like delay between queries
-            if i > 0:
-                _human_delay(2.0, 5.0)
-
-            # Search by district + lease number + county (county narrows the search)
-            search_data = {
-                "methodToCall": "search",
-                "searchArgs.districtCodeArg": district,
-                "searchArgs.leaseNumberArg": lease_number,
-            }
-            if county_code:
-                search_data["searchArgs.countyCodeArg"] = county_code
-            _trace("Individual search: district=%s lease=%s county=%s", district, lease_number, county_code or "none")
-            t0 = time.monotonic()
-            resp = session.post(OIL_SEARCH_URL, data=search_data, timeout=individual_timeout)
-            resp.raise_for_status()
-            elapsed = time.monotonic() - t0
-            _trace("Individual search response: %d bytes, %.1fs", len(resp.content), elapsed)
-
-            # Save HTML for debugging
-            try:
-                with open(f"/tmp/rrc_individual_{district}_{lease_number}.html", "w") as f:
-                    f.write(resp.text)
-            except Exception:
-                pass
-
-            if "No records found" in resp.text or "No results found" in resp.text or "0 records" in resp.text.lower():
-                _trace("No RRC data for %s-%s (county=%s)", district, lease_number, county_code or "none")
-                continue
-
-            # Parse data directly from HTML (no CSV download needed)
-            parsed = _parse_rrc_html(resp.text)
-            if not parsed:
-                _trace("Could not parse HTML for %s-%s", district, lease_number)
-                continue
-
-            for rec in parsed:
-                d = rec["district"]
-                ln = rec["lease_number"]
-                acres = rec["acres"]
-
-                await upsert_rrc_oil_record(
-                    district=d,
-                    lease_number=ln,
-                    operator_name=rec.get("operator_name"),
-                    lease_name=rec.get("lease_name"),
-                    field_name=rec.get("field_name"),
-                    county=None,
-                    unit_acres=acres,
-                )
-
-                results[(d, ln)] = {
-                    "acres": acres,
-                    "type": "oil",
-                    "operator": rec.get("operator_name"),
-                    "lease_name": rec.get("lease_name"),
-                }
-
-            _trace("Individual fetch for %s-%s: parsed %d records from HTML", district, lease_number, len(parsed))
-
-        except Exception as e:
-            logger.warning("Individual RRC fetch failed for %s-%s: %s", district, lease_number, e)
-            # Create fresh session after failure
-            _human_delay(3.0, 6.0)
+    async def fetch_one(district: str, lease_number: str, county_code: str) -> None:
+        async with sem:
             session = create_rrc_session()
-            _warm_rrc_session(session)
-            continue
+            try:
+                _warm_rrc_session(session)
+                _human_delay(1.0, 2.0)
 
+                search_data = {
+                    "methodToCall": "search",
+                    "searchArgs.districtCodeArg": district,
+                    "searchArgs.leaseNumberArg": lease_number,
+                }
+                if county_code:
+                    search_data["searchArgs.countyCodeArg"] = county_code
+
+                _trace("Individual search: district=%s lease=%s county=%s", district, lease_number, county_code or "none")
+                loop = asyncio.get_event_loop()
+                resp = await loop.run_in_executor(
+                    None,
+                    lambda: session.post(OIL_SEARCH_URL, data=search_data, timeout=individual_timeout),
+                )
+                resp.raise_for_status()
+
+                if "No records found" in resp.text or "No results found" in resp.text or "0 records" in resp.text.lower():
+                    _trace("No RRC data for %s-%s", district, lease_number)
+                    return
+
+                parsed = _parse_rrc_html(resp.text)
+                if not parsed:
+                    return
+
+                for rec in parsed:
+                    d = rec["district"]
+                    ln = rec["lease_number"]
+                    acres = rec["acres"]
+                    await upsert_rrc_oil_record(
+                        district=d, lease_number=ln,
+                        operator_name=rec.get("operator_name"),
+                        lease_name=rec.get("lease_name"),
+                        field_name=rec.get("field_name"),
+                        county=None, unit_acres=acres,
+                    )
+                    results[(d, ln)] = {
+                        "acres": acres, "type": "oil",
+                        "operator": rec.get("operator_name"),
+                        "lease_name": rec.get("lease_name"),
+                    }
+            except Exception as e:
+                logger.warning("Individual RRC fetch failed for %s-%s: %s", district, lease_number, e)
+
+    tasks = [fetch_one(d, ln, cc) for d, ln, cc in leases]
+    await asyncio.gather(*tasks, return_exceptions=True)
     logger.info("Individual lease fetch: %d of %d leases found", len(results), len(leases))
     return results
 

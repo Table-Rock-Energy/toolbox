@@ -59,6 +59,10 @@ class MineralHolderRow(BaseModel):
         None,
         description="Status from fetch-missing: found, not_found, multiple_matches, split_lookup",
     )
+    sub_lease_results: Optional[list[dict]] = Field(
+        None,
+        description="Per-sub-lease results for compound leases: [{district: '02', lease_number: '12345', status: 'found', acres: 240.0}, ...]",
+    )
 
 
 class FilterOptions(BaseModel):

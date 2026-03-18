@@ -48,6 +48,36 @@ def split_lease_number(rrc_lease: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
+def split_compound_lease(rrc_lease: str, fallback_district: str = "") -> list[tuple[str, str]]:
+    """Split compound lease and resolve district for each part.
+
+    District inheritance: first part's district propagates to subsequent
+    parts that lack one. Falls back to fallback_district if no part has one.
+
+    Returns list of (district, lease_number) tuples.
+    Returns empty list for single/non-compound leases.
+    """
+    import re
+
+    if not rrc_lease:
+        return []
+    raw_parts = re.split(r"[/,]", rrc_lease)
+    parts = [p.strip() for p in raw_parts if p.strip()]
+    if len(parts) <= 1:
+        return []
+
+    resolved: list[tuple[str, str]] = []
+    inherited_district = fallback_district
+    for part in parts:
+        if "-" in part:
+            d, ln = part.split("-", 1)
+            inherited_district = d.strip()
+            resolved.append((inherited_district, ln.strip()))
+        else:
+            resolved.append((inherited_district, part))
+    return resolved
+
+
 @router.get("/health")
 async def health_check() -> dict:
     """Health check endpoint for proration tool."""
@@ -398,6 +428,20 @@ async def fetch_missing_rrc_data(request: FetchMissingRequest, background_tasks:
             if county_result:
                 county_code = county_result[0]
 
+        # Check for compound lease
+        is_compound = False
+        sub_parts: list[tuple[str, str]] = []
+        if row.rrc_lease and ("/" in row.rrc_lease or "," in row.rrc_lease):
+            sub_parts = split_compound_lease(row.rrc_lease, district or "")
+            is_compound = bool(sub_parts)
+
+        if is_compound:
+            # Add all sub-parts as individual lookups
+            for sub_d, sub_ln in sub_parts:
+                missing_leases.append((len(updated_rows), sub_d, sub_ln, county_code))
+            updated_rows.append(row)
+            continue  # Skip single-lease Firestore lookup
+
         rrc_info = None
 
         if district and lease_number:
@@ -413,25 +457,17 @@ async def fetch_missing_rrc_data(request: FetchMissingRequest, background_tasks:
             row.fetch_status = "found"
             matched += 1
         elif district and lease_number:
-            missing_leases.append((i, district, lease_number, county_code))
+            missing_leases.append((len(updated_rows), district, lease_number, county_code))
 
         updated_rows.append(row)
 
     # Step 2: Individual RRC queries for missing leases (fast with county codes)
     # County downloads happen in background after response is sent
-    MAX_INDIVIDUAL_QUERIES = 25
     county_download_infos = []
 
     if missing_leases:
         unique_leases = list({(d, ln, cc) for _, d, ln, cc in missing_leases})
         logger.info("fetch-missing: %d rows not in Firestore (%d unique leases)", len(missing_leases), len(unique_leases))
-
-        if len(unique_leases) > MAX_INDIVIDUAL_QUERIES:
-            logger.info(
-                "fetch-missing: capping individual queries from %d to %d",
-                len(unique_leases), MAX_INDIVIDUAL_QUERIES,
-            )
-            unique_leases = unique_leases[:MAX_INDIVIDUAL_QUERIES]
         logger.info(
             "fetch-missing: querying RRC for %d individual leases",
             len(unique_leases),
@@ -442,16 +478,54 @@ async def fetch_missing_rrc_data(request: FetchMissingRequest, background_tasks:
             logger.warning("Individual lease fetch failed: %s", e)
             individual_results = {}
 
-        # RRC-01 fix: Use individual_results directly instead of re-querying Firestore
-        for row_idx, district, lease_number, _cc in missing_leases:
+        # Group missing_leases by row_idx to detect compound rows
+        from collections import defaultdict
+
+        row_lease_map: dict[int, list[tuple[str, str, str]]] = defaultdict(list)
+        for row_idx, d, ln, cc in missing_leases:
+            row_lease_map[row_idx].append((d, ln, cc))
+
+        for row_idx, lease_parts in row_lease_map.items():
             row = updated_rows[row_idx]
-            rrc_info = individual_results.get((district, lease_number))
-            if rrc_info:
-                _apply_rrc_info(row, rrc_info, WellType)
-                row.fetch_status = "found"
-                matched += 1
+            if len(lease_parts) == 1:
+                # Simple (non-compound) row
+                d, ln, _cc = lease_parts[0]
+                rrc_info = individual_results.get((d, ln))
+                if rrc_info:
+                    _apply_rrc_info(row, rrc_info, WellType)
+                    row.fetch_status = "found"
+                    matched += 1
+                else:
+                    row.fetch_status = "not_found"
             else:
-                row.fetch_status = "not_found"
+                # Compound row -- collect sub-lease results
+                sub_results = []
+                first_found_info = None
+                for d, ln, _cc in lease_parts:
+                    rrc_info = individual_results.get((d, ln))
+                    if rrc_info:
+                        sub_results.append({
+                            "district": d,
+                            "lease_number": ln,
+                            "status": "found",
+                            "acres": rrc_info.get("acres"),
+                        })
+                        if first_found_info is None:
+                            first_found_info = rrc_info
+                    else:
+                        sub_results.append({
+                            "district": d,
+                            "lease_number": ln,
+                            "status": "not_found",
+                            "acres": None,
+                        })
+                row.sub_lease_results = sub_results
+                if first_found_info:
+                    _apply_rrc_info(row, first_found_info, WellType)
+                    row.fetch_status = "split_lookup"
+                    matched += 1
+                else:
+                    row.fetch_status = "not_found"
 
     # Mark rows that are still missing after full fetch attempt
     RRC_SEARCH_URL = "https://webapps2.rrc.texas.gov/EWA/oilProQueryAction.do"
