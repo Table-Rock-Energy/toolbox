@@ -198,6 +198,7 @@ export default function Proration() {
   const [isFetchingMissing, setIsFetchingMissing] = useState(false)
   const [fetchMissingMessage, setFetchMissingMessage] = useState<string | null>(null)
   const [hideMissingRrc, setHideMissingRrc] = useState(false)
+  const [hideUnfetchable, setHideUnfetchable] = useState(false)
 
   // Edit Row Modal State
   const [editingRow, setEditingRow] = useState<MineralHolderRow | null>(null)
@@ -321,7 +322,11 @@ export default function Proration() {
   }, [])
 
 
-  // Add stable _uid keys, sort missing RRC to top, apply filter
+  // Categorize rows: matched, fetchable (has lease info), unfetchable (no lease info)
+  const isUnfetchable = (r: MineralHolderRow) => !r.rrc_acres && r.notes === 'No valid RRC Lease #'
+  const isFetchable = (r: MineralHolderRow) => !r.rrc_acres && r.notes !== 'No valid RRC Lease #'
+
+  // Add stable _uid keys, sort missing RRC to top, apply filters
   const rowsWithKeys = useMemo(() => {
     if (!activeJob?.result?.rows) return []
     let rows = activeJob.result.rows.map((row, i) => ({
@@ -329,19 +334,22 @@ export default function Proration() {
       _uid: row._uid ?? `pror-${i}`,
     }))
 
-    // Sort missing RRC data to top so they're visible
+    // Sort: fetchable missing first (orange), unfetchable next (gray), matched last
     rows.sort((a, b) => {
-      const aMissing = !a.rrc_acres ? 0 : 1
-      const bMissing = !b.rrc_acres ? 0 : 1
-      return aMissing - bMissing
+      const aOrder = isFetchable(a) ? 0 : isUnfetchable(a) ? 1 : 2
+      const bOrder = isFetchable(b) ? 0 : isUnfetchable(b) ? 1 : 2
+      return aOrder - bOrder
     })
 
     if (hideMissingRrc) {
       rows = rows.filter(r => r.rrc_acres)
     }
+    if (hideUnfetchable) {
+      rows = rows.filter(r => !isUnfetchable(r))
+    }
 
     return rows
-  }, [activeJob?.result?.rows, hideMissingRrc])
+  }, [activeJob?.result?.rows, hideMissingRrc, hideUnfetchable])
 
   // Preview state: exclusion, row sorting
   const preview = usePreviewState({
@@ -838,6 +846,16 @@ export default function Proration() {
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
+                    checked={hideUnfetchable}
+                    onChange={(e) => setHideUnfetchable(e.target.checked)}
+                    className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                  />
+                  <span>Hide No Lease #</span>
+                </label>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
                     checked={newRecordOnly}
                     onChange={(e) => setNewRecordOnly(e.target.checked)}
                     className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
@@ -1160,22 +1178,16 @@ export default function Proration() {
               {(() => {
                 const rows = activeJob.result.rows || []
                 const totalCount = activeJob.result.total_rows || rows.length
-                const processedCount = activeJob.result.processed_rows || rows.length
                 const matchedCount = rows.filter(r => r.rrc_acres).length
-                const missingCount = rows.filter(r => !r.rrc_acres).length
+                const fetchableCount = rows.filter(r => isFetchable(r)).length
+                const unfetchableCount = rows.filter(r => isUnfetchable(r)).length
                 return (
-                  <div className="grid grid-cols-4 gap-4 p-6 border-b border-gray-100">
+                  <div className="grid grid-cols-5 gap-4 p-6 border-b border-gray-100">
                     <div className="text-center">
                       <p className="text-2xl font-oswald font-semibold text-tre-navy">
                         {totalCount}
                       </p>
                       <p className="text-sm text-gray-500">Total Rows</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-2xl font-oswald font-semibold text-tre-navy">
-                        {processedCount}
-                      </p>
-                      <p className="text-sm text-gray-500">Processed</p>
                     </div>
                     <div className="text-center">
                       <p className="text-2xl font-oswald font-semibold text-green-600">
@@ -1184,10 +1196,22 @@ export default function Proration() {
                       <p className="text-sm text-gray-500">RRC Matched</p>
                     </div>
                     <div className="text-center">
-                      <p className={`text-2xl font-oswald font-semibold ${missingCount > 0 ? 'text-orange-500' : 'text-gray-400'}`}>
-                        {missingCount}
+                      <p className={`text-2xl font-oswald font-semibold ${fetchableCount > 0 ? 'text-orange-500' : 'text-gray-400'}`}>
+                        {fetchableCount}
                       </p>
-                      <p className="text-sm text-gray-500">Missing RRC</p>
+                      <p className="text-sm text-gray-500">Fetchable</p>
+                    </div>
+                    <div className="text-center">
+                      <p className={`text-2xl font-oswald font-semibold ${unfetchableCount > 0 ? 'text-gray-500' : 'text-gray-400'}`}>
+                        {unfetchableCount}
+                      </p>
+                      <p className="text-sm text-gray-500">No Lease #</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-2xl font-oswald font-semibold text-tre-teal">
+                        {preview.entriesToExport.length}
+                      </p>
+                      <p className="text-sm text-gray-500">Selected</p>
                     </div>
                   </div>
                 )
@@ -1365,8 +1389,10 @@ export default function Proration() {
                         const isExcluded = preview.isExcluded(rowKey)
                         const rowChanges = pipeline.changesByEntry.get(rowIdx)
                         const hasChanges = !!rowChanges && rowChanges.size > 0
+                        const rowUnfetchable = isUnfetchable(row)
+                        const rowFetchable = isFetchable(row)
                         return (
-                        <tr key={rowKey} className={`${pipeline.recentlyAppliedKeys.has(rowKey) ? 'bg-green-100' : hasChanges ? 'bg-blue-50' : !row.rrc_acres ? 'bg-red-50' : ''} ${isExcluded ? 'opacity-50 bg-gray-100' : ''} transition-colors duration-[2000ms]`}>
+                        <tr key={rowKey} className={`${pipeline.recentlyAppliedKeys.has(rowKey) ? 'bg-green-100' : hasChanges ? 'bg-blue-50' : rowUnfetchable ? 'bg-gray-100' : rowFetchable ? 'bg-orange-50' : row.fetch_status === 'multiple_matches' ? 'bg-yellow-50' : ''} ${isExcluded ? 'opacity-50 bg-gray-100' : ''} transition-colors duration-[2000ms]`}>
                           <td className="py-2 px-3">
                             <input
                               type="checkbox"
