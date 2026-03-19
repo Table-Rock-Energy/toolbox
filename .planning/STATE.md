@@ -53,6 +53,7 @@ None.
 ### Quick Tasks Completed
 
 | # | Description | Date | Commit | Directory |
+| 1 | Move RRC data status into upload card | 2026-03-19 | c4e1d7a | 260319-ixh-move-rrc-data-status-notification-into-u |
 
 ## Session Continuity
 
