@@ -176,6 +176,41 @@ async def test_unauthenticated_admin_update_maps_settings_returns_401(unauthenti
     assert response.status_code == 401
 
 
+@pytest.mark.asyncio
+async def test_unauthenticated_admin_options_returns_401(unauthenticated_client: AsyncClient):
+    """Admin options endpoint now requires auth (require_admin)."""
+    response = await unauthenticated_client.get("/api/admin/options")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_unauthenticated_admin_users_list_returns_401(unauthenticated_client: AsyncClient):
+    """Admin users list endpoint requires auth."""
+    response = await unauthenticated_client.get("/api/admin/users")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_unauthenticated_admin_settings_gemini_returns_401(unauthenticated_client: AsyncClient):
+    """Admin gemini settings GET requires auth."""
+    response = await unauthenticated_client.get("/api/admin/settings/gemini")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_unauthenticated_admin_settings_google_cloud_returns_401(unauthenticated_client: AsyncClient):
+    """Admin google cloud settings GET requires auth."""
+    response = await unauthenticated_client.get("/api/admin/settings/google-cloud")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_unauthenticated_admin_settings_google_maps_returns_401(unauthenticated_client: AsyncClient):
+    """Admin google maps settings GET requires auth."""
+    response = await unauthenticated_client.get("/api/admin/settings/google-maps")
+    assert response.status_code == 401
+
+
 # ---------------------------------------------------------------------------
 # Admin: authenticated non-admin -> 403
 # ---------------------------------------------------------------------------
@@ -188,6 +223,27 @@ async def test_authenticated_nonadmin_create_user_returns_403(authenticated_clie
         "/api/admin/users",
         json={"email": "new@example.com"},
     )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_authenticated_nonadmin_options_returns_403(authenticated_client: AsyncClient):
+    """Authenticated non-admin gets 403 on admin options."""
+    response = await authenticated_client.get("/api/admin/options")
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_authenticated_nonadmin_users_list_returns_403(authenticated_client: AsyncClient):
+    """Authenticated non-admin gets 403 on admin users list."""
+    response = await authenticated_client.get("/api/admin/users")
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_authenticated_nonadmin_settings_gemini_returns_403(authenticated_client: AsyncClient):
+    """Authenticated non-admin gets 403 on admin gemini settings."""
+    response = await authenticated_client.get("/api/admin/settings/gemini")
     assert response.status_code == 403
 
 
@@ -220,7 +276,8 @@ async def test_authenticated_proration_succeeds(authenticated_client: AsyncClien
 @pytest.mark.asyncio
 async def test_authenticated_history_succeeds(authenticated_client: AsyncClient):
     """Authenticated request to history router passes auth gate."""
-    response = await authenticated_client.get("/api/history/jobs")
+    with patch("app.services.firestore_service.get_user_jobs", return_value=[]):
+        response = await authenticated_client.get("/api/history/jobs")
     assert response.status_code != 401
 
 
@@ -264,13 +321,6 @@ async def test_admin_check_no_auth_required(unauthenticated_client: AsyncClient)
 
 
 @pytest.mark.asyncio
-async def test_admin_options_no_auth_required(unauthenticated_client: AsyncClient):
-    """Admin options endpoint does NOT require auth."""
-    response = await unauthenticated_client.get("/api/admin/options")
-    assert response.status_code != 401
-
-
-@pytest.mark.asyncio
 async def test_ghl_daily_limit_no_auth_required(unauthenticated_client: AsyncClient):
     """GHL daily-limit endpoint does NOT require auth."""
     response = await unauthenticated_client.get("/api/ghl/daily-limit")
@@ -307,3 +357,66 @@ async def test_ghl_bulk_send_model_no_smart_list_name():
     """BulkSendRequest model no longer has smart_list_name field."""
     from app.models.ghl import BulkSendRequest
     assert "smart_list_name" not in BulkSendRequest.model_fields
+
+
+# ---------------------------------------------------------------------------
+# History: user-scoped jobs and delete ownership
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_history_scoped_nonadmin_gets_own_jobs(authenticated_client: AsyncClient):
+    """Non-admin user gets only their own jobs from history."""
+    mock_jobs = [
+        {"job_id": "j1", "tool": "extract", "user_id": "test@example.com"},
+    ]
+    with patch("app.services.firestore_service.get_user_jobs", return_value=mock_jobs) as mock_fn:
+        response = await authenticated_client.get("/api/history/jobs")
+    assert response.status_code == 200
+    mock_fn.assert_called_once()
+    # Verify get_user_jobs was called with the user's email
+    call_kwargs = mock_fn.call_args
+    assert call_kwargs[1].get("user_id") == "test@example.com" or (call_kwargs[0] and call_kwargs[0][0] == "test@example.com")
+
+
+@pytest.mark.asyncio
+async def test_history_admin_gets_all_jobs(admin_client: AsyncClient):
+    """Admin user gets all jobs from history."""
+    mock_jobs = [
+        {"job_id": "j1", "tool": "extract", "user_id": "test@example.com"},
+        {"job_id": "j2", "tool": "title", "user_id": "other@example.com"},
+    ]
+    with patch("app.services.firestore_service.get_recent_jobs", return_value=mock_jobs) as mock_fn:
+        response = await admin_client.get("/api/history/jobs")
+    assert response.status_code == 200
+    mock_fn.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_own_job_succeeds(authenticated_client: AsyncClient):
+    """User can delete their own job."""
+    mock_job = {"job_id": "j1", "tool": "extract", "user_id": "test@example.com"}
+    with patch("app.services.firestore_service.get_job", return_value=mock_job), \
+         patch("app.services.firestore_service.delete_job", return_value=True):
+        response = await authenticated_client.delete("/api/history/jobs/j1")
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_delete_other_user_job_returns_403(authenticated_client: AsyncClient):
+    """Non-admin cannot delete another user's job."""
+    mock_job = {"job_id": "j1", "tool": "extract", "user_id": "other@example.com"}
+    with patch("app.services.firestore_service.get_job", return_value=mock_job):
+        response = await authenticated_client.delete("/api/history/jobs/j1")
+    assert response.status_code == 403
+    assert "your own jobs" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_admin_delete_other_user_job_succeeds(admin_client: AsyncClient):
+    """Admin can delete any user's job."""
+    mock_job = {"job_id": "j1", "tool": "extract", "user_id": "other@example.com"}
+    with patch("app.services.firestore_service.get_job", return_value=mock_job), \
+         patch("app.services.firestore_service.delete_job", return_value=True):
+        response = await admin_client.delete("/api/history/jobs/j1")
+    assert response.status_code == 200
