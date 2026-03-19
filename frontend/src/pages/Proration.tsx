@@ -1441,17 +1441,16 @@ export default function Proration() {
                             <td className="py-2 px-3 text-gray-600 text-right">
                               <span className="inline-flex items-center gap-1">
                                 {formatNumber(row.rrc_acres, 2)}
-                                {row.fetch_status === 'found' && <CheckCircle className="w-3.5 h-3.5 text-green-500" title="RRC data found" />}
+                                {row.fetch_status === 'found' && <span title="RRC data found"><CheckCircle className="w-3.5 h-3.5 text-green-500" /></span>}
                                 {row.fetch_status === 'split_lookup' && (
-                                  <CheckCircle
-                                    className="w-3.5 h-3.5 text-green-500"
-                                    title={row.sub_lease_results?.map(s =>
+                                  <span title={row.sub_lease_results?.map(s =>
                                       `${s.district}-${s.lease_number}: ${s.status}${s.acres ? ` (${s.acres} acres)` : ''}`
-                                    ).join('\n') || 'Split lookup'}
-                                  />
+                                    ).join('\n') || 'Split lookup'}>
+                                    <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+                                  </span>
                                 )}
-                                {row.fetch_status === 'not_found' && <X className="w-3.5 h-3.5 text-red-400" title="Not found in RRC" />}
-                                {row.fetch_status === 'multiple_matches' && <AlertTriangle className="w-3.5 h-3.5 text-amber-500" title="Multiple RRC matches" />}
+                                {row.fetch_status === 'not_found' && <span title="Not found in RRC"><X className="w-3.5 h-3.5 text-red-400" /></span>}
+                                {row.fetch_status === 'multiple_matches' && <span title="Multiple RRC matches"><AlertTriangle className="w-3.5 h-3.5 text-amber-500" /></span>}
                               </span>
                             </td>
                           )}
