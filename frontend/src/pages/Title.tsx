@@ -1,12 +1,14 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Filter, RotateCcw, Edit2, Columns, X, PanelLeftClose, PanelLeftOpen, ShieldAlert } from 'lucide-react'
-import { FileUpload, Modal, MineralExportModal, EditableCell, EnrichmentModal, UnifiedEnrichButton, ProposedChangeCell } from '../components'
+import { FileUpload, Modal, MineralExportModal, EditableCell, EnrichmentModal, UnifiedEnrichButton, ProposedChangeCell, CancelConfirmDialog } from '../components'
 import type { PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
+import { useOperationContext } from '../contexts/OperationContext'
+import type { StartOperationOpts } from '../contexts/OperationContext'
 import { useToolLayout } from '../hooks/useToolLayout'
 import { useFeatureFlags } from '../hooks/useFeatureFlags'
 import { usePreviewState } from '../hooks/usePreviewState'
-import { useEnrichmentPipeline } from '../hooks/useEnrichmentPipeline'
+import type { PipelineStatus, EnrichmentCellChange, PipelineStep } from '../hooks/useEnrichmentPipeline'
 
 interface OwnerEntry {
   _uid?: string
@@ -144,9 +146,9 @@ export default function Title() {
   // Enrichment feature flags
   const featureFlags = useFeatureFlags()
 
-
-  // Enrichment modal state
-  const [enrichModalOpen, setEnrichModalOpen] = useState(false)
+  // OperationContext
+  const { operation, startOperation, abortOperation, undoOperation, clearOperation, getResultsForTool } = useOperationContext()
+  const [cancelConfirmPending, setCancelConfirmPending] = useState<StartOperationOpts | null>(null)
 
   // Mineral export modal state
   const [showMineralExport, setShowMineralExport] = useState(false)
@@ -301,18 +303,51 @@ export default function Title() {
     flagField: 'duplicate_flag',
   })
 
-  // Enrichment pipeline: sequential cleanup -> validate -> enrich
-  const pipeline = useEnrichmentPipeline({
-    tool: 'title',
-    previewEntries: preview.previewEntries,
-    updateEntries: preview.updateEntries,
-    editedFields: preview.editedFields,
-    keyField: '_uid' as keyof OwnerEntry,
-    featureFlags,
-  })
+  // OperationContext derived state
+  const toolName = 'title'
+  const pipelineStatus: PipelineStatus = operation?.tool === toolName ? (operation.status as PipelineStatus) : 'idle'
+  const stepStatuses = operation?.tool === toolName ? operation.stepStatuses : []
+  const enrichmentChanges: Map<string, EnrichmentCellChange> = operation?.tool === toolName ? operation.enrichmentChanges : new Map()
+  const completedSteps = operation?.tool === toolName ? operation.completedSteps : new Set<PipelineStep>()
+  const batchProgress = operation?.tool === toolName ? operation.batchProgress : null
+  const stepBatchResults = operation?.tool === toolName ? operation.stepBatchResults : new Map<PipelineStep, import('../contexts/OperationContext').StepBatchResult>()
+  const errorMessage = operation?.tool === toolName ? operation.errorMessage : null
+  const enrichModalOpen = operation?.tool === toolName && (operation.status === 'running' || operation.status === 'completed' || operation.status === 'error')
+
+  const affectedEntryIndices = useMemo(() => {
+    const indices = new Set<number>()
+    enrichmentChanges.forEach(c => indices.add(c.entry_index))
+    return indices
+  }, [enrichmentChanges])
+
+  const handleStartEnrichment = useCallback(() => {
+    const opts: StartOperationOpts = {
+      tool: toolName,
+      entries: preview.previewEntries.map(e => ({...e} as Record<string, unknown>)),
+      updateEntries: (entries) => preview.updateEntries(entries as OwnerEntry[]),
+      editedFields: preview.editedFields as Map<string, unknown>,
+      keyField: '_uid',
+      featureFlags,
+    }
+    if (operation?.status === 'running') {
+      setCancelConfirmPending(opts)
+    } else {
+      startOperation(opts)
+    }
+  }, [preview.previewEntries, preview.updateEntries, preview.editedFields, featureFlags, operation?.status, startOperation])
+
+  // Auto-restore on mount (PERSIST-01)
+  useEffect(() => {
+    const results = getResultsForTool(toolName)
+    if (results) {
+      setTimeout(() => {
+        preview.updateEntries(results as OwnerEntry[])
+      }, 0)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const getCellHighlight = (entryIndex: number, field: string) => {
-    return pipeline.enrichmentChanges.get(`${entryIndex}:${field}`) || null
+    return enrichmentChanges.get(`${entryIndex}:${field}`) || null
   }
 
   const getEntryStatus = (entry: OwnerEntry): { label: string; color: string } => {
@@ -668,22 +703,24 @@ export default function Title() {
                   </div>
                   <div className="flex gap-2">
                     <UnifiedEnrichButton
-                      pipelineStatus={pipeline.pipelineStatus}
+                      pipelineStatus={pipelineStatus}
                       entryCount={preview.entriesToExport.length}
                       anyStepEnabled={featureFlags.cleanUpEnabled || featureFlags.validateEnabled || featureFlags.enrichEnabled}
-                      onEnrich={() => { setEnrichModalOpen(true); pipeline.runAllSteps() }}
-                      onReopen={() => setEnrichModalOpen(true)}
-                      onUndo={pipeline.undoAllEnrichment}
-                      onClearHighlights={pipeline.clearHighlights}
-                      hasChanges={pipeline.enrichmentChanges.size > 0}
-                      hasSnapshot={pipeline.completedSteps.size > 0}
+                      onEnrich={handleStartEnrichment}
+                      onReopen={() => {}}
+                      onUndo={() => { undoOperation(); clearOperation() }}
+                      onClearHighlights={() => { clearOperation() }}
+                      hasChanges={enrichmentChanges.size > 0}
+                      hasSnapshot={completedSteps.size > 0}
                     />
                     <EnrichmentModal
-                      isOpen={enrichModalOpen}
-                      onClose={() => setEnrichModalOpen(false)}
-                      stepStatuses={pipeline.stepStatuses}
-                      pipelineStatus={pipeline.pipelineStatus}
-                      enrichmentChanges={pipeline.enrichmentChanges}
+                      isOpen={!!enrichModalOpen}
+                      onClose={() => clearOperation()}
+                      stepStatuses={stepStatuses}
+                      pipelineStatus={pipelineStatus}
+                      enrichmentChanges={enrichmentChanges}
+                      batchProgress={batchProgress}
+                      stepBatchResults={stepBatchResults}
                     />
                     <button
                       onClick={() => {
@@ -708,10 +745,10 @@ export default function Title() {
               </div>
 
               {/* Pipeline Error */}
-              {pipeline.errorMessage && (
+              {errorMessage && (
                 <div className="px-6 py-3 border-b border-red-200 bg-red-50 flex items-center justify-between">
-                  <p className="text-sm text-red-700">{pipeline.errorMessage}</p>
-                  <button onClick={pipeline.onDismiss} className="text-sm text-red-500 hover:underline">Dismiss</button>
+                  <p className="text-sm text-red-700">{errorMessage}</p>
+                  <button onClick={() => clearOperation()} className="text-sm text-red-500 hover:underline">Dismiss</button>
                 </div>
               )}
 
@@ -939,10 +976,10 @@ export default function Title() {
                       {(() => {
                         // Build display list with original indices, sort changed rows to top
                         const indexed = preview.previewEntries.map((entry, idx) => ({ entry, origIdx: idx }))
-                        if (pipeline.affectedEntryIndices.size > 0) {
+                        if (affectedEntryIndices.size > 0) {
                           indexed.sort((a, b) => {
-                            const aChanged = pipeline.affectedEntryIndices.has(a.origIdx) ? 0 : 1
-                            const bChanged = pipeline.affectedEntryIndices.has(b.origIdx) ? 0 : 1
+                            const aChanged = affectedEntryIndices.has(a.origIdx) ? 0 : 1
+                            const bChanged = affectedEntryIndices.has(b.origIdx) ? 0 : 1
                             return aChanged - bChanged
                           })
                         }
@@ -951,14 +988,12 @@ export default function Title() {
                         const entryKey = entry._uid ?? ''
                         const isExcluded = preview.isExcluded(entryKey)
                         const status = getEntryStatus(entry)
-                        const rowChanges = pipeline.changesByEntry.get(rowIdx)
-                        const hasChanges = !!rowChanges && rowChanges.size > 0
+                        const hasChanges = affectedEntryIndices.has(rowIdx)
                         return (
                           <tr
                             key={entryKey}
                             className={`
-                              ${pipeline.recentlyAppliedKeys.has(entryKey) ? 'bg-green-100' :
-                                hasChanges ? 'bg-blue-50' :
+                              ${hasChanges ? 'bg-blue-50' :
                                 entry.duplicate_flag && !entry.has_address ? 'bg-purple-50' :
                                 entry.duplicate_flag ? 'bg-yellow-50' :
                                 !entry.has_address ? 'bg-red-50' : ''}
@@ -979,15 +1014,11 @@ export default function Title() {
                             {isColumnVisible('full_name') && (() => {
                               const hl = getCellHighlight(rowIdx, 'full_name')
                               return (
-                              <td className={`py-2 px-3 text-gray-900 ${isExcluded ? 'line-through' : ''} ${hl ? 'bg-green-50' : rowChanges?.has('full_name') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : entry.full_name}>
-                                {rowChanges?.has('full_name') ? (
-                                  <ProposedChangeCell change={rowChanges.get('full_name')!} />
-                                ) : (
-                                  <EditableCell
-                                    value={entry.full_name}
-                                    onCommit={(val) => preview.editField(entryKey, 'full_name', val)}
-                                  />
-                                )}
+                              <td className={`py-2 px-3 text-gray-900 ${isExcluded ? 'line-through' : ''} ${hl ? 'bg-green-50' : ''}`} title={hl ? `Original: ${hl.original_value}` : entry.full_name}>
+                                <EditableCell
+                                  value={entry.full_name}
+                                  onCommit={(val) => preview.editField(entryKey, 'full_name', val)}
+                                />
                               </td>
                               )
                             })()}
@@ -1022,75 +1053,55 @@ export default function Title() {
                             {isColumnVisible('address') && (() => {
                               const hl = getCellHighlight(rowIdx, 'address')
                               return (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : rowChanges?.has('address') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
-                                {rowChanges?.has('address') ? (
-                                  <ProposedChangeCell change={rowChanges.get('address')!} />
-                                ) : (
-                                  <EditableCell
-                                    value={entry.address}
-                                    onCommit={(val) => preview.editField(entryKey, 'address', val)}
-                                  />
-                                )}
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
+                                <EditableCell
+                                  value={entry.address}
+                                  onCommit={(val) => preview.editField(entryKey, 'address', val)}
+                                />
                               </td>
                               )
                             })()}
                             {isColumnVisible('address_line_2') && (() => {
                               const hl = getCellHighlight(rowIdx, 'address_line_2')
                               return (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : rowChanges?.has('address_2') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
-                                {rowChanges?.has('address_2') ? (
-                                  <ProposedChangeCell change={rowChanges.get('address_2')!} />
-                                ) : (
-                                  <EditableCell
-                                    value={entry.address_line_2}
-                                    onCommit={(val) => preview.editField(entryKey, 'address_line_2', val)}
-                                  />
-                                )}
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
+                                <EditableCell
+                                  value={entry.address_line_2}
+                                  onCommit={(val) => preview.editField(entryKey, 'address_line_2', val)}
+                                />
                               </td>
                               )
                             })()}
                             {isColumnVisible('city') && (() => {
                               const hl = getCellHighlight(rowIdx, 'city')
                               return (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : rowChanges?.has('city') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
-                                {rowChanges?.has('city') ? (
-                                  <ProposedChangeCell change={rowChanges.get('city')!} />
-                                ) : (
-                                  <EditableCell
-                                    value={entry.city}
-                                    onCommit={(val) => preview.editField(entryKey, 'city', val)}
-                                  />
-                                )}
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
+                                <EditableCell
+                                  value={entry.city}
+                                  onCommit={(val) => preview.editField(entryKey, 'city', val)}
+                                />
                               </td>
                               )
                             })()}
                             {isColumnVisible('state') && (() => {
                               const hl = getCellHighlight(rowIdx, 'state')
                               return (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : rowChanges?.has('state') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
-                                {rowChanges?.has('state') ? (
-                                  <ProposedChangeCell change={rowChanges.get('state')!} />
-                                ) : (
-                                  <EditableCell
-                                    value={entry.state}
-                                    onCommit={(val) => preview.editField(entryKey, 'state', val)}
-                                  />
-                                )}
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
+                                <EditableCell
+                                  value={entry.state}
+                                  onCommit={(val) => preview.editField(entryKey, 'state', val)}
+                                />
                               </td>
                               )
                             })()}
                             {isColumnVisible('zip_code') && (() => {
                               const hl = getCellHighlight(rowIdx, 'zip_code')
                               return (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : rowChanges?.has('zip_code') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
-                                {rowChanges?.has('zip_code') ? (
-                                  <ProposedChangeCell change={rowChanges.get('zip_code')!} />
-                                ) : (
-                                  <EditableCell
-                                    value={entry.zip_code}
-                                    onCommit={(val) => preview.editField(entryKey, 'zip_code', val)}
-                                  />
-                                )}
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
+                                <EditableCell
+                                  value={entry.zip_code}
+                                  onCommit={(val) => preview.editField(entryKey, 'zip_code', val)}
+                                />
                               </td>
                               )
                             })()}
@@ -1249,6 +1260,19 @@ export default function Title() {
           )}
         </div>
       )}
+
+      {/* Cancel Confirm Dialog */}
+      <CancelConfirmDialog
+        isOpen={cancelConfirmPending !== null}
+        onKeepRunning={() => setCancelConfirmPending(null)}
+        onCancelAndStart={() => {
+          abortOperation()
+          if (cancelConfirmPending) {
+            startOperation(cancelConfirmPending)
+          }
+          setCancelConfirmPending(null)
+        }}
+      />
 
       {/* Mineral Export Modal */}
       <MineralExportModal
