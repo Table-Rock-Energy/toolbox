@@ -95,11 +95,11 @@ Plans:
   3. The modal shows a progress bar with step labels and estimated time remaining
   4. As each step completes, the preview table behind the modal updates in real-time with the new data
   5. Modified cells are highlighted so the user can see exactly what changed after closing the modal
-**Plans:** TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 12-01: useEnrichmentPipeline.runAllSteps() with local variable threading and AbortController (ENRICH-02, ENRICH-03, ENRICH-06)
-- [ ] 12-02: EnrichmentModal component with progress UI, step labels, and ETA (ENRICH-01, ENRICH-03, ENRICH-04, ENRICH-05, ENRICH-07)
+- [ ] 12-01-PLAN.md -- useEnrichmentPipeline hook: runAllSteps(), per-cell change tracking, AbortController (ENRICH-02, ENRICH-03, ENRICH-06)
+- [ ] 12-02-PLAN.md -- EnrichmentModal + UnifiedEnrichButton + cell highlighting on tool pages (ENRICH-01, ENRICH-03, ENRICH-04, ENRICH-05, ENRICH-07)
 
 ## Progress
 
