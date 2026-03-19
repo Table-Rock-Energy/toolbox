@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from app.core.config import settings
 from app.models.pipeline import PipelineRequest, PipelineResponse, ProposedChange
@@ -95,7 +95,7 @@ DEFAULT_ENRICH_MAPPINGS: dict[str, dict[str, str]] = {
 
 
 @router.post("/cleanup", response_model=PipelineResponse)
-async def pipeline_cleanup(request: PipelineRequest) -> PipelineResponse:
+async def pipeline_cleanup(request: Request, body: PipelineRequest) -> PipelineResponse:
     """Run AI-powered data cleanup on entries.
 
     Uses the configured LLM provider (Gemini) to suggest corrections
@@ -110,28 +110,48 @@ async def pipeline_cleanup(request: PipelineRequest) -> PipelineResponse:
 
     try:
         # Revenue: pre-compute batch median for outlier detection
-        if request.tool == "revenue":
+        if body.tool == "revenue":
             from statistics import median as compute_median
 
             values = [
                 float(e["owner_value"])
-                for e in request.entries
+                for e in body.entries
                 if e.get("owner_value") and float(e.get("owner_value", 0)) > 0
             ]
             if len(values) >= 3:
                 med = compute_median(values)
                 threshold = med * 3
-                for e in request.entries:
+                for e in body.entries:
                     e["_batch_median_value"] = round(med, 2)
                     e["_outlier_threshold"] = round(threshold, 2)
 
+        # Create a sync-callable disconnect checker.
+        # request.is_disconnected() is async, so we poll it via a shared flag
+        # that gets updated between batch cycles.
+        _disconnected = False
+
+        async def _poll_disconnect() -> None:
+            nonlocal _disconnected
+            _disconnected = await request.is_disconnected()
+
+        def _check_disconnect() -> bool:
+            # Schedule the async check and return cached result
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_poll_disconnect())
+            except RuntimeError:
+                pass
+            return _disconnected
+
         changes = await provider.cleanup_entries(
-            request.tool, request.entries, source_data=request.source_data
+            body.tool, body.entries,
+            source_data=body.source_data,
+            disconnect_check=_check_disconnect,
         )
         return PipelineResponse(
             success=True,
             proposed_changes=changes,
-            entries_processed=len(request.entries),
+            entries_processed=len(body.entries),
         )
     except Exception as e:
         logger.exception("Pipeline cleanup error: %s", e)

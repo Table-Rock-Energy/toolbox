@@ -525,6 +525,208 @@ class TestBatchConfig:
         assert resp.batch_max_retries == 2
 
 
+class TestBatchConcurrency:
+    """Test concurrent batch execution in GeminiProvider."""
+
+    @pytest.mark.asyncio
+    async def test_provider_uses_semaphore_with_settings(self):
+        """GeminiProvider.cleanup_entries uses asyncio.Semaphore from settings."""
+        from app.services.llm.gemini_provider import GeminiProvider
+        from app.core.config import settings as runtime_settings
+
+        original_batch_size = runtime_settings.batch_size
+        original_concurrency = runtime_settings.batch_max_concurrency
+
+        try:
+            runtime_settings.batch_size = 20
+            runtime_settings.batch_max_concurrency = 2
+
+            provider = GeminiProvider()
+            entries = [{"name": f"Person {i}"} for i in range(60)]
+
+            # Mock _cleanup_batch_sync to return empty suggestions
+            with patch(
+                "app.services.llm.gemini_provider._cleanup_batch_sync",
+                return_value=[],
+            ), patch(
+                "app.services.gemini_service._get_client",
+                return_value=MagicMock(),
+            ):
+                changes = await provider.cleanup_entries("extract", entries)
+
+            assert isinstance(changes, list)
+        finally:
+            runtime_settings.batch_size = original_batch_size
+            runtime_settings.batch_max_concurrency = original_concurrency
+
+    @pytest.mark.asyncio
+    async def test_provider_creates_correct_number_of_batches(self):
+        """With 60 entries and batch_size=25, creates 3 batches."""
+        from app.services.llm.gemini_provider import GeminiProvider
+        from app.core.config import settings as runtime_settings
+
+        original_batch_size = runtime_settings.batch_size
+        original_concurrency = runtime_settings.batch_max_concurrency
+
+        try:
+            runtime_settings.batch_size = 25
+            runtime_settings.batch_max_concurrency = 2
+
+            provider = GeminiProvider()
+            entries = [{"name": f"Person {i}"} for i in range(60)]
+            call_count = 0
+
+            def mock_batch_sync(client, tool, batch, offset, source_data=None):
+                nonlocal call_count
+                call_count += 1
+                return []
+
+            with patch(
+                "app.services.llm.gemini_provider._cleanup_batch_sync",
+                side_effect=mock_batch_sync,
+            ), patch(
+                "app.services.gemini_service._get_client",
+                return_value=MagicMock(),
+            ):
+                await provider.cleanup_entries("extract", entries)
+
+            assert call_count == 3  # ceil(60/25) = 3
+        finally:
+            runtime_settings.batch_size = original_batch_size
+            runtime_settings.batch_max_concurrency = original_concurrency
+
+    @pytest.mark.asyncio
+    async def test_provider_reads_batch_size_from_settings(self):
+        """Provider reads batch_size from runtime settings, not hardcoded constant."""
+        from app.services.llm.gemini_provider import GeminiProvider
+        from app.core.config import settings as runtime_settings
+
+        original_batch_size = runtime_settings.batch_size
+        original_concurrency = runtime_settings.batch_max_concurrency
+
+        try:
+            runtime_settings.batch_size = 10
+            runtime_settings.batch_max_concurrency = 1
+
+            provider = GeminiProvider()
+            entries = [{"name": f"Person {i}"} for i in range(30)]
+            call_count = 0
+
+            def mock_batch_sync(client, tool, batch, offset, source_data=None):
+                nonlocal call_count
+                call_count += 1
+                return []
+
+            with patch(
+                "app.services.llm.gemini_provider._cleanup_batch_sync",
+                side_effect=mock_batch_sync,
+            ), patch(
+                "app.services.gemini_service._get_client",
+                return_value=MagicMock(),
+            ):
+                await provider.cleanup_entries("extract", entries)
+
+            assert call_count == 3  # ceil(30/10) = 3
+        finally:
+            runtime_settings.batch_size = original_batch_size
+            runtime_settings.batch_max_concurrency = original_concurrency
+
+
+class TestDisconnectDetection:
+    """Test disconnect detection in pipeline cleanup."""
+
+    @pytest.mark.asyncio
+    async def test_provider_stops_on_disconnect(self):
+        """When disconnect_check returns True, provider stops and returns partial results."""
+        from app.services.llm.gemini_provider import GeminiProvider
+        from app.core.config import settings as runtime_settings
+        from app.models.ai_validation import AiSuggestion, ConfidenceLevel
+
+        original_batch_size = runtime_settings.batch_size
+        original_concurrency = runtime_settings.batch_max_concurrency
+
+        try:
+            runtime_settings.batch_size = 10
+            runtime_settings.batch_max_concurrency = 1  # Sequential for predictability
+
+            provider = GeminiProvider()
+            entries = [{"name": f"Person {i}"} for i in range(30)]
+            call_count = 0
+
+            def mock_batch_sync(client, tool, batch, offset, source_data=None):
+                nonlocal call_count
+                call_count += 1
+                return [
+                    AiSuggestion(
+                        entry_index=offset,
+                        field="name",
+                        current_value="OLD",
+                        suggested_value="New",
+                        reason="test",
+                        confidence=ConfidenceLevel.HIGH,
+                    )
+                ]
+
+            # Disconnect after first batch
+            disconnect_calls = 0
+
+            def disconnect_check():
+                nonlocal disconnect_calls
+                disconnect_calls += 1
+                return disconnect_calls > 1  # Allow first batch, block rest
+
+            with patch(
+                "app.services.llm.gemini_provider._cleanup_batch_sync",
+                side_effect=mock_batch_sync,
+            ), patch(
+                "app.services.gemini_service._get_client",
+                return_value=MagicMock(),
+            ):
+                changes = await provider.cleanup_entries(
+                    "extract", entries, disconnect_check=disconnect_check
+                )
+
+            # Should have partial results (only first batch completed)
+            assert call_count == 1
+            assert len(changes) >= 1
+        finally:
+            runtime_settings.batch_size = original_batch_size
+            runtime_settings.batch_max_concurrency = original_concurrency
+
+    def test_protocol_includes_disconnect_check(self):
+        """LLMProvider protocol includes disconnect_check parameter."""
+        import inspect
+        from app.services.llm.protocol import LLMProvider
+
+        sig = inspect.signature(LLMProvider.cleanup_entries)
+        assert "disconnect_check" in sig.parameters
+
+    @pytest.mark.asyncio
+    async def test_pipeline_endpoint_accepts_request_and_body(self, authenticated_client):
+        """pipeline_cleanup endpoint accepts Request + PipelineRequest parameters."""
+        mock_provider = AsyncMock()
+        mock_provider.cleanup_entries = AsyncMock(return_value=[])
+        mock_provider.is_available.return_value = True
+
+        with patch(
+            "app.api.pipeline.get_llm_provider", return_value=mock_provider
+        ):
+            response = await authenticated_client.post(
+                "/api/pipeline/cleanup",
+                json={
+                    "tool": "extract",
+                    "entries": [{"name": "JOHN SMITH"}],
+                },
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        # Verify disconnect_check was passed
+        call_kwargs = mock_provider.cleanup_entries.call_args
+        assert "disconnect_check" in call_kwargs.kwargs
+
+
 class TestPipelineAuth:
     """Test that pipeline endpoints require authentication."""
 

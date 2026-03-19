@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import Callable, TYPE_CHECKING
 
 from app.core.config import settings
 from app.models.ai_validation import AiSuggestion, ConfidenceLevel
@@ -115,30 +115,55 @@ class GeminiProvider:
     async def cleanup_entries(
         self, tool: str, entries: list[dict],
         *, source_data: list[dict] | None = None,
+        disconnect_check: Callable[[], bool] | None = None,
     ) -> list[ProposedChange]:
         """Send entries to Gemini for cleanup suggestions.
 
+        Uses asyncio.Semaphore to limit concurrent batches and checks for
+        client disconnection between batch cycles.
+
         Returns a list of ProposedChange objects (source='ai_cleanup', authoritative=False).
         """
-        from app.services.gemini_service import _get_client, BATCH_SIZE, BATCH_DELAY_SECONDS
+        from app.services.gemini_service import _get_client, BATCH_DELAY_SECONDS
+        from app.core.config import settings as runtime_settings
+
+        batch_size = getattr(runtime_settings, 'batch_size', 25)
+        max_concurrency = getattr(runtime_settings, 'batch_max_concurrency', 2)
 
         client = _get_client()
+        total_batches = (len(entries) + batch_size - 1) // batch_size
+        semaphore = asyncio.Semaphore(max_concurrency)
         all_suggestions: list[AiSuggestion] = []
-        total_batches = (len(entries) + BATCH_SIZE - 1) // BATCH_SIZE
 
-        for batch_idx in range(total_batches):
-            start = batch_idx * BATCH_SIZE
-            end = min(start + BATCH_SIZE, len(entries))
-            batch = entries[start:end]
+        async def process_batch(batch_idx: int) -> list[AiSuggestion]:
+            async with semaphore:
+                # Check disconnect before each batch
+                if disconnect_check and disconnect_check():
+                    logger.warning("Client disconnected, skipping batch %d", batch_idx)
+                    return []
 
-            batch_suggestions = await asyncio.to_thread(
-                _cleanup_batch_sync, client, tool, batch, start, source_data
-            )
-            all_suggestions.extend(batch_suggestions)
+                start = batch_idx * batch_size
+                batch = entries[start:start + batch_size]
 
-            # Delay between batches to respect rate limits
-            if batch_idx < total_batches - 1:
-                await asyncio.sleep(BATCH_DELAY_SECONDS)
+                result = await asyncio.to_thread(
+                    _cleanup_batch_sync, client, tool, batch, start, source_data
+                )
+
+                # Delay between batches to respect rate limits
+                if batch_idx < total_batches - 1:
+                    await asyncio.sleep(BATCH_DELAY_SECONDS)
+
+                return result
+
+        # Run batches concurrently (semaphore limits in-flight count)
+        tasks = [process_batch(i) for i in range(total_batches)]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error("Batch failed: %s", result)
+                continue
+            all_suggestions.extend(result)
 
         # Transform AiSuggestion -> ProposedChange
         return [

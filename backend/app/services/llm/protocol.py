@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Callable, Protocol, runtime_checkable
 
 from app.models.pipeline import ProposedChange
 
@@ -19,6 +19,7 @@ class LLMProvider(Protocol):
     async def cleanup_entries(
         self, tool: str, entries: list[dict],
         *, source_data: list[dict] | None = None,
+        disconnect_check: Callable[[], bool] | None = None,
     ) -> list[ProposedChange]: ...
 
     def is_available(self) -> bool: ...
