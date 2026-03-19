@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Pipeline Fixes & Unified Enrichment
 status: unknown
-stopped_at: Completed 11-01-PLAN.md
-last_updated: "2026-03-18T20:08:43.475Z"
+stopped_at: Completed 10-01-PLAN.md
+last_updated: "2026-03-19T14:07:46.562Z"
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 4
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-18)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Phase 11 — rrc-pipeline-fix
+**Current focus:** Phase 10 — auth-hardening-ghl-cleanup
 
 ## Current Position
 
-Phase: 11 (rrc-pipeline-fix) — COMPLETE
-Plan: 1 of 1 (done)
+Phase: 10 (auth-hardening-ghl-cleanup) — EXECUTING
+Plan: 2 of 3
 
 ## Accumulated Context
 
@@ -36,6 +36,7 @@ Plan: 1 of 1 (done)
 - v1.6: runAllSteps() uses local variable threading, not React state (avoids stale closure)
 - [Phase 11]: Keep split_lease_number for backward compat, add split_compound_lease as new function
 - [Phase 11]: Each concurrent RRC worker creates own requests.Session for thread safety
+- [Phase 10-01]: No migration needed: Pydantic v2 silently drops unknown fields from requests
 
 ### Pending Todos
 
@@ -51,6 +52,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-18T19:58:45.064Z
-Stopped at: Completed 11-01-PLAN.md
+Last session: 2026-03-19T14:07:46.560Z
+Stopped at: Completed 10-01-PLAN.md
 Resume file: None

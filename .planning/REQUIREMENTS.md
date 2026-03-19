@@ -23,8 +23,8 @@ Requirements for v1.6 Pipeline Fixes & Unified Enrichment. Each maps to roadmap 
 
 ### GHL Cleanup
 
-- [ ] **GHL-01**: `smart_list_name` field removed from backend model and API
-- [ ] **GHL-02**: `smart_list_name` references removed from frontend types and API client
+- [x] **GHL-01**: `smart_list_name` field removed from backend model and API
+- [x] **GHL-02**: `smart_list_name` references removed from frontend types and API client
 
 ### Unified Enrichment
 
@@ -74,8 +74,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RRC-01 | Phase 11 | Complete |
 | RRC-02 | Phase 11 | Complete |
 | RRC-03 | Phase 11 | Complete |
-| GHL-01 | Phase 10 | Pending |
-| GHL-02 | Phase 10 | Pending |
+| GHL-01 | Phase 10 | Complete |
+| GHL-02 | Phase 10 | Complete |
 | ENRICH-01 | Phase 12 | Pending |
 | ENRICH-02 | Phase 12 | Pending |
 | ENRICH-03 | Phase 12 | Pending |
