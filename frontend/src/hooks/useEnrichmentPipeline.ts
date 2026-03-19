@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useMemo } from 'react'
 import { pipelineApi } from '../utils/api'
 import type { ProposedChange } from '../utils/api'
 
-type PipelineStep = 'cleanup' | 'validate' | 'enrich'
+export type PipelineStep = 'cleanup' | 'validate' | 'enrich'
 
 export interface UseEnrichmentPipelineOptions<T> {
   tool: string
