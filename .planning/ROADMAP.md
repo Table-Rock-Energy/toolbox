@@ -160,7 +160,7 @@ Phases 13 and 14 are sequential. Phases 15, 16, 17 can run after 13 completes (1
 | 11. RRC Pipeline Fix | v1.6 | 1/1 | Complete | 2026-03-18 |
 | 12. Unified Enrichment Modal | v1.6 | 2/2 | Complete | 2026-03-19 |
 | 13. Operation Context & Batch Engine | 2/2 | Complete    | 2026-03-19 | - |
-| 14. AI Cleanup Batching | 2/2 | Complete   | 2026-03-19 | - |
+| 14. AI Cleanup Batching | 2/2 | Complete    | 2026-03-19 | - |
 | 15. Operation Persistence UI | v1.7 | 0/? | Not started | - |
 | 16. Revenue Multi-PDF Streaming | v1.7 | 0/? | Not started | - |
 | 17. Proration Performance | v1.7 | 0/? | Not started | - |
