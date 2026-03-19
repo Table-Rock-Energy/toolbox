@@ -54,6 +54,7 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - ✓ History user-scoping (non-admin sees own jobs only) and delete ownership checks (403 for non-owner) — v1.6
 - ✓ GHL smart_list_name removed from backend model, API, and frontend types — v1.6
 - ✓ 403 delete error modal on all 5 tool pages — v1.6
+- ✓ Unified enrichment modal: single Enrich button replaces 3-button toolbar, progress modal with step indicators and ETA, per-cell highlighting with original-value tooltips, global undo — v1.6
 
 ### Active
 
@@ -120,5 +121,7 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Entry-number matching (not fuzzy) for PDF/CSV merge | Simple, reliable, covers the common case | ✓ Good — v1.4 |
 | Dedicated ecf_parser.py module (not extending parser.py) | Clean separation, ECF has distinct parsing logic | ✓ Good — v1.4 |
 
+| Unified enrichment as single-button modal (not improving 3-button toolbar) | Users want fewer clicks; modal contains all progress; undo is more discoverable | Pending live verification — v1.6 |
+
 ---
-*Last updated: 2026-03-19 after Phase 10 (Auth Hardening & GHL Cleanup) completion*
+*Last updated: 2026-03-19 after Phase 12 (Unified Enrichment Modal) completion*
