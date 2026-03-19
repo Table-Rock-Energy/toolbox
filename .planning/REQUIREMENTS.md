@@ -9,21 +9,21 @@ Requirements for v1.7 Batch Processing & Resilience. Each maps to roadmap phases
 
 ### Batch Processing
 
-- [ ] **BATCH-01**: User sees AI cleanup process entries in batches of 25 with per-batch progress
-- [ ] **BATCH-02**: User sees ETA for remaining batches based on first-batch timing
+- [x] **BATCH-01**: User sees AI cleanup process entries in batches of 25 with per-batch progress
+- [x] **BATCH-02**: User sees ETA for remaining batches based on first-batch timing
 - [ ] **BATCH-03**: User can configure batch size per tool via admin settings
 - [ ] **BATCH-04**: System runs multiple batches concurrently when Gemini rate limits allow
 
 ### Operation Resilience
 
-- [ ] **RESIL-01**: All fetch requests use AbortController and cancel on component unmount
+- [x] **RESIL-01**: All fetch requests use AbortController and cancel on component unmount
 - [ ] **RESIL-02**: Backend stops Gemini processing when client disconnects (request.is_disconnected)
-- [ ] **RESIL-03**: User receives partial results when a batch fails (successful batches preserved)
+- [x] **RESIL-03**: User receives partial results when a batch fails (successful batches preserved)
 - [ ] **RESIL-04**: System automatically retries failed batches up to a configurable limit
 
 ### Operation Persistence
 
-- [ ] **PERSIST-01**: Active operations continue when user navigates between pages
+- [x] **PERSIST-01**: Active operations continue when user navigates between pages
 - [ ] **PERSIST-02**: User sees active operation status bar in MainLayout header
 - [ ] **PERSIST-03**: User can return to a tool page and see results from an operation that completed while away
 
@@ -65,15 +65,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BATCH-01 | Phase 13 | Pending |
-| BATCH-02 | Phase 13 | Pending |
+| BATCH-01 | Phase 13 | Complete |
+| BATCH-02 | Phase 13 | Complete |
 | BATCH-03 | Phase 14 | Pending |
 | BATCH-04 | Phase 14 | Pending |
-| RESIL-01 | Phase 13 | Pending |
+| RESIL-01 | Phase 13 | Complete |
 | RESIL-02 | Phase 14 | Pending |
-| RESIL-03 | Phase 13 | Pending |
+| RESIL-03 | Phase 13 | Complete |
 | RESIL-04 | Phase 14 | Pending |
-| PERSIST-01 | Phase 13 | Pending |
+| PERSIST-01 | Phase 13 | Complete |
 | PERSIST-02 | Phase 15 | Pending |
 | PERSIST-03 | Phase 15 | Pending |
 | PERF-01 | Phase 17 | Pending |
