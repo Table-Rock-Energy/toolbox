@@ -295,3 +295,15 @@ async def test_no_dev_mode_bypass(unauthenticated_client: AsyncClient):
             headers={"Authorization": "Bearer fake-dev-token"},
         )
     assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GHL: smart_list_name field removed
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ghl_bulk_send_model_no_smart_list_name():
+    """BulkSendRequest model no longer has smart_list_name field."""
+    from app.models.ghl import BulkSendRequest
+    assert "smart_list_name" not in BulkSendRequest.model_fields
