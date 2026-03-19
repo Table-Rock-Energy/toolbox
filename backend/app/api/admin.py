@@ -24,6 +24,7 @@ from app.core.auth import (
     is_user_admin,
     get_user_by_email,
     require_admin,
+    require_auth,
     set_user_password,
 )
 from app.services.shared.encryption import encrypt_value, decrypt_value
@@ -278,7 +279,7 @@ class OptionsResponse(BaseModel):
 
 
 @router.get("/options", response_model=OptionsResponse)
-async def get_options():
+async def get_options(user: dict = Depends(require_admin)):
     """Get available roles, scopes, and tools for user management."""
     return OptionsResponse(
         roles=AVAILABLE_ROLES,
@@ -288,7 +289,7 @@ async def get_options():
 
 
 @router.get("/users", response_model=AllowlistResponse)
-async def list_allowed_users():
+async def list_allowed_users(user: dict = Depends(require_admin)):
     """List all users in the allowlist."""
     users = get_full_allowlist()
     return AllowlistResponse(
@@ -409,7 +410,7 @@ async def check_user(email: str):
 
 
 @router.get("/settings/gemini", response_model=GeminiSettingsResponse)
-async def get_gemini_settings():
+async def get_gemini_settings(user: dict = Depends(require_admin)):
     """Get current Gemini AI settings (API key masked).
 
     Reads from the unified ``google_cloud`` section when present; falls back
@@ -473,7 +474,7 @@ async def update_gemini_settings(request: GeminiSettingsRequest, user: dict = De
 
 
 @router.get("/settings/google-cloud", response_model=GoogleCloudSettingsResponse)
-async def get_google_cloud_settings():
+async def get_google_cloud_settings(user: dict = Depends(require_admin)):
     """Get current unified Google Cloud API settings (key masked)."""
     app_settings = load_app_settings()
     gc = app_settings.get("google_cloud", {})
@@ -533,7 +534,7 @@ async def update_google_cloud_settings(
 
 
 @router.get("/settings/google-maps", response_model=GoogleMapsSettingsResponse)
-async def get_google_maps_settings():
+async def get_google_maps_settings(user: dict = Depends(require_admin)):
     """Get current Google Maps API settings (key masked).
 
     Reads from the unified ``google_cloud`` section when present; falls back
@@ -590,6 +591,7 @@ async def update_google_maps_settings(request: GoogleMapsSettingsRequest, user: 
 async def upload_profile_image(
     file: Annotated[UploadFile, File(description="Profile image file")],
     user_id: Annotated[str, Form(description="Firebase user ID")],
+    user: dict = Depends(require_auth),
 ):
     """
     Upload a profile image for a user.
@@ -649,7 +651,7 @@ async def upload_profile_image(
 
 
 @router.get("/profile-image/{user_id}")
-async def get_profile_image(user_id: str):
+async def get_profile_image(user_id: str, user: dict = Depends(require_auth)):
     """
     Serve a profile image from storage (GCS or local).
 
@@ -697,7 +699,7 @@ class UserPreferencesResponse(BaseModel):
 
 
 @router.get("/preferences/{email}", response_model=UserPreferencesResponse)
-async def get_preferences(email: str):
+async def get_preferences(email: str, user: dict = Depends(require_auth)):
     """Get notification preferences for a user."""
     try:
         from app.services.firestore_service import get_user_preferences
@@ -717,7 +719,7 @@ async def get_preferences(email: str):
 
 
 @router.put("/preferences/{email}", response_model=UserPreferencesResponse)
-async def update_preferences(email: str, request: UserPreferencesRequest):
+async def update_preferences(email: str, request: UserPreferencesRequest, user: dict = Depends(require_auth)):
     """Update notification preferences for a user."""
     try:
         from app.services.firestore_service import set_user_preferences
