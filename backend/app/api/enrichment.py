@@ -6,7 +6,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.core.auth import require_admin, require_auth
+from app.core.auth import require_admin
 
 from app.models.enrichment import (
     EnrichmentConfigUpdateRequest,

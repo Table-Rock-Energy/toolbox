@@ -319,7 +319,7 @@ export function useEnrichmentPipeline<T extends object>(
     setPreAutoApplySnapshot(snapshot)
 
     // Local variable entries -- threaded through steps (NOT React state)
-    let currentEntries = previewEntries.map(e => ({ ...e } as Record<string, unknown>))
+    const currentEntries = previewEntries.map(e => ({ ...e } as Record<string, unknown>))
     const allChanges = new Map<string, EnrichmentCellChange>()
 
     for (let i = 0; i < steps.length; i++) {

@@ -14,6 +14,7 @@ from datetime import datetime
 from difflib import SequenceMatcher
 from typing import Optional
 
+from app.core.config import settings as _settings
 from app.models.etl import (
     AddressRecord,
     Entity,
@@ -36,8 +37,6 @@ from app.services.etl.entity_registry import (
 logger = logging.getLogger(__name__)
 
 # Minimum score to consider a match (configurable via settings.entity_match_threshold)
-from app.core.config import settings as _settings
-
 MATCH_THRESHOLD = _settings.entity_match_threshold
 
 # Weights for different matching signals

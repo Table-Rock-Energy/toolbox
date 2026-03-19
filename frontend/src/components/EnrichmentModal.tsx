@@ -23,8 +23,6 @@ export default function EnrichmentModal({
   pipelineStatus,
   enrichmentChanges,
 }: EnrichmentModalProps) {
-  if (!isOpen) return null
-
   const completedCount = stepStatuses.filter(
     s => s.status === 'completed' || s.status === 'skipped' || s.status === 'error'
   ).length
@@ -63,6 +61,8 @@ export default function EnrichmentModal({
     enrichmentChanges.forEach(c => entries.add(c.entry_index))
     return entries.size
   }, [enrichmentChanges])
+
+  if (!isOpen) return null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">

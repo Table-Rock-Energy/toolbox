@@ -204,7 +204,7 @@ async def pipeline_validate(request: PipelineRequest) -> PipelineResponse:
                         field=street_field,
                         current_value=street,
                         proposed_value=result.validated_street,
-                        reason=f"Google Maps corrected street address",
+                        reason="Google Maps corrected street address",
                         confidence=result.confidence,
                         source="google_maps",
                         authoritative=True,

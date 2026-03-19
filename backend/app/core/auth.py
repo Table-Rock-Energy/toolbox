@@ -238,7 +238,6 @@ def get_firebase_app():
     if _firebase_app is None:
         try:
             import firebase_admin
-            from firebase_admin import credentials
 
             # Try to initialize with default credentials (for Cloud Run)
             # or with a service account file

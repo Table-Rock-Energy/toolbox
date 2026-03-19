@@ -10,7 +10,7 @@ from uuid import uuid4
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
 from app.core.ingestion import file_response, persist_job_result, validate_upload
-from app.models.ghl_prep import ExportRequest, TransformResult, UploadResponse
+from app.models.ghl_prep import ExportRequest, UploadResponse
 from app.services.ghl_prep.export_service import generate_filename, to_csv
 from app.services.ghl_prep.transform_service import transform_csv
 

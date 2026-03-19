@@ -30,7 +30,6 @@ from app.models.ghl import (
     GHLValidationResult,
     GHLUserResponse,
     BulkSendRequest,
-    BulkSendResponse,
     BulkSendValidationResponse,
     BulkSendStartResponse,
     ContactResult,

@@ -22,7 +22,6 @@ from typing import AsyncGenerator
 
 from app.core.config import settings
 from app.models.ai_validation import (
-    AiSuggestion,
     AutoCorrection,
     ConfidenceLevel,
     PostProcessResult,
