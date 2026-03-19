@@ -48,11 +48,11 @@ Exceptions: none
 | Role | Size | Weight | Line Height |
 |------|------|--------|-------------|
 | Body | 14px (text-sm) | 400 (normal) | 1.5 |
-| Label | 12px (text-xs) | 500 (medium) | 1.5 |
+| Label | 12px (text-xs) | 400 (normal) | 1.5 |
 | Heading | 18px (text-lg) | 600 (semibold) | 1.2 |
 | Display | 20px (text-xl) | 600 (semibold) | 1.2 |
 
-Note: This phase uses only Body, Label, and Heading roles. All text uses `font-oswald`. Heading applies to the modal title only.
+Note: Two weights only -- 400 (body, label) and 600 (heading, display). This phase uses only Body, Label, and Heading roles. All text uses `font-oswald`. Heading applies to the modal title only.
 
 ---
 
@@ -95,8 +95,8 @@ Additional semantic colors used (established patterns, not new):
 | Cancel confirmation dismiss | "Keep Running" |
 | Empty state heading | n/a (modal only shows when operation starts) |
 | Empty state body | n/a |
-| Error state | Step-level: error message from API response. No global error state for this phase. |
-| Done button | "Done" |
+| Error state | Step-level: "{step name} failed -- check your connection and try again." Falls back to API error message if available. |
+| Done button | "Close Summary" |
 
 ---
 
@@ -123,6 +123,7 @@ Extended with batch-level progress sub-section.
 - **Batch sub-progress bar:** Nested inside the active step row. Same styling as overall progress bar (`h-2 bg-gray-200 rounded-full` track, `bg-tre-teal rounded-full` fill) but scoped to batch completion within the current step.
 - **Failure summary:** When `failedBatches > 0` at step completion, show inline below the step label: `text-xs text-amber-600` with "{skipped} entries skipped ({failed} batch failed)". Uses amber (not red) to distinguish partial failure from total step failure.
 - **Amber addition:** `#d97706` amber-600 for partial failure text only. This is the single new color introduced.
+- **Done button:** Label reads "Close Summary" (verb + noun). Dismisses the modal after operation completes.
 
 ### Unchanged (context-driven props only)
 
