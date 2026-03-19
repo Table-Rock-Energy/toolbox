@@ -58,7 +58,22 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 
 ### Active
 
-<!-- No active milestone — v1.6 shipped, next milestone TBD -->
+<!-- Current milestone: v1.7 Batch Processing & Resilience -->
+
+## Current Milestone: v1.7 Batch Processing & Resilience
+
+**Goal:** Eliminate timeouts and lost work by batching long operations, adding progress feedback, and making operations survive navigation.
+
+**Target features:**
+- Client-side batch orchestration for AI cleanup (25-entry batches with ETA)
+- Streaming batch responses for all Gemini-touching endpoints
+- Abort/cancel propagation (client → backend)
+- Partial results on failure (return successful batches)
+- Proration cache-first lookup with startup pre-warming
+- Proration batch Firestore reads (asyncio.gather)
+- Revenue per-PDF progress streaming
+- Operation persistence across navigation (background job pattern)
+- Global operation state (results survive page changes)
 
 ### Out of Scope
 
@@ -117,4 +132,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Local variable threading in runAllSteps (not React state) | Avoids stale closure between sequential async steps | ✓ Good — v1.6 |
 
 ---
-*Last updated: 2026-03-19 after v1.6 milestone completion*
+*Last updated: 2026-03-19 after v1.7 milestone start*

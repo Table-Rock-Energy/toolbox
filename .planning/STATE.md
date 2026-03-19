@@ -1,30 +1,32 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.6
-milestone_name: Pipeline Fixes & Unified Enrichment
-status: unknown
-stopped_at: Completed 12-02-PLAN.md
-last_updated: "2026-03-19T17:31:57.750Z"
+milestone: v1.7
+milestone_name: Batch Processing & Resilience
+status: defining_requirements
+stopped_at: null
+last_updated: "2026-03-19T18:00:00.000Z"
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-18)
+See: .planning/PROJECT.md (updated 2026-03-19)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Phase 12 — unified-enrichment-modal
+**Current focus:** Defining requirements for v1.7
 
 ## Current Position
 
-Phase: 12 (unified-enrichment-modal) — EXECUTING
-Plan: 2 of 2
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-19 — Milestone v1.7 started
 
 ## Accumulated Context
 
@@ -40,7 +42,6 @@ Plan: 2 of 2
 - [Phase 10]: Reuse require_auth as handler param (FastAPI caches per-request, no double auth)
 - [Phase 10]: 403 modal uses existing Modal component with ShieldAlert icon, not toast
 - [Phase 12]: All confidence levels auto-applied in runAllSteps (no filtering)
-- [Phase 12]: Verification deferred to production (local dev unavailable); enrichment modal tested in live environment
 
 ### Pending Todos
 
@@ -48,7 +49,7 @@ None.
 
 ### Blockers/Concerns
 
-- Enrichment: Verify `ApiClient` in `utils/api.ts` can propagate AbortController signal
+None.
 
 ### Quick Tasks Completed
 
@@ -58,5 +59,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-19
-Stopped at: Completed quick task 260319-ixh: Move RRC data status into upload card
+Stopped at: Milestone v1.7 initialization
 Resume file: None
