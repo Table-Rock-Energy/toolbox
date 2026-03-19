@@ -65,28 +65,28 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BATCH-01 | Pending | Pending |
-| BATCH-02 | Pending | Pending |
-| BATCH-03 | Pending | Pending |
-| BATCH-04 | Pending | Pending |
-| RESIL-01 | Pending | Pending |
-| RESIL-02 | Pending | Pending |
-| RESIL-03 | Pending | Pending |
-| RESIL-04 | Pending | Pending |
-| PERSIST-01 | Pending | Pending |
-| PERSIST-02 | Pending | Pending |
-| PERSIST-03 | Pending | Pending |
-| PERF-01 | Pending | Pending |
-| PERF-02 | Pending | Pending |
-| PERF-03 | Pending | Pending |
-| PERF-04 | Pending | Pending |
-| REV-01 | Pending | Pending |
+| BATCH-01 | Phase 13 | Pending |
+| BATCH-02 | Phase 13 | Pending |
+| BATCH-03 | Phase 14 | Pending |
+| BATCH-04 | Phase 14 | Pending |
+| RESIL-01 | Phase 13 | Pending |
+| RESIL-02 | Phase 14 | Pending |
+| RESIL-03 | Phase 13 | Pending |
+| RESIL-04 | Phase 14 | Pending |
+| PERSIST-01 | Phase 13 | Pending |
+| PERSIST-02 | Phase 15 | Pending |
+| PERSIST-03 | Phase 15 | Pending |
+| PERF-01 | Phase 17 | Pending |
+| PERF-02 | Phase 17 | Pending |
+| PERF-03 | Phase 17 | Pending |
+| PERF-04 | Phase 17 | Pending |
+| REV-01 | Phase 16 | Pending |
 
 **Coverage:**
 - v1.7 requirements: 16 total
-- Mapped to phases: 0
-- Unmapped: 16 ⚠️
+- Mapped to phases: 16
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-19*
-*Last updated: 2026-03-19 after initial definition*
+*Last updated: 2026-03-19 after roadmap creation*

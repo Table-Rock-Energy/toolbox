@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Batch Processing & Resilience
-status: defining_requirements
+status: ready_to_plan
 stopped_at: null
-last_updated: "2026-03-19T18:00:00.000Z"
+last_updated: "2026-03-19T19:00:00.000Z"
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,29 +19,27 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-19)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Defining requirements for v1.7
+**Current focus:** v1.7 Phase 13 -- Operation Context & Batch Engine
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-19 — Milestone v1.7 started
+Phase: 13 of 17 (Operation Context & Batch Engine)
+Plan: 0 of ? in current phase
+Status: Ready to plan
+Last activity: 2026-03-19 -- Roadmap created for v1.7
+
+Progress: [##########..............] 0/5 v1.7 phases
 
 ## Accumulated Context
 
 ### Decisions
 
 - v1.6: Per-endpoint Depends() for admin auth, not router-level (avoids check_user deadlock)
-- v1.6: GHL smart_list_name two-step removal (frontend first, backend second) to avoid 422 on cached frontends
 - v1.6: Enrichment modal uses sequential await, not SSE (steps are 2-15s each)
 - v1.6: runAllSteps() uses local variable threading, not React state (avoids stale closure)
-- [Phase 11]: Keep split_lease_number for backward compat, add split_compound_lease as new function
-- [Phase 11]: Each concurrent RRC worker creates own requests.Session for thread safety
-- [Phase 10-01]: No migration needed: Pydantic v2 silently drops unknown fields from requests
-- [Phase 10]: Reuse require_auth as handler param (FastAPI caches per-request, no double auth)
-- [Phase 10]: 403 modal uses existing Modal component with ShieldAlert icon, not toast
-- [Phase 12]: All confidence levels auto-applied in runAllSteps (no filtering)
+- v1.7: Client-side batch orchestration for AI cleanup, server-side SSE for Revenue (research recommendation)
+- v1.7: OperationContext at MainLayout level (survives navigation, keyed by tool name)
+- v1.7: useBatchPipeline hook as shared engine for all batch operations
 
 ### Pending Todos
 
@@ -49,7 +47,7 @@ None.
 
 ### Blockers/Concerns
 
-None.
+- [v1.6]: EnrichmentToolbar component still exported from barrel (unused, cleanup candidate)
 
 ### Quick Tasks Completed
 
@@ -59,5 +57,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-19
-Stopped at: Milestone v1.7 initialization
+Stopped at: v1.7 roadmap created, ready to plan Phase 13
 Resume file: None
