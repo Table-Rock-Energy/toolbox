@@ -6,8 +6,9 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.core.auth import is_user_admin, require_auth
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -38,15 +39,20 @@ def _serialize_doc(doc: dict) -> dict:
 async def get_jobs(
     tool: Optional[str] = Query(None, description="Filter by tool (extract, title, proration, revenue)"),
     limit: int = Query(50, ge=1, le=100, description="Maximum number of jobs to return"),
+    user: dict = Depends(require_auth),
 ):
-    """Get recent job history."""
+    """Get recent job history. Non-admin sees own jobs only."""
     if not settings.firestore_enabled:
         raise HTTPException(status_code=503, detail="Database not enabled")
 
     try:
         from app.services import firestore_service as db
 
-        jobs = await db.get_recent_jobs(tool=tool, limit=limit)
+        email = user.get("email", "")
+        if is_user_admin(email):
+            jobs = await db.get_recent_jobs(tool=tool, limit=limit)
+        else:
+            jobs = await db.get_user_jobs(user_id=email, tool=tool, limit=limit)
         jobs = [_serialize_doc(j) for j in jobs]
 
         # Resolve emails to names for jobs missing user_name
@@ -81,13 +87,26 @@ async def get_jobs(
 
 
 @router.delete("/jobs/{job_id}")
-async def delete_job(job_id: str):
-    """Delete a job and all its associated entries."""
+async def delete_job(job_id: str, user: dict = Depends(require_auth)):
+    """Delete a job. Restricted to job owner or admin."""
     if not settings.firestore_enabled:
         raise HTTPException(status_code=503, detail="Database not enabled")
 
     try:
         from app.services import firestore_service as db
+
+        job = await db.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        email = user.get("email", "")
+        job_owner = job.get("user_id", "")
+
+        if job_owner != email and not is_user_admin(email):
+            raise HTTPException(
+                status_code=403,
+                detail="You can only delete your own jobs",
+            )
 
         deleted = await db.delete_job(job_id)
         if not deleted:
