@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Pipeline Fixes & Unified Enrichment
 status: unknown
-stopped_at: Completed 10-01-PLAN.md
-last_updated: "2026-03-19T14:07:46.562Z"
+stopped_at: Completed 10-03-PLAN.md
+last_updated: "2026-03-19T14:09:41.009Z"
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 4
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-18)
 ## Current Position
 
 Phase: 10 (auth-hardening-ghl-cleanup) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Accumulated Context
 
@@ -37,6 +37,8 @@ Plan: 2 of 3
 - [Phase 11]: Keep split_lease_number for backward compat, add split_compound_lease as new function
 - [Phase 11]: Each concurrent RRC worker creates own requests.Session for thread safety
 - [Phase 10-01]: No migration needed: Pydantic v2 silently drops unknown fields from requests
+- [Phase 10]: Reuse require_auth as handler param (FastAPI caches per-request, no double auth)
+- [Phase 10]: 403 modal uses existing Modal component with ShieldAlert icon, not toast
 
 ### Pending Todos
 
@@ -52,6 +54,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-19T14:07:46.560Z
-Stopped at: Completed 10-01-PLAN.md
+Last session: 2026-03-19T14:09:41.006Z
+Stopped at: Completed 10-03-PLAN.md
 Resume file: None
