@@ -3,7 +3,8 @@ import type { ReactNode } from 'react'
 import { pipelineApi } from '../utils/api'
 import type { PipelineStep, PipelineStatus, StepStatus, EnrichmentCellChange } from '../hooks/useEnrichmentPipeline'
 
-const BATCH_SIZE = 25
+const DEFAULT_BATCH_SIZE = 25
+const DEFAULT_MAX_RETRIES = 1
 
 // --- Interfaces ---
 
@@ -46,7 +47,7 @@ interface StartOperationOpts {
 }
 
 interface OperationActions {
-  startOperation: (opts: StartOperationOpts) => void
+  startOperation: (opts: StartOperationOpts) => void | Promise<void>
   abortOperation: () => void
   undoOperation: () => void
   clearOperation: () => void
@@ -64,6 +65,7 @@ export function OperationProvider({ children }: { children: ReactNode }) {
   const [operation, setOperation] = useState<OperationState | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const updateEntriesRef = useRef<((entries: Record<string, unknown>[]) => void) | null>(null)
+  const batchConfigRef = useRef({ batchSize: DEFAULT_BATCH_SIZE, maxRetries: DEFAULT_MAX_RETRIES })
 
   // beforeunload: abort in-flight fetches on tab/window close only
   useEffect(() => {
@@ -74,12 +76,30 @@ export function OperationProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [])
 
+  // Fetch batch config from admin settings (falls back to defaults if non-admin or error)
+  const fetchBatchConfig = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/settings/google-cloud')
+      if (res.ok) {
+        const data = await res.json()
+        batchConfigRef.current = {
+          batchSize: data.batch_size ?? DEFAULT_BATCH_SIZE,
+          maxRetries: data.batch_max_retries ?? DEFAULT_MAX_RETRIES,
+        }
+      }
+    } catch {
+      // Falls back to defaults
+    }
+  }, [])
+
   // Core batch-aware pipeline engine
   const runPipeline = useCallback(async (
     opts: StartOperationOpts,
     controller: AbortController,
   ) => {
     const { tool, entries, editedFields, keyField, featureFlags, sourceData } = opts
+    const batchSize = batchConfigRef.current.batchSize
+    const maxRetries = batchConfigRef.current.maxRetries
 
     // Determine enabled steps
     const steps: PipelineStep[] = []
@@ -120,17 +140,18 @@ export function OperationProvider({ children }: { children: ReactNode }) {
         : step === 'validate' ? pipelineApi.validate
         : pipelineApi.enrich
 
-      const totalBatches = Math.ceil(currentEntries.length / BATCH_SIZE)
+      const totalBatches = Math.ceil(currentEntries.length / batchSize)
       const batchTimings: number[] = []
       let failedBatches = 0
       let skippedEntries = 0
+      const failedBatchRanges: { start: number; end: number }[] = []
       let stepChangesApplied = 0
 
       for (let bi = 0; bi < totalBatches; bi++) {
         if (controller.signal.aborted) break
 
-        const batchStart = bi * BATCH_SIZE
-        const batch = currentEntries.slice(batchStart, batchStart + BATCH_SIZE)
+        const batchStart = bi * batchSize
+        const batch = currentEntries.slice(batchStart, batchStart + batchSize)
         const batchStartTime = Date.now()
 
         try {
@@ -200,6 +221,7 @@ export function OperationProvider({ children }: { children: ReactNode }) {
           // Skip and continue (RESIL-03)
           failedBatches++
           skippedEntries += batch.length
+          failedBatchRanges.push({ start: batchStart, end: batchStart + batch.length })
 
           // Update batch progress with failure counts
           setOperation(prev => {
@@ -217,6 +239,68 @@ export function OperationProvider({ children }: { children: ReactNode }) {
             }
           })
           continue
+        }
+      }
+
+      // --- End-of-step retry for failed batches (RESIL-04) ---
+      if (failedBatchRanges.length > 0 && maxRetries > 0 && !controller.signal.aborted) {
+        let retriesLeft = maxRetries
+        while (failedBatchRanges.length > 0 && retriesLeft > 0 && !controller.signal.aborted) {
+          retriesLeft--
+          const retryRanges = [...failedBatchRanges]
+          failedBatchRanges.length = 0
+
+          for (const range of retryRanges) {
+            if (controller.signal.aborted) break
+            const batch = currentEntries.slice(range.start, range.end)
+            const batchStartTime = Date.now()
+
+            try {
+              const response = await apiMethod(
+                tool,
+                batch,
+                undefined,
+                step === 'cleanup' ? sourceData : undefined,
+              )
+
+              if (controller.signal.aborted) break
+
+              const elapsed = Date.now() - batchStartTime
+              batchTimings.push(elapsed)
+
+              if (response.data?.success && response.data.proposed_changes) {
+                for (const change of response.data.proposed_changes) {
+                  const globalIndex = range.start + change.entry_index
+                  if (globalIndex >= currentEntries.length) continue
+                  const entryKey = String(currentEntries[globalIndex][keyField])
+                  const userEdits = editedFields.get(entryKey)
+                  if (userEdits && change.field in (userEdits as Record<string, unknown>)) continue
+                  const originalValue = String(currentEntries[globalIndex][change.field] ?? '')
+                  currentEntries[globalIndex][change.field] = change.proposed_value
+                  stepChangesApplied++
+                  const changeKey = `${globalIndex}:${change.field}`
+                  if (!allChanges.has(changeKey)) {
+                    allChanges.set(changeKey, {
+                      entry_index: globalIndex,
+                      field: change.field,
+                      original_value: originalValue,
+                      new_value: change.proposed_value,
+                      step,
+                    })
+                  } else {
+                    const existing = allChanges.get(changeKey)!
+                    allChanges.set(changeKey, { ...existing, new_value: change.proposed_value })
+                  }
+                }
+              }
+              updateEntriesRef.current?.(currentEntries.map(e => ({ ...e })))
+              failedBatches--
+              skippedEntries -= batch.length
+            } catch {
+              // Still failed after retry -- re-add to failed ranges
+              failedBatchRanges.push(range)
+            }
+          }
         }
       }
 
@@ -257,7 +341,7 @@ export function OperationProvider({ children }: { children: ReactNode }) {
 
   // --- Actions ---
 
-  const startOperation = useCallback((opts: StartOperationOpts) => {
+  const startOperation = useCallback(async (opts: StartOperationOpts) => {
     // Abort any running operation first
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
@@ -269,6 +353,9 @@ export function OperationProvider({ children }: { children: ReactNode }) {
 
     // Store updateEntries callback in ref for progressive apply
     updateEntriesRef.current = opts.updateEntries
+
+    // Fetch latest batch config before starting
+    await fetchBatchConfig()
 
     // Snapshot entries for undo
     const entriesSnapshot = opts.entries.map(e => ({ ...e }))
@@ -289,7 +376,7 @@ export function OperationProvider({ children }: { children: ReactNode }) {
 
     // Run the pipeline (fire-and-forget async)
     runPipeline(opts, controller)
-  }, [runPipeline])
+  }, [runPipeline, fetchBatchConfig])
 
   const abortOperation = useCallback(() => {
     abortControllerRef.current?.abort()
