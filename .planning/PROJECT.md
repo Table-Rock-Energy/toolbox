@@ -55,6 +55,9 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - ✓ GHL smart_list_name removed from backend model, API, and frontend types — v1.6
 - ✓ 403 delete error modal on all 5 tool pages — v1.6
 - ✓ Unified enrichment modal: single Enrich button replaces 3-button toolbar, progress modal with step indicators and ETA, per-cell highlighting with original-value tooltips, global undo — v1.6
+- ✓ OperationContext provider: batch-aware pipeline engine with 25-entry batches, progressive auto-apply, per-batch ETA, skip-and-continue on failure — v1.7
+- ✓ Operation persistence across navigation: OperationProvider wraps Outlet in MainLayout, auto-restore on mount — v1.7
+- ✓ Batch progress UI: sub-progress bar ("Batch N of M"), amber partial-failure text, cancel confirmation dialog — v1.7
 
 ### Active
 
@@ -98,6 +101,7 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - **Test suite:** 50+ pytest tests (auth smoke, CORS, extract parsers, revenue parser), CI via GitHub Actions
 - **Extract formats:** Standard OCC Exhibit A, ECF multiunit well filings (with optional Convey 640 CSV/Excel)
 - **Shipped:** v1.3 Security Hardening (2026-03-11), v1.4 ECF Extraction (2026-03-12), v1.5 Enrichment Pipeline (2026-03-17), v1.6 Pipeline Fixes & Unified Enrichment (2026-03-19)
+- **In progress:** v1.7 Batch Processing & Resilience — Phase 13 complete (OperationContext + batch engine)
 
 ## Constraints
 
