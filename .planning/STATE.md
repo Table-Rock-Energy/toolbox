@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Batch Processing & Resilience
 status: unknown
-stopped_at: Completed 13-02-PLAN.md
-last_updated: "2026-03-19T21:16:19.220Z"
+stopped_at: Completed 14-01-PLAN.md
+last_updated: "2026-03-19T21:44:51.577Z"
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-19)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Phase 13 — operation-context-batch-engine
+**Current focus:** Phase 14 — ai-cleanup-batching
 
 ## Current Position
 
-Phase: 13 (operation-context-batch-engine) — COMPLETE
-Plan: 2 of 2 (all complete)
+Phase: 14 (ai-cleanup-batching) — EXECUTING
+Plan: 2 of 2
 
 ## Accumulated Context
 
@@ -39,6 +39,9 @@ Plan: 2 of 2 (all complete)
 - [Phase 13]: Split context pattern (OperationStateContext + OperationActionsContext) to prevent re-render storms
 - [Phase 13]: Removed ProposedChangeCell from table cells since OperationContext auto-applies all changes progressively
 - [Phase 13]: Tool pages derive enrichModalOpen from context state (no local useState)
+- [Phase 14]: asyncio.Semaphore for batch concurrency control (simpler than TaskGroup)
+- [Phase 14]: Sync disconnect_check callable with fire-and-forget async polling for disconnect detection
+- [Phase 14]: Batch config in separate batch_config section of app_settings.json
 
 ### Pending Todos
 
@@ -55,6 +58,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-19T20:58:53.639Z
-Stopped at: Completed 13-02-PLAN.md
+Last session: 2026-03-19T21:44:51.575Z
+Stopped at: Completed 14-01-PLAN.md
 Resume file: None
