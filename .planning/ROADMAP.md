@@ -51,7 +51,7 @@ See: `.planning/milestones/v1.5-ROADMAP.md` for full details
 
 - [x] **Phase 10: Auth Hardening & GHL Cleanup** - Secure admin/history endpoints and remove deprecated GHL smart_list_name field (completed 2026-03-19)
 - [x] **Phase 11: RRC Pipeline Fix** - Compound lease splitting, direct data use, per-row status feedback (completed 2026-03-18)
-- [ ] **Phase 12: Unified Enrichment Modal** - Single-button modal replaces 3-button toolbar with sequential pipeline execution and live preview
+- [x] **Phase 12: Unified Enrichment Modal** - Single-button modal replaces 3-button toolbar with sequential pipeline execution and live preview (completed 2026-03-19)
 
 ## Phase Details
 
@@ -95,7 +95,7 @@ Plans:
   3. The modal shows a progress bar with step labels and estimated time remaining
   4. As each step completes, the preview table behind the modal updates in real-time with the new data
   5. Modified cells are highlighted so the user can see exactly what changed after closing the modal
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 12-01-PLAN.md -- useEnrichmentPipeline hook: runAllSteps(), per-cell change tracking, AbortController (ENRICH-02, ENRICH-03, ENRICH-06)
@@ -121,4 +121,4 @@ Plans:
 | 9. Tool-Specific AI Prompts | v1.5 | 2/2 | Complete | 2026-03-17 |
 | 10. Auth Hardening & GHL Cleanup | 3/3 | Complete    | 2026-03-19 | - |
 | 11. RRC Pipeline Fix | 1/1 | Complete    | 2026-03-18 | - |
-| 12. Unified Enrichment Modal | 1/2 | In Progress|  | - |
+| 12. Unified Enrichment Modal | 2/2 | Complete   | 2026-03-19 | - |
