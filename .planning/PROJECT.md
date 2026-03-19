@@ -50,6 +50,10 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - ✓ Tool-specific AI prompts: name cleanup, figure verification, cross-file comparison — v1.5
 - ✓ Provider-agnostic LLM interface (Gemini swappable via admin settings) — v1.5
 - ✓ RRC fetch-missing: compound lease splitting, semaphore-throttled concurrency, direct data return, sub-lease tooltips — v1.6
+- ✓ Admin GET endpoints gated with require_admin, preference/profile endpoints with require_auth — v1.6
+- ✓ History user-scoping (non-admin sees own jobs only) and delete ownership checks (403 for non-owner) — v1.6
+- ✓ GHL smart_list_name removed from backend model, API, and frontend types — v1.6
+- ✓ 403 delete error modal on all 5 tool pages — v1.6
 
 ### Active
 
@@ -117,4 +121,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Dedicated ecf_parser.py module (not extending parser.py) | Clean separation, ECF has distinct parsing logic | ✓ Good — v1.4 |
 
 ---
-*Last updated: 2026-03-18 after Phase 11 (RRC Pipeline Fix) completion*
+*Last updated: 2026-03-19 after Phase 10 (Auth Hardening & GHL Cleanup) completion*
