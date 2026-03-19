@@ -370,7 +370,9 @@ async def test_history_scoped_nonadmin_gets_own_jobs(authenticated_client: Async
     mock_jobs = [
         {"job_id": "j1", "tool": "extract", "user_id": "test@example.com"},
     ]
-    with patch("app.services.firestore_service.get_user_jobs", return_value=mock_jobs) as mock_fn:
+    with patch("app.api.history.settings") as mock_settings, \
+         patch("app.services.firestore_service.get_user_jobs", return_value=mock_jobs) as mock_fn:
+        mock_settings.firestore_enabled = True
         response = await authenticated_client.get("/api/history/jobs")
     assert response.status_code == 200
     mock_fn.assert_called_once()
@@ -386,7 +388,9 @@ async def test_history_admin_gets_all_jobs(admin_client: AsyncClient):
         {"job_id": "j1", "tool": "extract", "user_id": "test@example.com"},
         {"job_id": "j2", "tool": "title", "user_id": "other@example.com"},
     ]
-    with patch("app.services.firestore_service.get_recent_jobs", return_value=mock_jobs) as mock_fn:
+    with patch("app.api.history.settings") as mock_settings, \
+         patch("app.services.firestore_service.get_recent_jobs", return_value=mock_jobs) as mock_fn:
+        mock_settings.firestore_enabled = True
         response = await admin_client.get("/api/history/jobs")
     assert response.status_code == 200
     mock_fn.assert_called_once()
@@ -396,8 +400,10 @@ async def test_history_admin_gets_all_jobs(admin_client: AsyncClient):
 async def test_delete_own_job_succeeds(authenticated_client: AsyncClient):
     """User can delete their own job."""
     mock_job = {"job_id": "j1", "tool": "extract", "user_id": "test@example.com"}
-    with patch("app.services.firestore_service.get_job", return_value=mock_job), \
+    with patch("app.api.history.settings") as mock_settings, \
+         patch("app.services.firestore_service.get_job", return_value=mock_job), \
          patch("app.services.firestore_service.delete_job", return_value=True):
+        mock_settings.firestore_enabled = True
         response = await authenticated_client.delete("/api/history/jobs/j1")
     assert response.status_code == 200
 
@@ -406,7 +412,9 @@ async def test_delete_own_job_succeeds(authenticated_client: AsyncClient):
 async def test_delete_other_user_job_returns_403(authenticated_client: AsyncClient):
     """Non-admin cannot delete another user's job."""
     mock_job = {"job_id": "j1", "tool": "extract", "user_id": "other@example.com"}
-    with patch("app.services.firestore_service.get_job", return_value=mock_job):
+    with patch("app.api.history.settings") as mock_settings, \
+         patch("app.services.firestore_service.get_job", return_value=mock_job):
+        mock_settings.firestore_enabled = True
         response = await authenticated_client.delete("/api/history/jobs/j1")
     assert response.status_code == 403
     assert "your own jobs" in response.json()["detail"].lower()
@@ -416,7 +424,9 @@ async def test_delete_other_user_job_returns_403(authenticated_client: AsyncClie
 async def test_admin_delete_other_user_job_succeeds(admin_client: AsyncClient):
     """Admin can delete any user's job."""
     mock_job = {"job_id": "j1", "tool": "extract", "user_id": "other@example.com"}
-    with patch("app.services.firestore_service.get_job", return_value=mock_job), \
+    with patch("app.api.history.settings") as mock_settings, \
+         patch("app.services.firestore_service.get_job", return_value=mock_job), \
          patch("app.services.firestore_service.delete_job", return_value=True):
+        mock_settings.firestore_enabled = True
         response = await admin_client.delete("/api/history/jobs/j1")
     assert response.status_code == 200
