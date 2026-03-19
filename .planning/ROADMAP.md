@@ -92,11 +92,11 @@ Plans:
   2. System sends multiple batch requests concurrently when Gemini rate limits allow
   3. When user cancels an in-flight operation, backend stops Gemini processing within one batch cycle
   4. Failed batches are automatically retried up to the configured limit before returning partial results
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 14-01: TBD
-- [ ] 14-02: TBD
+- [ ] 14-01-PLAN.md — Backend batch config, concurrency, thread safety, disconnect detection
+- [ ] 14-02-PLAN.md — Frontend dynamic batch size, retry logic, admin UI controls
 
 ### Phase 15: Operation Persistence UI
 **Goal**: Users always know what operations are running and can recover results after navigating away
@@ -106,7 +106,7 @@ Plans:
   1. User sees a status bar in the header showing active operations with tool name and progress
   2. User can navigate to another page, return to the tool, and see results from an operation that completed while away
   3. Status bar clears completed operations after user has viewed the results
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 15-01: TBD
@@ -118,7 +118,7 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. User sees progress update for each PDF as it completes during a multi-PDF revenue upload
   2. User sees which PDF is currently being processed and how many remain
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 16-01: TBD
@@ -132,7 +132,7 @@ Plans:
   2. Proration lookups check in-memory DataFrame before hitting Firestore
   3. Proration upload with 200 rows completes noticeably faster than sequential per-row Firestore reads
   4. After a background RRC sync completes, subsequent proration lookups use the fresh data without restart
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 17-01: TBD
