@@ -179,6 +179,15 @@ def _apply_settings_to_runtime(settings_data: dict) -> None:
         if "enabled" in gmaps:
             runtime_settings.google_maps_enabled = gmaps["enabled"]
 
+    # Batch config
+    bc = settings_data.get("batch_config", {})
+    if "batch_size" in bc:
+        runtime_settings.batch_size = max(5, min(100, bc["batch_size"]))
+    if "max_concurrency" in bc:
+        runtime_settings.batch_max_concurrency = max(1, min(5, bc["max_concurrency"]))
+    if "max_retries" in bc:
+        runtime_settings.batch_max_retries = max(0, min(3, bc["max_retries"]))
+
 
 class AddUserRequest(BaseModel):
     """Request to add a user to the allowlist."""
@@ -231,6 +240,9 @@ class GoogleCloudSettingsRequest(BaseModel):
     gemini_monthly_budget: float = 15.00
     maps_enabled: bool = False
     places_enabled: bool = False
+    batch_size: int = 25
+    batch_max_concurrency: int = 2
+    batch_max_retries: int = 1
 
 
 class GoogleCloudSettingsResponse(BaseModel):
@@ -241,6 +253,9 @@ class GoogleCloudSettingsResponse(BaseModel):
     gemini_monthly_budget: float
     maps_enabled: bool
     places_enabled: bool
+    batch_size: int = 25
+    batch_max_concurrency: int = 2
+    batch_max_retries: int = 1
 
 
 class GeminiSettingsRequest(BaseModel):
@@ -478,6 +493,7 @@ async def get_google_cloud_settings(user: dict = Depends(require_admin)):
     """Get current unified Google Cloud API settings (key masked)."""
     app_settings = load_app_settings()
     gc = app_settings.get("google_cloud", {})
+    bc = app_settings.get("batch_config", {})
 
     return GoogleCloudSettingsResponse(
         has_key=bool(gc.get("api_key")),
@@ -486,6 +502,9 @@ async def get_google_cloud_settings(user: dict = Depends(require_admin)):
         gemini_monthly_budget=gc.get("gemini_monthly_budget", 15.00),
         maps_enabled=gc.get("maps_enabled", False),
         places_enabled=gc.get("places_enabled", False),
+        batch_size=bc.get("batch_size", 25),
+        batch_max_concurrency=bc.get("max_concurrency", 2),
+        batch_max_retries=bc.get("max_retries", 1),
     )
 
 
@@ -507,6 +526,13 @@ async def update_google_cloud_settings(
     gc["places_enabled"] = request.places_enabled
     app_settings["google_cloud"] = gc
 
+    # Persist batch config
+    app_settings["batch_config"] = {
+        "batch_size": max(5, min(100, request.batch_size)),
+        "max_concurrency": max(1, min(5, request.batch_max_concurrency)),
+        "max_retries": max(0, min(3, request.batch_max_retries)),
+    }
+
     save_app_settings(app_settings)
 
     # Update runtime config
@@ -520,6 +546,9 @@ async def update_google_cloud_settings(
     runtime_settings.gemini_monthly_budget = request.gemini_monthly_budget
     runtime_settings.google_maps_enabled = request.maps_enabled
     runtime_settings.places_enabled = request.places_enabled
+    runtime_settings.batch_size = max(5, min(100, request.batch_size))
+    runtime_settings.batch_max_concurrency = max(1, min(5, request.batch_max_concurrency))
+    runtime_settings.batch_max_retries = max(0, min(3, request.batch_max_retries))
 
     logger.info("Google Cloud API settings updated")
 
@@ -530,6 +559,9 @@ async def update_google_cloud_settings(
         gemini_monthly_budget=request.gemini_monthly_budget,
         maps_enabled=request.maps_enabled,
         places_enabled=request.places_enabled,
+        batch_size=runtime_settings.batch_size,
+        batch_max_concurrency=runtime_settings.batch_max_concurrency,
+        batch_max_retries=runtime_settings.batch_max_retries,
     )
 
 

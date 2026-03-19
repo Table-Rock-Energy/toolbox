@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-2.5-flash"
     gemini_monthly_budget: float = 15.00  # Maximum monthly spend in USD
 
+    # Batch processing settings
+    batch_size: int = 25
+    batch_max_concurrency: int = 2
+    batch_max_retries: int = 1
+
     # Google Maps API settings (address validation)
     google_maps_api_key: Optional[str] = None
     google_maps_enabled: bool = False

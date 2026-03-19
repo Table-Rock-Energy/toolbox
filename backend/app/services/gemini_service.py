@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 import time
 from typing import TYPE_CHECKING
 
@@ -42,6 +43,9 @@ _daily_reset_time: float = 0.0
 _monthly_spend: float = 0.0
 _monthly_reset_time: float = 0.0
 
+# Thread-safe lock for rate-limit state
+_rate_lock = threading.Lock()
+
 
 def _get_client() -> Client:
     """Lazy-initialize the Gemini client."""
@@ -57,50 +61,55 @@ def _check_rate_limit() -> tuple[bool, int, int]:
     """Check if we can make a request. Returns (allowed, remaining_minute, remaining_day)."""
     global _daily_count, _daily_reset_time, _monthly_spend, _monthly_reset_time
 
-    now = time.time()
+    with _rate_lock:
+        now = time.time()
 
-    # Reset daily counter every 24 hours
-    if now - _daily_reset_time > 86400:
-        _daily_count = 0
-        _daily_reset_time = now
+        # Reset daily counter every 24 hours
+        if now - _daily_reset_time > 86400:
+            _daily_count = 0
+            _daily_reset_time = now
 
-    # Reset monthly spend every 30 days
-    if now - _monthly_reset_time > 30 * 86400:
-        _monthly_spend = 0.0
-        _monthly_reset_time = now
+        # Reset monthly spend every 30 days
+        if now - _monthly_reset_time > 30 * 86400:
+            _monthly_spend = 0.0
+            _monthly_reset_time = now
 
-    # Clean old minute timestamps
-    cutoff = now - 60
-    while _rpm_timestamps and _rpm_timestamps[0] < cutoff:
-        _rpm_timestamps.pop(0)
+        # Clean old minute timestamps
+        cutoff = now - 60
+        while _rpm_timestamps and _rpm_timestamps[0] < cutoff:
+            _rpm_timestamps.pop(0)
 
-    remaining_minute = MAX_RPM - len(_rpm_timestamps)
-    remaining_day = MAX_RPD - _daily_count
+        remaining_minute = MAX_RPM - len(_rpm_timestamps)
+        remaining_day = MAX_RPD - _daily_count
 
-    # Check monthly budget
-    budget_remaining = settings.gemini_monthly_budget - _monthly_spend
-    within_budget = budget_remaining > 0
+        # Check monthly budget
+        budget_remaining = settings.gemini_monthly_budget - _monthly_spend
+        within_budget = budget_remaining > 0
 
-    allowed = remaining_minute > 0 and remaining_day > 0 and within_budget
-    return allowed, remaining_minute, remaining_day
+        allowed = remaining_minute > 0 and remaining_day > 0 and within_budget
+        return allowed, remaining_minute, remaining_day
 
 
 def _record_request() -> None:
     """Record a request for rate limiting."""
     global _daily_count
-    _rpm_timestamps.append(time.time())
-    _daily_count += 1
+
+    with _rate_lock:
+        _rpm_timestamps.append(time.time())
+        _daily_count += 1
 
 
 def _record_spend(input_tokens: int, output_tokens: int) -> None:
     """Record token spend for monthly budget tracking."""
     global _monthly_spend
-    cost = (input_tokens * COST_PER_INPUT_TOKEN) + (output_tokens * COST_PER_OUTPUT_TOKEN)
-    _monthly_spend += cost
-    logger.debug(
-        f"AI spend: {cost:.4f} USD ({input_tokens} in, {output_tokens} out). "
-        f"Monthly total: ${_monthly_spend:.4f} / ${settings.gemini_monthly_budget:.2f}"
-    )
+
+    with _rate_lock:
+        cost = (input_tokens * COST_PER_INPUT_TOKEN) + (output_tokens * COST_PER_OUTPUT_TOKEN)
+        _monthly_spend += cost
+        logger.debug(
+            f"AI spend: {cost:.4f} USD ({input_tokens} in, {output_tokens} out). "
+            f"Monthly total: ${_monthly_spend:.4f} / ${settings.gemini_monthly_budget:.2f}"
+        )
 
 
 def get_ai_status() -> AiStatusResponse:

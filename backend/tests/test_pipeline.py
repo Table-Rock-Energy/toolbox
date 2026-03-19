@@ -414,6 +414,117 @@ class TestPipelineMedianInjection:
         assert "_batch_median_value" not in passed_entries[0]
 
 
+class TestBatchConfig:
+    """Test batch configuration fields, persistence, and thread-safe rate limiting."""
+
+    def test_settings_has_batch_fields(self):
+        """Settings class has batch_size, batch_max_concurrency, batch_max_retries with defaults."""
+        from app.core.config import Settings
+
+        s = Settings()
+        assert s.batch_size == 25
+        assert s.batch_max_concurrency == 2
+        assert s.batch_max_retries == 1
+
+    def test_apply_settings_with_batch_config(self):
+        """_apply_settings_to_runtime applies batch_config values to runtime settings."""
+        from app.api.admin import _apply_settings_to_runtime
+        from app.core.config import settings as runtime_settings
+
+        original_batch_size = runtime_settings.batch_size
+        original_concurrency = runtime_settings.batch_max_concurrency
+        original_retries = runtime_settings.batch_max_retries
+
+        try:
+            _apply_settings_to_runtime({
+                "batch_config": {
+                    "batch_size": 50,
+                    "max_concurrency": 3,
+                    "max_retries": 2,
+                }
+            })
+            assert runtime_settings.batch_size == 50
+            assert runtime_settings.batch_max_concurrency == 3
+            assert runtime_settings.batch_max_retries == 2
+        finally:
+            runtime_settings.batch_size = original_batch_size
+            runtime_settings.batch_max_concurrency = original_concurrency
+            runtime_settings.batch_max_retries = original_retries
+
+    def test_apply_settings_without_batch_config_keeps_defaults(self):
+        """_apply_settings_to_runtime without batch_config leaves defaults unchanged."""
+        from app.api.admin import _apply_settings_to_runtime
+        from app.core.config import settings as runtime_settings
+
+        original_batch_size = runtime_settings.batch_size
+
+        _apply_settings_to_runtime({})
+        assert runtime_settings.batch_size == original_batch_size
+
+    def test_batch_config_clamping(self):
+        """Out-of-range batch_config values are clamped."""
+        from app.api.admin import _apply_settings_to_runtime
+        from app.core.config import settings as runtime_settings
+
+        original_batch_size = runtime_settings.batch_size
+        original_concurrency = runtime_settings.batch_max_concurrency
+        original_retries = runtime_settings.batch_max_retries
+
+        try:
+            _apply_settings_to_runtime({
+                "batch_config": {
+                    "batch_size": 200,
+                    "max_concurrency": 10,
+                    "max_retries": 5,
+                }
+            })
+            assert runtime_settings.batch_size == 100
+            assert runtime_settings.batch_max_concurrency == 5
+            assert runtime_settings.batch_max_retries == 3
+
+            _apply_settings_to_runtime({
+                "batch_config": {
+                    "batch_size": 1,
+                    "max_concurrency": 0,
+                    "max_retries": -1,
+                }
+            })
+            assert runtime_settings.batch_size == 5
+            assert runtime_settings.batch_max_concurrency == 1
+            assert runtime_settings.batch_max_retries == 0
+        finally:
+            runtime_settings.batch_size = original_batch_size
+            runtime_settings.batch_max_concurrency = original_concurrency
+            runtime_settings.batch_max_retries = original_retries
+
+    def test_rate_lock_exists(self):
+        """gemini_service has a threading.Lock for rate-limit state."""
+        import threading
+        from app.services import gemini_service
+
+        assert hasattr(gemini_service, "_rate_lock")
+        assert isinstance(gemini_service._rate_lock, threading.Lock)
+
+    def test_google_cloud_settings_response_has_batch_fields(self):
+        """GoogleCloudSettingsResponse model accepts batch config fields."""
+        from app.api.admin import GoogleCloudSettingsResponse
+
+        resp = GoogleCloudSettingsResponse(
+            has_key=True,
+            gemini_enabled=True,
+            gemini_model="gemini-2.5-flash",
+            gemini_monthly_budget=15.0,
+            maps_enabled=False,
+            places_enabled=False,
+            batch_size=50,
+            batch_max_concurrency=3,
+            batch_max_retries=2,
+        )
+        assert resp.batch_size == 50
+        assert resp.batch_max_concurrency == 3
+        assert resp.batch_max_retries == 2
+
+
 class TestPipelineAuth:
     """Test that pipeline endpoints require authentication."""
 
