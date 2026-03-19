@@ -89,14 +89,96 @@
 
 ---
 
+## Milestone: v1.5 — Enrichment Pipeline & Bug Fixes
+
+**Shipped:** 2026-03-17
+**Phases:** 5 | **Plans:** 12 | **Timeline:** 4 days
+
+### What Was Built
+- ECF upload flow fix: auto-detect format, staged upload with explicit Process button
+- RRC & GHL bug fixes (fetch-missing improvements, GHL connection management)
+- Universal enrichment UI: Clean Up / Validate / Enrich buttons across all tool pages
+- Pipeline API with AI cleanup, address validation, contact enrichment
+- Preview state as single source of truth for exports
+- Tool-specific AI prompts for each pipeline step
+- Provider-agnostic LLM interface (Gemini swappable via admin settings)
+
+### What Worked
+- Preview state refactor (Phase 7) unified all data flow through a single state — eliminated data divergence between display and export
+- Pipeline API design with ProposedChange format enabled the unified enrichment flow in v1.6
+- 5 phases completed in 4 days — good velocity for the scope
+
+### What Was Inefficient
+- No retrospective written at milestone completion — gap in documentation discipline
+- v1.5 milestone completion skipped directly to v1.6 planning without formal archival
+
+### Patterns Established
+- Preview state as single source of truth pattern (previewEntries → export)
+- Pipeline API with ProposedChange format for all enrichment steps
+- Tool-specific AI prompt configuration via admin settings
+
+### Key Lessons
+1. Preview state unification pays off immediately — every downstream feature benefits
+2. Pipeline API abstraction enables rapid iteration on enrichment steps
+
+### Cost Observations
+- Sessions: ~6-8
+- Notable: Largest milestone by phase count (5 phases, 12 plans)
+
+---
+
+## Milestone: v1.6 — Pipeline Fixes & Unified Enrichment
+
+**Shipped:** 2026-03-19
+**Phases:** 3 | **Plans:** 6 | **Timeline:** 2 days
+
+### What Was Built
+- Admin GET endpoints gated with `require_admin`; check_user remains unauthenticated
+- History user-scoping (non-admin sees own jobs only) with delete ownership checks and 403 modal
+- GHL `smart_list_name` fully removed from backend, API, and frontend
+- Compound lease splitting with district inheritance + direct data return + per-row status UI
+- Single "Enrich" button replacing 3-button toolbar with progress modal, ETA, and step indicators
+- Per-cell change tracking with green highlighting, original-value tooltips, and global undo
+
+### What Worked
+- Wave-based parallel execution: Phase 10 (3 plans) executed efficiently in 2 waves
+- Local variable threading pattern in `runAllSteps()` avoided stale React closure bugs
+- Pre-enrichment snapshot for global undo — simple and reliable
+- Clean separation: Plan 01 (hook/data layer) → Plan 02 (UI layer) kept both plans focused
+
+### What Was Inefficient
+- Phase 12 browser verification deferred to production — local dev environment unavailable during execution
+- SUMMARY one-liners not populated by executors — summary-extract returned null for all plans
+- EnrichmentToolbar left as orphaned export after replacement — should be cleaned up
+
+### Patterns Established
+- Local variable threading for sequential async operations (avoids React state staleness)
+- Per-cell change tracking with Map<string, EnrichmentCellChange> keyed by `${entryIndex}:${field}`
+- Pre-operation snapshot for global undo (shallow copy array before mutation)
+- Per-endpoint `Depends(require_admin)` for granular auth (vs router-level for broad protection)
+
+### Key Lessons
+1. Separate hook (data) and UI (component) plans — enables independent testing and focused reviews
+2. Local variable threading is essential for sequential async React operations — React state updates batch and cause stale closures
+3. Browser verification should not be skipped — even when local dev is down, production testing should happen before milestone completion
+
+### Cost Observations
+- Model mix: ~60% opus, ~40% sonnet
+- Sessions: ~3
+- Notable: 2-day milestone, tightest timeline yet for 6 plans across 3 phases
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
 
-| Milestone | Sessions | Phases | Key Change |
-|-----------|----------|--------|------------|
-| v1.3 | ~5 | 3 | First milestone with GSD workflow, audit-before-complete |
-| v1.4 | ~4 | 4 | TDD carried forward, parallel phases, audit caught integration gap |
+| Milestone | Sessions | Phases | Plans | Key Change |
+|-----------|----------|--------|-------|------------|
+| v1.3 | ~5 | 3 | 6 | First milestone with GSD workflow, audit-before-complete |
+| v1.4 | ~4 | 4 | 7 | TDD carried forward, parallel phases, audit caught integration gap |
+| v1.5 | ~7 | 5 | 12 | Largest milestone, preview state unification, pipeline API pattern |
+| v1.6 | ~3 | 3 | 6 | Tightest timeline (2 days), wave-based parallel execution |
 
 ### Cumulative Quality
 
@@ -104,9 +186,13 @@
 |-----------|-------|----------|-------------|
 | v1.3 | 50+ | Auth + parsers | CI workflow, auth smoke tests |
 | v1.4 | 60+ | + ECF/Convey640/merge parsers | ECF parser tests, merge service tests, Convey 640 tests |
+| v1.5 | 60+ | + pipeline integration | Pipeline API smoke tests |
+| v1.6 | 60+ | + admin auth | Admin endpoint auth tests, history scoping tests |
 
 ### Top Lessons (Verified Across Milestones)
 
 1. Phase ordering matters — build features before testing them
-2. Router-level auth is safer than per-endpoint auth (prevents accidental exposure)
+2. Router-level auth is safer than per-endpoint auth (prevents accidental exposure); per-endpoint for granular control
 3. Milestone audits catch integration boundary bugs that per-phase TDD misses — run before completing
+4. Preview state unification pays dividends across all downstream features
+5. Local variable threading is essential for sequential async React operations

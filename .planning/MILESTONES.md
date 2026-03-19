@@ -1,5 +1,29 @@
 # Milestones
 
+## v1.6 Pipeline Fixes & Unified Enrichment (Shipped: 2026-03-19)
+
+**Phases completed:** 3 phases, 6 plans
+**Commits:** 48 (b4c5eae..f95e78a)
+**Files changed:** 54 (+7,248 / -1,644)
+**Timeline:** 2 days (2026-03-18 → 2026-03-19)
+
+**Key accomplishments:**
+
+- Admin GET endpoints gated with `require_admin`; `check_user` remains unauthenticated for login flow
+- History user-scoping — non-admin sees own jobs only; delete restricted to owner/admin with 403 modal on all 5 tool pages
+- GHL `smart_list_name` removed from backend model, API, and frontend types
+- Compound lease splitting with district inheritance + direct data return from fetch-missing + per-row status UI
+- Single "Enrich" button replaces 3-button toolbar with progress modal (step indicators, ETA), live preview updates, and per-cell highlighting with original-value tooltips
+- Global enrichment undo via pre-enrichment snapshot
+
+**Tech debt carried forward:**
+
+- EnrichmentToolbar component still exported from barrel (unused after replacement)
+- Phase 12 browser verification deferred to production (5 visual tests pending)
+- Nyquist validation incomplete on all 3 phases (draft/missing VALIDATION.md)
+
+---
+
 ## v1.4 ECF Extraction (Shipped: 2026-03-12)
 
 **Phases completed:** 4 phases, 7 plans
@@ -8,6 +32,7 @@
 **Timeline:** 2 days (2026-03-11 → 2026-03-12)
 
 **Key accomplishments:**
+
 - ECF PDF parser with section-aware entry parsing, entity detection, and case metadata extraction
 - Convey 640 CSV/Excel parser with name normalization pipeline and ZIP preservation
 - PDF-authoritative merge service with entry-number matching and mismatch warnings
@@ -15,10 +40,12 @@
 - Dual-file upload UI in Extract page with metadata panel and auto-populated mineral export
 
 **Known gaps (from audit):**
+
 - Phase 4 missing VERIFICATION.md (visual verification only)
 - All 4 VALIDATION.md files are draft (Nyquist non-compliant)
 
 **Tech debt carried forward:**
+
 - Frontend PartyEntry interface missing section_type field (works at runtime)
 - Fuzzy name matching between PDF/CSV deferred to future release
 
@@ -32,6 +59,7 @@
 **Timeline:** 1 day (2026-03-11)
 
 **Key accomplishments:**
+
 - Router-level auth enforcement on all 9 tool routers with dev-mode bypass
 - Frontend fail-closed auth with 401 interceptor and SSE query-param token
 - CORS lockdown with explicit origin allowlist (no more wildcard in production)
@@ -40,10 +68,10 @@
 - Parser regression tests (Extract + Revenue) with GitHub Actions CI workflow
 
 **Tech debt carried forward:**
+
 - 5 admin endpoints without auth (AUTHZ-01)
 - History endpoints not user-scoped (AUTHZ-02)
 - Startup guard untestable with ASGITransport
 - Enverus/Energy Transfer parsers lack regression tests
 
 ---
-

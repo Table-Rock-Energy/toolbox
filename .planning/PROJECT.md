@@ -58,18 +58,7 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 
 ### Active
 
-<!-- Current milestone: v1.6 Pipeline Fixes & Unified Enrichment -->
-
-## Current Milestone: v1.6 Pipeline Fixes & Unified Enrichment
-
-**Goal:** Fix RRC fetch-missing pipeline, harden admin/history auth, clean up GHL legacy fields, and replace 3-button enrichment with a single-button modal that runs all steps with real-time progress and live preview updates.
-
-**Target features:**
-- RRC fetch-missing: direct data use, compound lease splitting, per-row status feedback
-- Admin endpoint auth hardening (read endpoints leak config)
-- History endpoint user-scoping (jobs visible only to owner)
-- GHL smart_list_name cleanup (remove legacy field, keep campaign_tag)
-- Unified enrichment modal: single button → runs cleanup/validate/enrich sequentially → progress bar with ETA → live preview updates → change highlighting
+<!-- No active milestone — v1.6 shipped, next milestone TBD -->
 
 ### Out of Scope
 
@@ -93,7 +82,7 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - **Codebase:** ~476K LOC (TypeScript + Python), React 19 + FastAPI + Firestore
 - **Test suite:** 50+ pytest tests (auth smoke, CORS, extract parsers, revenue parser), CI via GitHub Actions
 - **Extract formats:** Standard OCC Exhibit A, ECF multiunit well filings (with optional Convey 640 CSV/Excel)
-- **Shipped:** v1.3 Security Hardening (2026-03-11), v1.4 ECF Extraction (2026-03-12), v1.5 Enrichment Pipeline (2026-03-17)
+- **Shipped:** v1.3 Security Hardening (2026-03-11), v1.4 ECF Extraction (2026-03-12), v1.5 Enrichment Pipeline (2026-03-17), v1.6 Pipeline Fixes & Unified Enrichment (2026-03-19)
 
 ## Constraints
 
@@ -121,7 +110,11 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Entry-number matching (not fuzzy) for PDF/CSV merge | Simple, reliable, covers the common case | ✓ Good — v1.4 |
 | Dedicated ecf_parser.py module (not extending parser.py) | Clean separation, ECF has distinct parsing logic | ✓ Good — v1.4 |
 
+| Per-endpoint require_admin on admin GET routes (not router-level) | Granular control — check_user needs to stay unauthenticated | ✓ Good — v1.6 |
+| History user-scoping with admin override | Non-admin sees own jobs; admin sees all | ✓ Good — v1.6 |
+| Compound lease splitting with district inheritance | Handles "02-12345/12346" by splitting and inheriting district prefix | ✓ Good — v1.6 |
 | Unified enrichment as single-button modal (not improving 3-button toolbar) | Users want fewer clicks; modal contains all progress; undo is more discoverable | Pending live verification — v1.6 |
+| Local variable threading in runAllSteps (not React state) | Avoids stale closure between sequential async steps | ✓ Good — v1.6 |
 
 ---
-*Last updated: 2026-03-19 after Phase 12 (Unified Enrichment Modal) completion*
+*Last updated: 2026-03-19 after v1.6 milestone completion*
