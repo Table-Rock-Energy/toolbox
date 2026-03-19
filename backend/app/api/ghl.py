@@ -340,7 +340,7 @@ async def bulk_send_endpoint(
         total_count = total_valid + skipped_count
 
         # Step 4: Create job in Firestore
-        campaign_name = data.smart_list_name or data.campaign_tag
+        campaign_name = data.campaign_tag
         await create_send_job(
             job_id=job_id,
             connection_id=data.connection_id,

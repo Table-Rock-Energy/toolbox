@@ -454,7 +454,6 @@ export interface BulkSendRequest {
   campaign_tag: string
   manual_sms: boolean
   assigned_to_list?: string[]
-  smart_list_name?: string
 }
 
 // New async job types (matching backend Plan 01)

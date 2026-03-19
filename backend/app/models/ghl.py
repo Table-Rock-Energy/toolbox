@@ -110,11 +110,6 @@ class BulkSendRequest(BaseModel):
     )
     manual_sms: bool = Field(False, description="Apply 'manual sms' tag to all contacts")
     assigned_to_list: Optional[list[str]] = Field(None, max_length=2, description="1-2 GHL user IDs for contact owner assignment (even split)")
-    smart_list_name: Optional[str] = Field(
-        None,
-        description="Deprecated: Use campaign_tag instead. Kept for backward compatibility.",
-        deprecated=True,
-    )
 
 
 class ContactResult(BaseModel):
