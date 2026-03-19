@@ -49,7 +49,7 @@ See: `.planning/milestones/v1.5-ROADMAP.md` for full details
 
 **Milestone Goal:** Fix RRC fetch-missing pipeline, harden admin/history auth, clean up GHL legacy fields, and replace 3-button enrichment with a single-button modal that runs all steps with real-time progress and live preview updates.
 
-- [ ] **Phase 10: Auth Hardening & GHL Cleanup** - Secure admin/history endpoints and remove deprecated GHL smart_list_name field
+- [x] **Phase 10: Auth Hardening & GHL Cleanup** - Secure admin/history endpoints and remove deprecated GHL smart_list_name field (completed 2026-03-19)
 - [x] **Phase 11: RRC Pipeline Fix** - Compound lease splitting, direct data use, per-row status feedback (completed 2026-03-18)
 - [ ] **Phase 12: Unified Enrichment Modal** - Single-button modal replaces 3-button toolbar with sequential pipeline execution and live preview
 
@@ -65,7 +65,7 @@ See: `.planning/milestones/v1.5-ROADMAP.md` for full details
   3. Non-admin users see only their own jobs in history; admin users see all jobs
   4. Deleting a job that belongs to another user returns 403 (unless requester is admin)
   5. The GHL send modal no longer shows or sends a smart_list_name field
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] 10-01-PLAN.md -- GHL smart_list_name removal (GHL-01, GHL-02)
@@ -119,6 +119,6 @@ Plans:
 | 7. Enrichment UI & Preview State | v1.5 | 3/3 | Complete | 2026-03-15 |
 | 8. Enrichment Pipeline Features | v1.5 | 3/3 | Complete | 2026-03-16 |
 | 9. Tool-Specific AI Prompts | v1.5 | 2/2 | Complete | 2026-03-17 |
-| 10. Auth Hardening & GHL Cleanup | 2/3 | In Progress|  | - |
+| 10. Auth Hardening & GHL Cleanup | 3/3 | Complete   | 2026-03-19 | - |
 | 11. RRC Pipeline Fix | 1/1 | Complete    | 2026-03-18 | - |
 | 12. Unified Enrichment Modal | v1.6 | 0/2 | Not started | - |

@@ -9,8 +9,8 @@ Requirements for v1.6 Pipeline Fixes & Unified Enrichment. Each maps to roadmap 
 
 ### Security & Auth
 
-- [ ] **AUTH-01**: Admin GET endpoints (/options, /users, /settings/*) require `require_admin` authentication
-- [ ] **AUTH-02**: `check_user` endpoint remains unauthenticated for login flow
+- [x] **AUTH-01**: Admin GET endpoints (/options, /users, /settings/*) require `require_admin` authentication
+- [x] **AUTH-02**: `check_user` endpoint remains unauthenticated for login flow
 - [x] **AUTH-03**: History GET /jobs returns only jobs belonging to the authenticated user
 - [x] **AUTH-04**: Admin users can view all users' jobs in history
 - [x] **AUTH-05**: History DELETE /jobs/{id} restricted to job owner or admin
@@ -66,8 +66,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | Phase 10 | Pending |
-| AUTH-02 | Phase 10 | Pending |
+| AUTH-01 | Phase 10 | Complete |
+| AUTH-02 | Phase 10 | Complete |
 | AUTH-03 | Phase 10 | Complete |
 | AUTH-04 | Phase 10 | Complete |
 | AUTH-05 | Phase 10 | Complete |
