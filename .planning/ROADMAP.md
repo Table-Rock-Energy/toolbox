@@ -77,11 +77,11 @@ See: `.planning/milestones/v1.6-ROADMAP.md` for full details
   3. User sees an ETA for remaining batches that updates after each batch completes
   4. If a batch fails mid-run, user receives all results from previously successful batches
   5. Navigating away from a page cancels any pending fetch requests (no orphaned connections)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 13-01: TBD
-- [ ] 13-02: TBD
+- [ ] 13-01-PLAN.md — OperationContext provider with batch-aware pipeline engine
+- [ ] 13-02-PLAN.md — Tool page refactor and EnrichmentModal batch progress
 
 ### Phase 14: AI Cleanup Batching
 **Goal**: AI cleanup is configurable, concurrent, cancellable, and retries failed work
@@ -159,7 +159,7 @@ Phases 13 and 14 are sequential. Phases 15, 16, 17 can run after 13 completes (1
 | 10. Auth Hardening & GHL Cleanup | v1.6 | 3/3 | Complete | 2026-03-19 |
 | 11. RRC Pipeline Fix | v1.6 | 1/1 | Complete | 2026-03-18 |
 | 12. Unified Enrichment Modal | v1.6 | 2/2 | Complete | 2026-03-19 |
-| 13. Operation Context & Batch Engine | v1.7 | 0/? | Not started | - |
+| 13. Operation Context & Batch Engine | v1.7 | 0/2 | Not started | - |
 | 14. AI Cleanup Batching | v1.7 | 0/? | Not started | - |
 | 15. Operation Persistence UI | v1.7 | 0/? | Not started | - |
 | 16. Revenue Multi-PDF Streaming | v1.7 | 0/? | Not started | - |
