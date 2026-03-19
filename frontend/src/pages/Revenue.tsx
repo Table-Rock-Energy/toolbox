@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { DollarSign, Download, Upload, AlertCircle, CheckCircle, Columns, X, PanelLeftClose, PanelLeftOpen, Edit2, RotateCcw, Filter } from 'lucide-react'
+import { DollarSign, Download, Upload, AlertCircle, CheckCircle, Columns, X, PanelLeftClose, PanelLeftOpen, Edit2, RotateCcw, Filter, ShieldAlert } from 'lucide-react'
 import { FileUpload, Modal, MineralExportModal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar, ProposedChangesSummary, ProposedChangeCell } from '../components'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
@@ -157,6 +157,7 @@ export default function Revenue() {
   const [jobs, setJobs] = useState<RevenueJob[]>([])
   const [activeJob, setActiveJob] = useState<RevenueJob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [isLoadingEntries, setIsLoadingEntries] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -444,13 +445,18 @@ export default function Revenue() {
       return
     }
     try {
-      await fetch(`${API_BASE}/history/jobs/${job.job_id}`, {
+      const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}`, {
         method: 'DELETE',
         headers: await authHeaders(),
       })
-    } catch { /* best-effort */ }
-    setJobs((prev) => prev.filter((j) => j.id !== job.id))
-    if (activeJob?.id === job.id) setActiveJob(null)
+      if (response.status === 403) {
+        setDeleteError('You can only delete jobs you created. Contact an admin if this job needs to be removed.')
+        return
+      }
+      if (!response.ok) return
+      setJobs((prev) => prev.filter((j) => j.id !== job.id))
+      if (activeJob?.id === job.id) setActiveJob(null)
+    } catch { /* network error, best-effort */ }
   }
 
 
@@ -1201,6 +1207,21 @@ export default function Revenue() {
           </div>
         )}
       </Modal>
+      {deleteError && (
+        <Modal isOpen={true} onClose={() => setDeleteError(null)} title="" size="sm">
+          <div className="flex flex-col items-center text-center py-4">
+            <ShieldAlert className="w-12 h-12 text-red-500 mb-4" />
+            <h3 className="text-xl font-oswald font-semibold text-tre-navy mb-2">Unable to Delete</h3>
+            <p className="text-gray-600 mb-6">{deleteError}</p>
+            <button
+              onClick={() => setDeleteError(null)}
+              className="px-6 py-2 bg-tre-navy text-white rounded hover:bg-tre-navy/90 transition-colors font-oswald"
+            >
+              Got it
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

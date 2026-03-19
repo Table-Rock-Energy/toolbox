@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Filter, RotateCcw, Edit2, Columns, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Filter, RotateCcw, Edit2, Columns, X, PanelLeftClose, PanelLeftOpen, ShieldAlert } from 'lucide-react'
 import { FileUpload, Modal, MineralExportModal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar, ProposedChangesSummary, ProposedChangeCell } from '../components'
 import type { PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
@@ -128,6 +128,7 @@ export default function Title() {
   const [jobs, setJobs] = useState<TitleJob[]>([])
   const [activeJob, setActiveJob] = useState<TitleJob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [isLoadingEntries, setIsLoadingEntries] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -472,10 +473,15 @@ export default function Title() {
       return
     }
     try {
-      await fetch(`${API_BASE}/history/jobs/${job.job_id}`, { method: 'DELETE', headers: await authHeaders() })
-    } catch { /* best-effort */ }
-    setJobs((prev) => prev.filter((j) => j.id !== job.id))
-    if (activeJob?.id === job.id) setActiveJob(null)
+      const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}`, { method: 'DELETE', headers: await authHeaders() })
+      if (response.status === 403) {
+        setDeleteError('You can only delete jobs you created. Contact an admin if this job needs to be removed.')
+        return
+      }
+      if (!response.ok) return
+      setJobs((prev) => prev.filter((j) => j.id !== job.id))
+      if (activeJob?.id === job.id) setActiveJob(null)
+    } catch { /* network error, best-effort */ }
   }
 
   const resetFilters = () => {
@@ -1409,6 +1415,21 @@ export default function Title() {
           </div>
         )}
       </Modal>
+      {deleteError && (
+        <Modal isOpen={true} onClose={() => setDeleteError(null)} title="" size="sm">
+          <div className="flex flex-col items-center text-center py-4">
+            <ShieldAlert className="w-12 h-12 text-red-500 mb-4" />
+            <h3 className="text-xl font-oswald font-semibold text-tre-navy mb-2">Unable to Delete</h3>
+            <p className="text-gray-600 mb-6">{deleteError}</p>
+            <button
+              onClick={() => setDeleteError(null)}
+              className="px-6 py-2 bg-tre-navy text-white rounded hover:bg-tre-navy/90 transition-colors font-oswald"
+            >
+              Got it
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

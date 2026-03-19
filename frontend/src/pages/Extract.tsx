@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, X, PanelLeftClose, PanelLeftOpen, Play } from 'lucide-react'
+import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, X, PanelLeftClose, PanelLeftOpen, Play, ShieldAlert } from 'lucide-react'
 import { FileUpload, Modal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar, ProposedChangesSummary, ProposedChangeCell } from '../components'
 import MineralExportModal from '../components/MineralExportModal'
 import type { PostProcessResult } from '../utils/api'
@@ -117,6 +117,7 @@ export default function Extract() {
   const [jobs, setJobs] = useState<ExtractJob[]>([])
   const [activeJob, setActiveJob] = useState<ExtractJob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [isLoadingEntries, setIsLoadingEntries] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [formatHint, setFormatHint] = useState<string>('')
@@ -406,10 +407,15 @@ export default function Extract() {
     }
     try {
       const delHeaders = await authHeaders()
-      await fetch(`${API_BASE}/history/jobs/${job.job_id}`, { method: 'DELETE', headers: delHeaders })
-    } catch { /* best-effort */ }
-    setJobs((prev) => prev.filter((j) => j.id !== job.id))
-    if (activeJob?.id === job.id) setActiveJob(null)
+      const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}`, { method: 'DELETE', headers: delHeaders })
+      if (response.status === 403) {
+        setDeleteError('You can only delete jobs you created. Contact an admin if this job needs to be removed.')
+        return
+      }
+      if (!response.ok) return
+      setJobs((prev) => prev.filter((j) => j.id !== job.id))
+      if (activeJob?.id === job.id) setActiveJob(null)
+    } catch { /* network error, best-effort */ }
   }
 
   // Get filtered entries based on filter state
@@ -1404,6 +1410,21 @@ export default function Extract() {
           )
         })()}
       </Modal>
+      {deleteError && (
+        <Modal isOpen={true} onClose={() => setDeleteError(null)} title="" size="sm">
+          <div className="flex flex-col items-center text-center py-4">
+            <ShieldAlert className="w-12 h-12 text-red-500 mb-4" />
+            <h3 className="text-xl font-oswald font-semibold text-tre-navy mb-2">Unable to Delete</h3>
+            <p className="text-gray-600 mb-6">{deleteError}</p>
+            <button
+              onClick={() => setDeleteError(null)}
+              className="px-6 py-2 bg-tre-navy text-white rounded hover:bg-tre-navy/90 transition-colors font-oswald"
+            >
+              Got it
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }
