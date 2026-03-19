@@ -58,6 +58,10 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - ✓ OperationContext provider: batch-aware pipeline engine with 25-entry batches, progressive auto-apply, per-batch ETA, skip-and-continue on failure — v1.7
 - ✓ Operation persistence across navigation: OperationProvider wraps Outlet in MainLayout, auto-restore on mount — v1.7
 - ✓ Batch progress UI: sub-progress bar ("Batch N of M"), amber partial-failure text, cancel confirmation dialog — v1.7
+- ✓ Configurable batch size, concurrency, and retry limits via admin settings with Firestore persistence — v1.7
+- ✓ Concurrent Gemini batch execution via asyncio.Semaphore with thread-safe rate limiting — v1.7
+- ✓ Backend disconnect detection: pipeline endpoints stop Gemini processing when client disconnects — v1.7
+- ✓ End-of-step retry: failed batches automatically retried once before returning partial results — v1.7
 
 ### Active
 
@@ -101,7 +105,7 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - **Test suite:** 50+ pytest tests (auth smoke, CORS, extract parsers, revenue parser), CI via GitHub Actions
 - **Extract formats:** Standard OCC Exhibit A, ECF multiunit well filings (with optional Convey 640 CSV/Excel)
 - **Shipped:** v1.3 Security Hardening (2026-03-11), v1.4 ECF Extraction (2026-03-12), v1.5 Enrichment Pipeline (2026-03-17), v1.6 Pipeline Fixes & Unified Enrichment (2026-03-19)
-- **In progress:** v1.7 Batch Processing & Resilience — Phase 13 complete (OperationContext + batch engine)
+- **In progress:** v1.7 Batch Processing & Resilience — Phase 14 complete (AI cleanup batching with concurrency, retry, disconnect detection)
 
 ## Constraints
 
