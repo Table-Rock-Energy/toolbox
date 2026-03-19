@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Batch Processing & Resilience
 status: unknown
-stopped_at: Completed 14-01-PLAN.md
-last_updated: "2026-03-19T21:44:51.577Z"
+stopped_at: Completed 14-02-PLAN.md
+last_updated: "2026-03-19T21:50:04.067Z"
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State
@@ -23,8 +23,8 @@ See: .planning/PROJECT.md (updated 2026-03-19)
 
 ## Current Position
 
-Phase: 14 (ai-cleanup-batching) — EXECUTING
-Plan: 2 of 2
+Phase: 14 (ai-cleanup-batching) — COMPLETE
+Plan: 2 of 2 (all complete)
 
 ## Accumulated Context
 
@@ -42,6 +42,8 @@ Plan: 2 of 2
 - [Phase 14]: asyncio.Semaphore for batch concurrency control (simpler than TaskGroup)
 - [Phase 14]: Sync disconnect_check callable with fire-and-forget async polling for disconnect detection
 - [Phase 14]: Batch config in separate batch_config section of app_settings.json
+- [Phase 14]: useRef for batchConfigRef (read inside async loop, avoids stale closure and re-renders)
+- [Phase 14]: fetchBatchConfig falls back to defaults on 401/403 (non-admin users)
 
 ### Pending Todos
 
@@ -58,6 +60,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-19T21:44:51.575Z
-Stopped at: Completed 14-01-PLAN.md
+Last session: 2026-03-19T21:49:28Z
+Stopped at: Completed 14-02-PLAN.md
 Resume file: None

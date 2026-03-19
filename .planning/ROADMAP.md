@@ -60,7 +60,7 @@ See: `.planning/milestones/v1.6-ROADMAP.md` for full details
 ### v1.7 Batch Processing & Resilience
 
 - [x] **Phase 13: Operation Context & Batch Engine** - Global operation state and client-side batch orchestration foundation (completed 2026-03-19)
-- [ ] **Phase 14: AI Cleanup Batching** - Wire batch engine into enrichment pipeline with cancel and retry
+- [x] **Phase 14: AI Cleanup Batching** - Wire batch engine into enrichment pipeline with cancel and retry (completed 2026-03-19)
 - [ ] **Phase 15: Operation Persistence UI** - Status bar and result recovery across navigation
 - [ ] **Phase 16: Revenue Multi-PDF Streaming** - Per-PDF SSE progress for revenue uploads
 - [ ] **Phase 17: Proration Performance** - Cache-first lookups, pre-warming, and parallel Firestore reads
@@ -160,7 +160,7 @@ Phases 13 and 14 are sequential. Phases 15, 16, 17 can run after 13 completes (1
 | 11. RRC Pipeline Fix | v1.6 | 1/1 | Complete | 2026-03-18 |
 | 12. Unified Enrichment Modal | v1.6 | 2/2 | Complete | 2026-03-19 |
 | 13. Operation Context & Batch Engine | 2/2 | Complete    | 2026-03-19 | - |
-| 14. AI Cleanup Batching | 1/2 | In Progress|  | - |
+| 14. AI Cleanup Batching | 2/2 | Complete   | 2026-03-19 | - |
 | 15. Operation Persistence UI | v1.7 | 0/? | Not started | - |
 | 16. Revenue Multi-PDF Streaming | v1.7 | 0/? | Not started | - |
 | 17. Proration Performance | v1.7 | 0/? | Not started | - |

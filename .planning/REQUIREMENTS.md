@@ -19,7 +19,7 @@ Requirements for v1.7 Batch Processing & Resilience. Each maps to roadmap phases
 - [x] **RESIL-01**: All fetch requests use AbortController and cancel on component unmount
 - [x] **RESIL-02**: Backend stops Gemini processing when client disconnects (request.is_disconnected)
 - [x] **RESIL-03**: User receives partial results when a batch fails (successful batches preserved)
-- [ ] **RESIL-04**: System automatically retries failed batches up to a configurable limit
+- [x] **RESIL-04**: System automatically retries failed batches up to a configurable limit
 
 ### Operation Persistence
 
@@ -72,7 +72,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RESIL-01 | Phase 13 | Complete |
 | RESIL-02 | Phase 14 | Complete |
 | RESIL-03 | Phase 13 | Complete |
-| RESIL-04 | Phase 14 | Pending |
+| RESIL-04 | Phase 14 | Complete |
 | PERSIST-01 | Phase 13 | Complete |
 | PERSIST-02 | Phase 15 | Pending |
 | PERSIST-03 | Phase 15 | Pending |
