@@ -537,7 +537,7 @@ export default function Revenue() {
             Revenue
           </h1>
           <p className="text-gray-500 text-sm">
-            Extract revenue statements from EnergyLink and Energy Transfer PDFs
+            Convert revenue statement PDFs to M1 CSV format
           </p>
         </div>
         <button

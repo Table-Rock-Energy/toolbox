@@ -512,7 +512,7 @@ export default function Extract() {
             Extract
           </h1>
           <p className="text-gray-500 text-sm">
-            Extract party and stakeholder data from OCC Exhibit A PDFs
+            Extract party and stakeholder data from PDF filings
           </p>
         </div>
         <button

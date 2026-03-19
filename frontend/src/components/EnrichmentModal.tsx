@@ -44,7 +44,8 @@ export default function EnrichmentModal({
     const avgStepTime = totalElapsed / completedSteps.length
     const remaining = totalSteps - completedCount
     const remainingMs = remaining * avgStepTime
-    const remainingSec = Math.ceil(remainingMs / 1000)
+    const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000))
+    if (remainingSec === 0) return null
     if (remainingSec >= 60) {
       return `~${Math.ceil(remainingSec / 60)} min remaining`
     }
