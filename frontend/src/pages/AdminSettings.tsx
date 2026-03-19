@@ -49,6 +49,9 @@ interface GoogleCloudSettings {
   gemini_monthly_budget: number
   maps_enabled: boolean
   places_enabled: boolean
+  batch_size: number
+  batch_max_concurrency: number
+  batch_max_retries: number
 }
 
 export default function AdminSettings() {
@@ -86,6 +89,7 @@ export default function AdminSettings() {
   const [googleCloud, setGoogleCloud] = useState<GoogleCloudSettings>({
     has_key: false, gemini_enabled: false, gemini_model: 'gemini-2.5-flash',
     gemini_monthly_budget: 15.0, maps_enabled: false, places_enabled: false,
+    batch_size: 25, batch_max_concurrency: 2, batch_max_retries: 1,
   })
   const [googleCloudApiKey, setGoogleCloudApiKey] = useState('')
   const [geminiEnabled, setGeminiEnabled] = useState(false)
@@ -93,6 +97,9 @@ export default function AdminSettings() {
   const [geminiBudget, setGeminiBudget] = useState(15.0)
   const [mapsEnabled, setMapsEnabled] = useState(false)
   const [placesEnabled, setPlacesEnabled] = useState(false)
+  const [batchSize, setBatchSize] = useState(25)
+  const [batchMaxConcurrency, setBatchMaxConcurrency] = useState(2)
+  const [batchMaxRetries, setBatchMaxRetries] = useState(1)
   const [isSavingGoogleCloud, setIsSavingGoogleCloud] = useState(false)
   const [googleCloudSuccess, setGoogleCloudSuccess] = useState('')
   const [googleCloudError, setGoogleCloudError] = useState('')
@@ -227,6 +234,9 @@ export default function AdminSettings() {
         setGeminiBudget(data.gemini_monthly_budget)
         setMapsEnabled(data.maps_enabled)
         setPlacesEnabled(data.places_enabled)
+        setBatchSize(data.batch_size ?? 25)
+        setBatchMaxConcurrency(data.batch_max_concurrency ?? 2)
+        setBatchMaxRetries(data.batch_max_retries ?? 1)
       }
     } catch (err) {
       console.error('Error fetching Google Cloud settings:', err)
@@ -244,6 +254,9 @@ export default function AdminSettings() {
         gemini_monthly_budget: geminiBudget,
         maps_enabled: mapsEnabled,
         places_enabled: placesEnabled,
+        batch_size: batchSize,
+        batch_max_concurrency: batchMaxConcurrency,
+        batch_max_retries: batchMaxRetries,
       }
       if (googleCloudApiKey) {
         body.api_key = googleCloudApiKey
@@ -761,6 +774,49 @@ export default function AdminSettings() {
               </div>
             </div>
           )}
+
+          {/* AI Cleanup Batch Settings */}
+          <div className="border-t border-gray-200 pt-4 mt-4">
+            <h4 className="text-sm font-semibold text-tre-navy mb-3">AI Cleanup</h4>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Batch Size</label>
+                <input
+                  type="number"
+                  min={5}
+                  max={100}
+                  value={batchSize}
+                  onChange={e => setBatchSize(Math.max(5, Math.min(100, parseInt(e.target.value) || 25)))}
+                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                />
+                <p className="text-xs text-gray-400 mt-0.5">Entries per API call (5-100)</p>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Concurrent Batches</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={5}
+                  value={batchMaxConcurrency}
+                  onChange={e => setBatchMaxConcurrency(Math.max(1, Math.min(5, parseInt(e.target.value) || 2)))}
+                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                />
+                <p className="text-xs text-gray-400 mt-0.5">Parallel Gemini calls (1-5)</p>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Max Retries</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={3}
+                  value={batchMaxRetries}
+                  onChange={e => setBatchMaxRetries(Math.max(0, Math.min(3, parseInt(e.target.value) || 1)))}
+                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                />
+                <p className="text-xs text-gray-400 mt-0.5">Retry failed batches (0-3)</p>
+              </div>
+            </div>
+          </div>
 
           {/* Alerts */}
           {googleCloudError && (
