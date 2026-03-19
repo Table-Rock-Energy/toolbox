@@ -29,11 +29,11 @@ Requirements for v1.6 Pipeline Fixes & Unified Enrichment. Each maps to roadmap 
 ### Unified Enrichment
 
 - [ ] **ENRICH-01**: Single "Enrich" button replaces the 3-button toolbar on all tool pages
-- [ ] **ENRICH-02**: Clicking Enrich opens a modal that runs cleanup → validate → enrich sequentially
-- [ ] **ENRICH-03**: Modal shows progress bar with step labels and estimated time remaining
+- [x] **ENRICH-02**: Clicking Enrich opens a modal that runs cleanup → validate → enrich sequentially
+- [x] **ENRICH-03**: Modal shows progress bar with step labels and estimated time remaining
 - [ ] **ENRICH-04**: As each step completes, changes appear in the preview table behind the modal in real-time
 - [ ] **ENRICH-05**: Modified cells are highlighted so user can see exactly what changed
-- [ ] **ENRICH-06**: Modal handles partial failure gracefully (e.g., validate fails but cleanup results preserved)
+- [x] **ENRICH-06**: Modal handles partial failure gracefully (e.g., validate fails but cleanup results preserved)
 - [ ] **ENRICH-07**: User can close modal after completion and review all changes in preview table with highlights
 
 ## Future Requirements
@@ -77,11 +77,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | GHL-01 | Phase 10 | Complete |
 | GHL-02 | Phase 10 | Complete |
 | ENRICH-01 | Phase 12 | Pending |
-| ENRICH-02 | Phase 12 | Pending |
-| ENRICH-03 | Phase 12 | Pending |
+| ENRICH-02 | Phase 12 | Complete |
+| ENRICH-03 | Phase 12 | Complete |
 | ENRICH-04 | Phase 12 | Pending |
 | ENRICH-05 | Phase 12 | Pending |
-| ENRICH-06 | Phase 12 | Pending |
+| ENRICH-06 | Phase 12 | Complete |
 | ENRICH-07 | Phase 12 | Pending |
 
 **Coverage:**

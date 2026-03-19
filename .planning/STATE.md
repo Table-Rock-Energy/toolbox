@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Pipeline Fixes & Unified Enrichment
 status: unknown
-stopped_at: Phase 12 context gathered
-last_updated: "2026-03-19T15:00:57.199Z"
+stopped_at: Completed 12-01-PLAN.md
+last_updated: "2026-03-19T15:17:46.536Z"
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 6
+  completed_plans: 5
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-18)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Phase 10 — auth-hardening-ghl-cleanup
+**Current focus:** Phase 12 — unified-enrichment-modal
 
 ## Current Position
 
-Phase: 10 (auth-hardening-ghl-cleanup) — EXECUTING
-Plan: 3 of 3
+Phase: 12 (unified-enrichment-modal) — EXECUTING
+Plan: 2 of 2
 
 ## Accumulated Context
 
@@ -39,6 +39,7 @@ Plan: 3 of 3
 - [Phase 10-01]: No migration needed: Pydantic v2 silently drops unknown fields from requests
 - [Phase 10]: Reuse require_auth as handler param (FastAPI caches per-request, no double auth)
 - [Phase 10]: 403 modal uses existing Modal component with ShieldAlert icon, not toast
+- [Phase 12]: All confidence levels auto-applied in runAllSteps (no filtering)
 
 ### Pending Todos
 
@@ -54,6 +55,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-19T15:00:57.191Z
-Stopped at: Phase 12 context gathered
-Resume file: .planning/phases/12-unified-enrichment-modal/12-CONTEXT.md
+Last session: 2026-03-19T15:17:46.534Z
+Stopped at: Completed 12-01-PLAN.md
+Resume file: None

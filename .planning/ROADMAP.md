@@ -95,7 +95,7 @@ Plans:
   3. The modal shows a progress bar with step labels and estimated time remaining
   4. As each step completes, the preview table behind the modal updates in real-time with the new data
   5. Modified cells are highlighted so the user can see exactly what changed after closing the modal
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 12-01-PLAN.md -- useEnrichmentPipeline hook: runAllSteps(), per-cell change tracking, AbortController (ENRICH-02, ENRICH-03, ENRICH-06)
@@ -121,4 +121,4 @@ Plans:
 | 9. Tool-Specific AI Prompts | v1.5 | 2/2 | Complete | 2026-03-17 |
 | 10. Auth Hardening & GHL Cleanup | 3/3 | Complete    | 2026-03-19 | - |
 | 11. RRC Pipeline Fix | 1/1 | Complete    | 2026-03-18 | - |
-| 12. Unified Enrichment Modal | v1.6 | 0/2 | Not started | - |
+| 12. Unified Enrichment Modal | 1/2 | In Progress|  | - |
