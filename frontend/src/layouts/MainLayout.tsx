@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { Menu, X } from 'lucide-react'
 import Sidebar from '../components/Sidebar'
+import { OperationProvider } from '../contexts/OperationContext'
 
 const toolNames: Record<string, string> = {
   '/': 'Dashboard',
@@ -70,9 +71,11 @@ export default function MainLayout() {
         </div>
 
         {/* Page Content */}
-        <div className="p-4 lg:p-6">
-          <Outlet />
-        </div>
+        <OperationProvider>
+          <div className="p-4 lg:p-6">
+            <Outlet />
+          </div>
+        </OperationProvider>
       </main>
     </div>
   )
