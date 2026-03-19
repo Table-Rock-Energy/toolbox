@@ -121,4 +121,4 @@ Plans:
 | 9. Tool-Specific AI Prompts | v1.5 | 2/2 | Complete | 2026-03-17 |
 | 10. Auth Hardening & GHL Cleanup | 3/3 | Complete    | 2026-03-19 | - |
 | 11. RRC Pipeline Fix | 1/1 | Complete    | 2026-03-18 | - |
-| 12. Unified Enrichment Modal | 2/2 | Complete   | 2026-03-19 | - |
+| 12. Unified Enrichment Modal | 2/2 | Complete    | 2026-03-19 | - |
