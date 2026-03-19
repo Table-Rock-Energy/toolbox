@@ -1,345 +1,403 @@
-# Architecture Patterns
+# Architecture: v1.7 Batch Processing & Resilience
 
-**Domain:** v1.6 Integration -- Unified Enrichment Modal, RRC Fixes, Auth Hardening, GHL Cleanup
-**Researched:** 2026-03-18
-**Confidence:** HIGH (based on direct codebase analysis of all integration points)
+**Domain:** Batch processing, streaming responses, operation persistence for existing FastAPI + React SPA
+**Researched:** 2026-03-19
+**Confidence:** HIGH -- builds on existing patterns already proven in the codebase
 
-## Current Architecture Snapshot
+## Current Architecture Inventory
 
-```
-Frontend                          Backend
---------                          -------
-EnrichmentToolbar (3 buttons)     POST /api/pipeline/cleanup
-  -> useEnrichmentPipeline()      POST /api/pipeline/validate
-     -> sequential await per step POST /api/pipeline/enrich
-  -> usePreviewState()            (each returns PipelineResponse with ProposedChange[])
-     -> updateEntries()
-     -> editField()
+Before adding anything, here is what already exists and can be reused:
 
-Proration page                    POST /api/proration/rrc/fetch-missing
-  -> fetch, replace rows            -> Firestore lookup -> individual RRC scrape
-                                    -> BackgroundTasks for county download
+| Pattern | Where It Exists | Status |
+|---------|----------------|--------|
+| SSE streaming | GHL bulk send (`useSSEProgress` + `EventSourceResponse`) | Production, proven |
+| NDJSON streaming | Extract enrichment (`StreamingResponse` + `application/x-ndjson`) | Production, proven |
+| Background jobs (thread) | RRC download (`rrc_background.py` + `threading.Thread`) | Production, proven |
+| Background jobs (asyncio) | GHL bulk send (`asyncio.create_task`) | Production, proven |
+| Firestore job tracking | RRC sync jobs + GHL send jobs | Production, proven |
+| Abort/cancel | GHL send (`/send/{job_id}/cancel` + Firestore flag) | Production, proven |
+| Client-side abort | `useEnrichmentPipeline` (`AbortController`) | Production, proven |
+| Sequential step pipeline | `useEnrichmentPipeline.runAllSteps()` | Production, proven |
+| Local variable threading | `runAllSteps` uses local `currentEntries` not React state | Production, proven |
 
-Admin router (NO router-level auth)
-  GET /users (no auth)            GET /settings/* (no auth)
-  GET /users/{email}/check (no auth -- intentional for login flow)
-  POST/PUT/DELETE /users (require_admin)
+**Key insight:** Every pattern needed for v1.7 already exists somewhere in the codebase. The work is composing them into a unified approach, not inventing new patterns.
 
-History router (router-level require_auth)
-  GET /jobs (no user scoping)     GET /jobs/{id} (no ownership check)
-  DELETE /jobs/{id} (no ownership check)
-```
+## Recommended Architecture
 
----
+### Component Boundaries
 
-## Recommended Architecture Changes
+| Component | Responsibility | New/Modified | Communicates With |
+|-----------|---------------|--------------|-------------------|
+| `useOperationStore` (hook) | Global operation state that survives navigation | **NEW** | All tool pages, MainLayout |
+| `useBatchPipeline` (hook) | Client-side batch orchestration with ETA | **NEW** | `pipelineApi`, `useOperationStore` |
+| `OperationStatusBar` (component) | Persistent banner showing active/completed ops | **NEW** | `useOperationStore` |
+| `pipelineApi` (extended) | Streaming batch endpoints | **MODIFIED** | Backend pipeline router |
+| `pipeline.py` (extended) | SSE/NDJSON batch streaming endpoints | **MODIFIED** | LLM provider, validation, enrichment |
+| `useEnrichmentPipeline` (refactored) | Delegates batch logic to `useBatchPipeline` | **MODIFIED** | `useBatchPipeline` |
+| `revenue.py` (extended) | Per-PDF progress streaming | **MODIFIED** | Revenue parsers |
+| `proration.py` (extended) | Cache-first + batch Firestore reads | **MODIFIED** | Firestore, RRC data service |
 
-### 1. Unified Enrichment Modal
-
-**Pattern: Sequential Await with Progress Callback -- NOT SSE**
-
-SSE is overkill. The existing `useEnrichmentPipeline` hook already does sequential `await` calls. The modal wraps the same 3 calls with a step-progress UI. Each step takes 2-15 seconds; SSE adds complexity (query-param auth, reconnection, event parsing) for 3 discrete status updates.
-
-**New components:**
-
-| Component | Type | Replaces/Modifies |
-|-----------|------|-------------------|
-| `EnrichmentModal.tsx` | NEW | Replaces `EnrichmentToolbar.tsx` (3 buttons) |
-| `useEnrichmentPipeline.ts` | MODIFIED | Add `runAllSteps()` method for chained execution |
-| Tool pages (Extract, Title, Proration, Revenue) | MODIFIED | Replace toolbar with single button + modal |
-
-**Modal state machine:**
+### Data Flow: Batch Pipeline (AI Cleanup Example)
 
 ```
-idle -> running:cleanup -> running:validate -> running:enrich -> review -> applied
-             |                  |                  |
-             v                  v                  v
-       (auto-apply high     (auto-apply         (all changes
-        confidence,          authoritative,       to review)
-        update preview)      update preview)
+User clicks "Enrich" on Extract page (200 entries)
+  |
+  v
+useBatchPipeline splits into 8 batches of 25
+  |
+  v
+For each batch:
+  POST /pipeline/cleanup (existing endpoint, 25 entries per call)
+    |
+    v
+  Backend processes 25 entries via Gemini
+    |
+    v
+  Client receives batch result
+    |-- Remaps entry_index to global offset (batch_start + local_index)
+    |-- Merges changes into local accumulator (not React state per batch)
+    |-- Updates progress in useOperationStore
+    |-- Pushes accumulated entries to React state (visible update)
+    v
+  Next batch (or done)
+    |
+    v
+  useOperationStore.complete() -- results persist across navigation
 ```
 
-**Key design decisions:**
+### Data Flow: Revenue Multi-PDF Progress
 
-1. **Auto-apply per step, accumulate review changes.** Don't wait until all 3 steps finish. Apply high-confidence cleanup results immediately, then start validation on the already-cleaned data. Validation runs on better input.
+```
+User uploads 5 PDFs
+  |
+  v
+POST /revenue/upload-stream (SSE)
+  |
+  v
+Backend processes sequentially:
+  |-- yields SSE: {type: "pdf_start", index: 0, filename: "jan.pdf"}
+  |-- yields SSE: {type: "pdf_complete", index: 0, rows: 14}
+  |-- yields SSE: {type: "pdf_start", index: 1, filename: "feb.pdf"}
+  |-- ...
+  |-- yields SSE: {type: "complete", total_rows: 67, statements: [...]}
+  v
+Client shows per-PDF progress bar
+```
 
-2. **Pass cleaned entries to subsequent steps.** Currently `runStep()` uses `previewEntries` at call time. After step 1 calls `updateEntries()`, React state updates, but the next `runStep` may see stale closure data. Solution: `runAllSteps()` maintains a local `currentEntries` variable that chains through steps without depending on React state timing.
+### Data Flow: Operation Persistence
 
+```
+User starts enrichment on Extract (200 entries)
+  |
+  v
+useOperationStore registers operation:
+  {id: "extract-enrich-1710...", tool: "extract", type: "enrich",
+   status: "running", progress: {current: 0, total: 200}}
+  |
+  v
+User navigates to Revenue page
+  |-- OperationStatusBar shows: "Extract: Enriching 45/200..."
+  |-- useBatchPipeline continues (not interrupted)
+  v
+User navigates back to Extract
+  |-- useOperationStore.getResults("extract-enrich-1710...")
+  |-- Results applied to preview state
+```
+
+## Patterns to Follow
+
+### Pattern 1: Client-Side Batch Orchestration
+
+**What:** The client splits entries into batches and calls the backend per-batch. The backend does NOT manage batch state.
+
+**Why:** Matches the existing `runAllSteps` pattern. Client already manages local variable threading, abort, and step sequencing. Adding batching is a natural extension. Server-side batch management would require new Firestore collections, polling, and duplicate the job tracking already done client-side.
+
+**When:** AI cleanup (Gemini has per-request token limits), address validation (Google Maps rate limits), contact enrichment (PDL rate limits).
+
+**Example:**
 ```typescript
-async function runAllSteps() {
-  let currentEntries = [...previewEntries]
+// useBatchPipeline.ts
+const BATCH_SIZE = 25
 
-  // Step 1: Cleanup
-  const cleanResult = await pipelineApi.cleanup(tool, currentEntries)
-  currentEntries = applyHighConfidence(currentEntries, cleanResult.proposed_changes)
-  updateEntries(currentEntries)  // live preview update
-  accumulateForReview(cleanResult.proposed_changes.filter(c => c.confidence !== 'high'))
+async function processBatches(
+  entries: Record<string, unknown>[],
+  apiMethod: (tool: string, entries: Record<string, unknown>[]) => Promise<ApiResponse<PipelineResponse>>,
+  tool: string,
+  onProgress: (processed: number, total: number) => void,
+  signal: AbortSignal
+): Promise<ProposedChange[]> {
+  const allChanges: ProposedChange[] = []
+  const total = entries.length
 
-  // Step 2: Validate (uses cleaned data)
-  const valResult = await pipelineApi.validate(tool, currentEntries)
-  currentEntries = applyAuthoritative(currentEntries, valResult.proposed_changes)
-  updateEntries(currentEntries)  // live preview update
-  accumulateForReview(valResult.proposed_changes.filter(c => !c.authoritative))
+  for (let i = 0; i < total; i += BATCH_SIZE) {
+    if (signal.aborted) break
 
-  // Step 3: Enrich (uses validated data)
-  const enrichResult = await pipelineApi.enrich(tool, currentEntries)
-  accumulateForReview(enrichResult.proposed_changes)  // all to review, no auto-apply
+    const batch = entries.slice(i, i + BATCH_SIZE)
+    const response = await apiMethod(tool, batch)
+
+    if (response.data?.success) {
+      // Remap entry_index to global index
+      const remapped = response.data.proposed_changes.map(c => ({
+        ...c,
+        entry_index: c.entry_index + i
+      }))
+      allChanges.push(...remapped)
+    }
+
+    onProgress(Math.min(i + BATCH_SIZE, total), total)
+  }
+
+  return allChanges
 }
 ```
 
-3. **Progress model:** 3 discrete steps, not a continuous bar. Show step name + spinner for current, checkmark for completed, gray for pending. Include entry count per step (e.g., "Validated 42/42 addresses").
+### Pattern 2: SSE for Long Operations (Backend-Driven Progress)
 
-4. **Skip unavailable steps.** If Gemini is not configured, skip cleanup and move to validate. If Maps is not configured, skip validate. The modal adapts to what's enabled, running only available steps.
+**What:** For operations where the backend controls pacing (revenue PDF processing, Gemini calls), use SSE to stream progress events.
 
-5. **Cumulative highlight keys.** Current `recentlyAppliedKeys` resets per step. The modal accumulates across all steps, clearing only when the modal closes.
+**Why:** Already proven with GHL bulk send. `sse-starlette` is already a dependency. `useSSEProgress` hook exists. EventSource reconnects automatically.
 
-**Data flow for live preview updates:**
+**When:** Revenue multi-PDF upload, any single endpoint taking >5 seconds.
 
-```
-User clicks "Enrich All" button -> modal opens
+**Example (backend):**
+```python
+@router.post("/upload-stream")
+async def upload_pdfs_stream(request: Request, files: list[UploadFile] = File(...)):
+    async def event_generator():
+        for i, file in enumerate(files):
+            yield {"event": "pdf_start", "data": json.dumps({
+                "index": i, "filename": file.filename, "total": len(files)
+            })}
 
-Modal Step 1 (cleanup):
-  POST /api/pipeline/cleanup with currentEntries
-  -> auto-apply high-confidence to currentEntries
-  -> updateEntries(currentEntries) -> table re-renders live
-  -> accumulate medium/low for final review
+            # Process PDF...
+            rows = await process_pdf(file)
 
-Modal Step 2 (validate):
-  POST /api/pipeline/validate with currentEntries (cleaned)
-  -> auto-apply authoritative address corrections
-  -> updateEntries(currentEntries) -> table re-renders live
-  -> accumulate partial-confidence for review
+            yield {"event": "pdf_complete", "data": json.dumps({
+                "index": i, "rows": len(rows)
+            })}
 
-Modal Step 3 (enrich):
-  POST /api/pipeline/enrich with currentEntries (validated)
-  -> all enrichment changes go to review (never auto-apply contact data)
+        yield {"event": "complete", "data": json.dumps({...final_result...})}
 
-Modal Review:
-  -> show accumulated medium/low changes from all 3 steps
-  -> user checks/unchecks, clicks Apply
-  -> single batch apply to previewEntries
-  -> modal closes
+    return EventSourceResponse(event_generator())
 ```
 
-### 2. RRC Fetch-Missing: Compound Lease Splitting
+### Pattern 3: Operation Store (React Context, Not Zustand)
 
-**Where:** `backend/app/api/proration.py` in `fetch_missing_rrc_data()`, plus new utility
+**What:** A React Context that holds active and recently completed operations. Lives at the `MainLayout` level so it survives route changes.
 
-**Current problem:** A row with `rrc_lease = "08-41100"` does a single lookup. But some properties have compound leases like `"08-41100 / 08-41200"` that need splitting into separate lookups and combining results.
+**Why:** No new dependencies (constraint: no new deps). The app already uses Context for auth. Operations are few (max 1-2 concurrent). No need for Redux/Zustand complexity.
 
-**New file:** `backend/app/services/proration/lease_parser.py`
+**When:** Any operation that should survive navigation.
+
+**Key design:** The store holds references to in-progress promises and their results. When a tool page mounts, it checks the store for pending/completed operations matching its tool name.
+
+```typescript
+// contexts/OperationContext.tsx
+interface Operation {
+  id: string
+  tool: string
+  type: 'enrich' | 'upload' | 'export'
+  status: 'running' | 'completed' | 'failed' | 'cancelled'
+  progress: { current: number; total: number }
+  result?: unknown  // Tool-specific result data
+  startedAt: number
+  completedAt?: number
+}
+
+interface OperationContextValue {
+  operations: Map<string, Operation>
+  register: (op: Omit<Operation, 'status' | 'startedAt'>) => string
+  updateProgress: (id: string, current: number, total: number) => void
+  complete: (id: string, result: unknown) => void
+  fail: (id: string, error: string) => void
+  cancel: (id: string) => void
+  getActiveForTool: (tool: string) => Operation | undefined
+  getCompletedForTool: (tool: string) => Operation | undefined
+  dismiss: (id: string) => void
+}
+```
+
+### Pattern 4: Partial Results on Failure
+
+**What:** When a batch fails mid-stream, return all successfully processed batches plus the error.
+
+**Why:** With 200 entries and Gemini processing, losing 7 completed batches because batch 8 fails is unacceptable.
+
+**When:** Any batched operation.
+
+**Implementation:** Already natural with client-side batching. The `allChanges` accumulator in `useBatchPipeline` holds all successful results. On error, the hook transitions to `completed_partial` status and makes accumulated changes available.
+
+```typescript
+// In useBatchPipeline
+} catch (err) {
+  // Partial failure: keep what we have
+  return {
+    changes: allChanges,  // All successful batches
+    status: 'completed_partial',
+    error: `Failed at batch ${batchIndex + 1}: ${err.message}`,
+    processedCount: i,
+    totalCount: total,
+  }
+}
+```
+
+### Pattern 5: Proration Cache-First with Batch Reads
+
+**What:** Proration RRC lookups check in-memory pandas cache first, then batch-read from Firestore for misses, then individual HTML scraping as last resort.
+
+**Why:** Current flow does sequential Firestore reads per missing row. `asyncio.gather` can parallelize these. Cache pre-warming on startup eliminates cold-start penalty.
+
+**When:** Proration upload processing.
 
 ```python
-def split_compound_lease(rrc_lease: str) -> list[tuple[str, str]]:
-    """Split compound lease strings into individual (district, lease) pairs.
+# Tiered lookup strategy
+async def lookup_rrc_data(rows: list[MineralHolderRow]) -> list[RRCResult]:
+    # 1. Check pandas in-memory cache (instant, covers ~95% of cases)
+    cached, misses = rrc_data_service.batch_lookup(rows)
 
-    Handles: "08-41100 / 08-41200", "08-41100/08-41200", "08-41100, 08-41200"
-    Returns: [("08", "41100"), ("08", "41200")]
-    """
-    parts = re.split(r'[/,]', rrc_lease)
-    results = []
-    for part in parts:
-        part = part.strip()
-        if '-' in part:
-            d, l = part.split('-', 1)
-            results.append((d.strip().zfill(2), l.strip()))
-    return results
+    # 2. Batch Firestore reads for misses (parallel)
+    if misses:
+        tasks = [firestore_lookup(row) for row in misses]
+        db_results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Merge successes, collect remaining misses
+
+    # 3. Individual HTML scraping for remaining misses (existing pattern)
+    # Already implemented in fetch_individual_leases
 ```
-
-**Integration point:** In `fetch_missing_rrc_data()`, replace the single `district/lease_number` parse with:
-
-```python
-lease_pairs = split_compound_lease(row.rrc_lease) if row.rrc_lease else []
-if len(lease_pairs) <= 1:
-    # existing single-lease path
-else:
-    # compound: lookup each, sum acres
-    total_acres = 0
-    found_count = 0
-    for d, l in lease_pairs:
-        rrc_info = await lookup_rrc_acres(d, l)
-        if rrc_info:
-            total_acres += float(rrc_info.get("acres", 0))
-            found_count += 1
-    if found_count == len(lease_pairs):
-        row.rrc_acres = total_acres
-        row.fetch_status = "split_found"
-    elif found_count > 0:
-        row.rrc_acres = total_acres
-        row.fetch_status = "split_partial"
-    else:
-        # add all to missing_leases for individual scrape
-```
-
-**Per-row status values (existing + new):**
-
-| Status | Meaning |
-|--------|---------|
-| `found` | Direct match (existing) |
-| `not_found` | No match after all attempts (existing) |
-| `split_found` | Compound lease split, all parts matched (NEW) |
-| `split_partial` | Compound lease split, some parts matched (NEW) |
-
-**Acres aggregation:** Sum acres from all matched parts. NRA calculation uses total lease acres, so summing is correct for compound leases on the same property.
-
-### 3. Admin Auth Hardening
-
-**Current state:** Admin router has NO router-level auth. Intentional for `check_user` (login flow) and profile images. But `GET /users`, `GET /settings/*`, `GET /preferences/*` are all unauthenticated -- leaks config.
-
-**Approach: Per-endpoint Depends, not router-level.**
-
-Cannot use router-level `dependencies=[Depends(require_auth)]` because `check_user` must stay unauthenticated. Add `Depends` to individual endpoints.
-
-| Endpoint | Current Auth | Target Auth | Rationale |
-|----------|-------------|-------------|-----------|
-| `GET /options` | None | `require_auth` | Options harmless but should require login |
-| `GET /users` | None | **`require_admin`** | User list is sensitive (emails, roles) |
-| `POST /users` | `require_admin` | `require_admin` | Already correct |
-| `PUT /users/{email}` | `require_admin` | `require_admin` | Already correct |
-| `DELETE /users/{email}` | `require_admin` | `require_admin` | Already correct |
-| `GET /users/{email}/check` | None | **None** | Must stay unauthenticated (login flow) |
-| `GET /settings/gemini` | None | `require_auth` | Config read should require login |
-| `PUT /settings/gemini` | `require_admin` | `require_admin` | Already correct |
-| `GET /settings/google-cloud` | None | `require_auth` | Config read should require login |
-| `PUT /settings/google-cloud` | `require_admin` | `require_admin` | Already correct |
-| `GET /settings/google-maps` | None | `require_auth` | Config read should require login |
-| `PUT /settings/google-maps` | `require_admin` | `require_admin` | Already correct |
-| `GET /preferences/{email}` | None | `require_auth` | User data |
-| `PUT /preferences/{email}` | None | `require_auth` | User data |
-| `POST /upload-profile-image` | None | `require_auth` | Write operation |
-| `GET /profile-image/{user_id}` | None | **None** | Images can stay public (served to `<img>` tags) |
-
-**Implementation:** Add `user: dict = Depends(require_auth)` or `Depends(require_admin)` to each function signature. No architectural changes, just decorator additions.
-
-### 4. History Auth: User-Scoped Queries
-
-**Current state:** `GET /api/history/jobs` has router-level `require_auth` but returns ALL jobs. Any authenticated user can see all users' jobs.
-
-**Critical FastAPI subtlety:** Router-level `dependencies=[Depends(require_auth)]` enforces the check but does NOT inject the user dict into route handlers. Each handler that needs user context must declare its own `user: dict = Depends(require_auth)` parameter. The dependency runs twice (router-level + handler-level) but Firebase token verification is cheap.
-
-**Implementation:**
-
-```python
-@router.get("/jobs")
-async def get_jobs(
-    tool: Optional[str] = Query(None),
-    limit: int = Query(50, ge=1, le=100),
-    user: dict = Depends(require_auth),  # ADD: gives us user email
-):
-    from app.core.auth import is_user_admin
-    show_all = is_user_admin(user.get("email", ""))
-    user_filter = None if show_all else user.get("email")
-    jobs = await db.get_recent_jobs(tool=tool, limit=limit, user_id=user_filter)
-```
-
-**Firestore query change** in `firestore_service.py`:
-
-```python
-async def get_recent_jobs(tool=None, limit=50, user_id=None):
-    query = db.collection("jobs").order_by("created_at", direction=firestore.Query.DESCENDING)
-    if tool:
-        query = query.where("tool", "==", tool)
-    if user_id:
-        query = query.where("user_id", "==", user_id)  # ADD
-    query = query.limit(limit)
-```
-
-**Also scope:** `DELETE /jobs/{job_id}` and `GET /jobs/{job_id}` -- verify job's `user_id` matches requester (or requester is admin).
-
-### 5. GHL smart_list_name Cleanup
-
-**Current state:** `BulkSendRequest.smart_list_name` is deprecated but still used:
-
-```python
-# backend/app/api/ghl.py line 343
-campaign_name = data.smart_list_name or data.campaign_tag
-```
-
-**Changes:**
-
-1. Remove `smart_list_name` from `BulkSendRequest` model in `models/ghl.py`
-2. Change line 343 to `campaign_name = data.campaign_tag`
-3. Remove `smart_list_name` from frontend `api.ts` if referenced
-4. Historical Firestore docs with `smart_list_name` don't need migration
-
----
-
-## Component Boundaries
-
-| Component | Responsibility | Communicates With | Change Type |
-|-----------|---------------|-------------------|-------------|
-| `EnrichmentModal.tsx` | Orchestrates 3-step pipeline, shows progress + review | `useEnrichmentPipeline`, `usePreviewState` | NEW |
-| `useEnrichmentPipeline.ts` | Runs pipeline steps, manages proposed changes | `pipelineApi`, receives `updateEntries` callback | MODIFIED (add `runAllSteps`) |
-| `usePreviewState.ts` | Single source of truth for table data | Tool pages, enrichment hooks | UNCHANGED |
-| `EnrichmentToolbar.tsx` | 3 separate buttons | -- | REMOVE |
-| `ProposedChangesSummary.tsx` | Shows change review UI | Moved inside `EnrichmentModal` | RELOCATED |
-| `lease_parser.py` | Compound lease string parsing | `fetch_missing_rrc_data` | NEW |
-| `fetch_missing_rrc_data()` | RRC lookup with compound lease support | `lease_parser`, Firestore | MODIFIED |
-| Admin endpoints | Per-endpoint auth decorators | `require_auth`, `require_admin` | MODIFIED |
-| History endpoints | User-scoped job queries | `firestore_service`, `require_auth` | MODIFIED |
-| `BulkSendRequest` model | GHL bulk send request shape | `ghl.py` endpoint | MODIFIED (remove field) |
-
----
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: SSE for Short-Lived Sequential Operations
-**What:** Using Server-Sent Events for the enrichment modal progress.
-**Why bad:** Each pipeline step is a single HTTP request taking 2-15 seconds. SSE adds complexity (reconnection, query-param auth, event parsing) for 3 discrete status updates. The GHL bulk send uses SSE because it processes hundreds of contacts over minutes -- that is the right use case.
-**Instead:** Sequential await with state updates after each step.
+### Anti-Pattern 1: Server-Side Batch Job Management for Pipeline
 
-### Anti-Pattern 2: Running Pipeline Steps in Parallel
-**What:** `Promise.all([cleanup, validate, enrich])` to speed up enrichment.
-**Why bad:** Steps are intentionally sequential. Cleanup fixes name casing before address validation, which fixes addresses before contact enrichment. Parallel means enrichment searches for uncleaned names at uncorrected addresses.
-**Instead:** Sequential with inter-step data passthrough via local variable (not React state).
+**What:** Creating Firestore job documents and polling for AI cleanup/validation/enrichment batches.
+**Why bad:** Duplicates the client-side orchestration that already works. Adds complexity, Firestore cost, and a second state management path. The existing `runAllSteps` local-variable-threading pattern is simpler and proven.
+**Instead:** Client-side batching with direct HTTP calls. Server stays stateless per request.
 
-### Anti-Pattern 3: New Unified Pipeline Backend Endpoint
-**What:** Creating `POST /api/pipeline/run-all` that runs all 3 steps server-side.
-**Why bad:** Loses the ability to update the preview table between steps. The modal's value is showing live progress. A single endpoint is a black box until completion.
-**Instead:** Keep 3 separate endpoints, orchestrate from frontend modal.
+### Anti-Pattern 2: WebSocket for Progress
 
-### Anti-Pattern 4: Router-Level Auth on Admin Router
-**What:** Adding `dependencies=[Depends(require_auth)]` to the admin router include.
-**Why bad:** Breaks `check_user` endpoint which must remain unauthenticated (login flow checks allowlist before user has auth context in the app).
-**Instead:** Per-endpoint `Depends()` on each handler that needs auth.
+**What:** Using WebSocket instead of SSE for streaming progress.
+**Why bad:** SSE is already proven in the codebase. WebSocket requires bidirectional protocol, connection management, and has worse reconnection semantics. The data flow is unidirectional (server to client).
+**Instead:** SSE via `sse-starlette` (already a dependency).
 
-### Anti-Pattern 5: Relying on Router-Level Depends for User Context
-**What:** Assuming the `user` dict from router-level `dependencies=[Depends(require_auth)]` is available in route handlers.
-**Why bad:** Router-level dependencies enforce the check but do NOT inject into handler parameters. The handler gets no `user` variable.
-**Instead:** Declare `user: dict = Depends(require_auth)` in each handler that needs user context. The duplicate call is cheap.
+### Anti-Pattern 3: Global State Library (Redux, Zustand, Jotai)
 
----
+**What:** Adding a state management library for operation persistence.
+**Why bad:** Violates "no new dependencies" constraint. The app has one user at a time (small internal team). Operation count is trivially small. React Context handles this fine.
+**Instead:** `OperationContext` at `MainLayout` level.
+
+### Anti-Pattern 4: Streaming Individual Entry Results
+
+**What:** SSE streaming per-entry results from backend during AI cleanup.
+**Why bad:** Gemini processes entries in a single prompt (the whole batch at once). There is no per-entry progress to stream. The latency is in the LLM call, not iteration.
+**Instead:** Batch-level progress (batch 3 of 8 complete).
+
+### Anti-Pattern 5: Persisting Operation State to Firestore
+
+**What:** Writing in-progress pipeline operations to Firestore.
+**Why bad:** These operations are ephemeral (seconds to minutes), user-specific, and the results are already held in React state. Firestore persistence is for durable data (jobs, RRC data, connections). Adding operation state creates cleanup burden and read/write costs for transient data.
+**Instead:** In-memory React Context. If the browser tab closes, the operation is lost -- acceptable for an internal tool with one user.
+
+## Integration Points: New vs Modified
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `frontend/src/contexts/OperationContext.tsx` | Global operation state provider |
+| `frontend/src/hooks/useBatchPipeline.ts` | Client-side batch orchestration with ETA |
+| `frontend/src/components/OperationStatusBar.tsx` | Persistent banner in MainLayout showing active ops |
+
+### Modified Files
+
+| File | Change |
+|------|--------|
+| `frontend/src/hooks/useEnrichmentPipeline.ts` | Delegate batch splitting to `useBatchPipeline`, consume `useOperationStore` |
+| `frontend/src/components/EnrichmentModal.tsx` | Show batch-level progress (batch N of M), not just step-level |
+| `frontend/src/layouts/MainLayout.tsx` | Wrap with `OperationProvider`, render `OperationStatusBar` |
+| `frontend/src/App.tsx` | Add `OperationProvider` inside `AuthProvider` |
+| `frontend/src/utils/api.ts` | Add timeout extension for batch calls (existing 300s may need per-batch adjustment) |
+| `backend/app/api/pipeline.py` | No change needed if client-side batching; optionally add batch_size hint param |
+| `backend/app/api/revenue.py` | Add `/upload-stream` SSE endpoint alongside existing `/upload` |
+| `backend/app/api/proration.py` | Add `asyncio.gather` for batch Firestore reads |
+| `backend/app/services/proration/rrc_data_service.py` | Add `batch_lookup()` method, startup pre-warming |
+| `backend/app/main.py` | Add startup hook for RRC cache pre-warming |
+
+### Unchanged Files
+
+| File | Why No Change |
+|------|---------------|
+| `frontend/src/contexts/AuthContext.tsx` | Auth is orthogonal to operations |
+| `backend/app/services/rrc_background.py` | RRC background download pattern stays as-is |
+| `backend/app/api/ghl.py` | GHL already has its own SSE pattern, no changes needed |
+| `frontend/src/hooks/useSSEProgress.ts` | GHL-specific, new SSE consumption can use a generic variant or inline EventSource |
 
 ## Suggested Build Order
 
-Based on dependency analysis and risk:
+Based on dependency analysis:
 
-| Order | Task | Effort | Dependencies | Type |
-|-------|------|--------|-------------|------|
-| 1 | GHL `smart_list_name` removal | 0.5h | None | Backend + frontend |
-| 2 | Admin auth hardening (per-endpoint Depends) | 1h | None | Backend only |
-| 3 | History user-scoping + ownership checks | 1h | Pattern from #2 | Backend only |
-| 4 | RRC compound lease splitting | 2h | None | Backend + minor frontend |
-| 5 | Unified enrichment modal | 4h | Stable pipeline API | Frontend (largest change) |
+```
+Phase 1: Foundation (no UI changes needed)
+  |-- OperationContext.tsx          -- no deps, just a provider
+  |-- useBatchPipeline.ts          -- depends on pipelineApi (existing)
+  |-- Proration cache pre-warming  -- backend only, no frontend
 
-**Rationale:**
-- Steps 1-3 are backend-only, low-risk, independently shippable
-- Step 4 is backend with minor frontend (display new `fetch_status` values)
-- Step 5 is the largest frontend change; benefits from stable backend; touches 4 tool pages
-- Steps 1-4 can be done in any order; step 5 should go last
+Phase 2: Pipeline Batching (core feature)
+  |-- useEnrichmentPipeline refactor to use useBatchPipeline
+  |-- EnrichmentModal batch progress UI
+  |-- Backend pipeline batch support (if needed beyond client-side splitting)
 
----
+Phase 3: Operation Persistence (requires Phase 1)
+  |-- OperationStatusBar.tsx
+  |-- MainLayout integration
+  |-- Tool pages consume operation results on mount
+
+Phase 4: Revenue Streaming (independent of Phases 2-3)
+  |-- Backend /upload-stream SSE endpoint
+  |-- Revenue page SSE progress UI
+
+Phase 5: Proration Optimization (independent)
+  |-- asyncio.gather for batch Firestore reads
+  |-- batch_lookup() in rrc_data_service
+```
+
+**Phase ordering rationale:**
+- Phase 1 first because OperationContext and useBatchPipeline are consumed by everything else
+- Phase 2 before Phase 3 because batching delivers value without persistence; persistence without batching delivers nothing
+- Phase 4 is independent -- revenue streaming has no dependency on the enrichment pipeline
+- Phase 5 is independent -- proration optimization is purely backend
+
+## Abort/Cancel Propagation
+
+Three levels of abort already exist in the codebase. v1.7 needs to connect them:
+
+1. **Client-side AbortController** (exists in `useEnrichmentPipeline`): Stops batch iteration
+2. **fetch AbortSignal** (exists in `ApiClient`): Cancels in-flight HTTP request
+3. **SSE disconnect detection** (exists in GHL SSE): `request.is_disconnected()`
+
+**New connection needed:** When `useBatchPipeline.abort()` is called:
+1. Set AbortController signal (stops next batch from starting)
+2. Abort current fetch via signal (cancels in-flight request)
+3. Backend detects disconnection and stops processing (or discards result)
+4. Accumulated partial results remain available in the hook
+
+No Firestore cancellation flag needed (unlike GHL jobs) because pipeline operations are direct HTTP requests, not background tasks.
+
+## Scalability Considerations
+
+| Concern | Current (10-50 entries) | Target (200-500 entries) | Limit (1000+ entries) |
+|---------|------------------------|--------------------------|----------------------|
+| AI cleanup | Single request, 30s | 8-20 batches, ~2min | Consider backend queue |
+| Address validation | Sequential, slow | Batch with concurrency limit | Google Maps quota |
+| Enrichment | Sequential | Batch with PDL rate limit | Cost concern, not technical |
+| Revenue PDFs | Synchronous, blocks | SSE per-PDF | Memory (1Gi Cloud Run) |
+| Proration lookup | Sequential Firestore | asyncio.gather parallel | Firestore read quota |
+| Operation store | N/A | 1-2 concurrent ops | React re-render cost (trivial) |
 
 ## Sources
 
-- `backend/app/api/pipeline.py` -- Pipeline endpoint implementation (3 endpoints, PipelineResponse format)
-- `backend/app/api/admin.py` -- Admin auth patterns (mix of authenticated and unauthenticated)
-- `backend/app/api/history.py` -- History endpoint (no user scoping, no ownership checks)
-- `backend/app/api/ghl.py` -- SSE pattern reference (Firestore polling, query-param auth), `smart_list_name` usage
-- `backend/app/api/proration.py` -- `fetch_missing_rrc_data()` implementation
-- `backend/app/models/proration.py` -- `MineralHolderRow.fetch_status` field
-- `backend/app/models/pipeline.py` -- `PipelineRequest/Response/ProposedChange` models
-- `backend/app/main.py` -- Router auth dependency patterns (lines 72-86)
-- `frontend/src/hooks/useEnrichmentPipeline.ts` -- Pipeline orchestration (sequential runStep)
-- `frontend/src/hooks/usePreviewState.ts` -- Preview state management (updateEntries preserves edits)
-- `frontend/src/components/EnrichmentToolbar.tsx` -- Current 3-button toolbar (to be replaced)
+- Codebase analysis: `frontend/src/hooks/useSSEProgress.ts`, `backend/app/api/ghl.py` (SSE pattern)
+- Codebase analysis: `frontend/src/hooks/useEnrichmentPipeline.ts` (pipeline orchestration)
+- Codebase analysis: `backend/app/services/rrc_background.py` (background job pattern)
+- Codebase analysis: `backend/app/api/pipeline.py` (current pipeline endpoints)
+- Codebase analysis: `backend/app/api/extract.py` (NDJSON streaming)
+- FastAPI SSE: sse-starlette already in requirements.txt
