@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, X, PanelLeftClose, PanelLeftOpen, Play, ShieldAlert } from 'lucide-react'
-import { FileUpload, Modal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar, ProposedChangesSummary, ProposedChangeCell } from '../components'
+import { FileUpload, Modal, EditableCell, EnrichmentModal, UnifiedEnrichButton, ProposedChangeCell } from '../components'
 import MineralExportModal from '../components/MineralExportModal'
 import type { PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
@@ -137,6 +137,9 @@ export default function Extract() {
   // Enrichment feature flags
   const featureFlags = useFeatureFlags()
 
+
+  // Enrichment modal state
+  const [enrichModalOpen, setEnrichModalOpen] = useState(false)
 
   // Mineral export modal state
   const [showMineralModal, setShowMineralModal] = useState(false)
@@ -493,6 +496,10 @@ export default function Extract() {
 
   const isColVisible = (key: string) => visibleColumns.has(key)
 
+  const getCellHighlight = (entryIndex: number, field: string) => {
+    return pipeline.enrichmentChanges.get(`${entryIndex}:${field}`) || null
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -773,14 +780,23 @@ export default function Extract() {
                     )}
                   </div>
                   <div className="flex gap-2">
-                    <EnrichmentToolbar
-                      {...featureFlags}
-                      onCleanUp={pipeline.onCleanUp}
-                      onValidate={pipeline.onValidate}
-                      onEnrich={pipeline.onEnrich}
-                      isProcessing={pipeline.isProcessing}
-                      activeAction={pipeline.activeAction}
+                    <UnifiedEnrichButton
+                      pipelineStatus={pipeline.pipelineStatus}
                       entryCount={preview.entriesToExport.length}
+                      anyStepEnabled={featureFlags.cleanUpEnabled || featureFlags.validateEnabled || featureFlags.enrichEnabled}
+                      onEnrich={() => { setEnrichModalOpen(true); pipeline.runAllSteps() }}
+                      onReopen={() => setEnrichModalOpen(true)}
+                      onUndo={pipeline.undoAllEnrichment}
+                      onClearHighlights={pipeline.clearHighlights}
+                      hasChanges={pipeline.enrichmentChanges.size > 0}
+                      hasSnapshot={pipeline.completedSteps.size > 0}
+                    />
+                    <EnrichmentModal
+                      isOpen={enrichModalOpen}
+                      onClose={() => setEnrichModalOpen(false)}
+                      stepStatuses={pipeline.stepStatuses}
+                      pipelineStatus={pipeline.pipelineStatus}
+                      enrichmentChanges={pipeline.enrichmentChanges}
                     />
                     <button
                       onClick={() => setShowMineralModal(true)}
@@ -793,34 +809,11 @@ export default function Extract() {
                 </div>
               </div>
 
-              {/* Auto-Applied Cleanup Changes */}
-              {pipeline.autoAppliedChanges.length > 0 && (
-                <div className="px-6 py-2 border-b border-gray-100">
-                  <AutoCorrectionsBanner
-                    corrections={pipeline.autoAppliedChanges}
-                    onUndo={pipeline.onUndoAutoApplied}
-                  />
-                </div>
-              )}
-
               {/* Pipeline Error */}
               {pipeline.errorMessage && (
                 <div className="px-6 py-3 border-b border-red-200 bg-red-50 flex items-center justify-between">
                   <p className="text-sm text-red-700">{pipeline.errorMessage}</p>
                   <button onClick={pipeline.onDismiss} className="text-sm text-red-500 hover:underline">Dismiss</button>
-                </div>
-              )}
-
-              {/* Proposed Changes Summary Bar */}
-              {pipeline.proposedChanges && (
-                <div className="px-6 py-3 border-b border-gray-100">
-                  <ProposedChangesSummary
-                    proposedChanges={pipeline.proposedChanges}
-                    checkedIndices={pipeline.checkedIndices}
-                    onToggleCheckAll={pipeline.toggleCheckAll}
-                    onApply={pipeline.onApply}
-                    onDismiss={pipeline.onDismiss}
-                  />
                 </div>
               )}
 
@@ -1042,8 +1035,10 @@ export default function Extract() {
                                 {entry.entry_number}
                               </td>
                             )}
-                            {isColVisible('primary_name') && (
-                              <td className={`py-2 px-3 text-gray-900 ${isExcluded ? 'line-through' : ''} ${rowChanges?.has('primary_name') ? 'bg-blue-100/50' : ''}`} title={entry.primary_name}>
+                            {isColVisible('primary_name') && (() => {
+                              const hl = getCellHighlight(rowIdx, 'primary_name')
+                              return (
+                              <td className={`py-2 px-3 text-gray-900 ${isExcluded ? 'line-through' : ''} ${hl ? 'bg-green-50' : rowChanges?.has('primary_name') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : entry.primary_name}>
                                 {rowChanges?.has('primary_name') ? (
                                   <ProposedChangeCell change={rowChanges.get('primary_name')!} />
                                 ) : (
@@ -1053,7 +1048,8 @@ export default function Extract() {
                                   />
                                 )}
                               </td>
-                            )}
+                              )
+                            })()}
                             {isColVisible('first_name') && (
                               <td className="py-2 px-3 text-gray-600 text-xs">{entry.first_name || <span className="text-gray-400">{'\u2014'}</span>}</td>
                             )}
@@ -1084,8 +1080,10 @@ export default function Extract() {
                                 </select>
                               </td>
                             )}
-                            {isColVisible('mailing_address') && (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${rowChanges?.has('mailing_address') ? 'bg-blue-100/50' : ''}`}>
+                            {isColVisible('mailing_address') && (() => {
+                              const hl = getCellHighlight(rowIdx, 'mailing_address')
+                              return (
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : rowChanges?.has('mailing_address') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
                                 {rowChanges?.has('mailing_address') ? (
                                   <ProposedChangeCell change={rowChanges.get('mailing_address')!} />
                                 ) : (
@@ -1095,9 +1093,12 @@ export default function Extract() {
                                   />
                                 )}
                               </td>
-                            )}
-                            {isColVisible('mailing_address_2') && (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${rowChanges?.has('mailing_address_2') ? 'bg-blue-100/50' : ''}`}>
+                              )
+                            })()}
+                            {isColVisible('mailing_address_2') && (() => {
+                              const hl = getCellHighlight(rowIdx, 'mailing_address_2')
+                              return (
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : rowChanges?.has('mailing_address_2') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
                                 {rowChanges?.has('mailing_address_2') ? (
                                   <ProposedChangeCell change={rowChanges.get('mailing_address_2')!} />
                                 ) : (
@@ -1107,9 +1108,12 @@ export default function Extract() {
                                   />
                                 )}
                               </td>
-                            )}
-                            {isColVisible('city') && (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${rowChanges?.has('city') ? 'bg-blue-100/50' : ''}`}>
+                              )
+                            })()}
+                            {isColVisible('city') && (() => {
+                              const hl = getCellHighlight(rowIdx, 'city')
+                              return (
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : rowChanges?.has('city') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
                                 {rowChanges?.has('city') ? (
                                   <ProposedChangeCell change={rowChanges.get('city')!} />
                                 ) : (
@@ -1119,9 +1123,12 @@ export default function Extract() {
                                   />
                                 )}
                               </td>
-                            )}
-                            {isColVisible('state') && (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${rowChanges?.has('state') ? 'bg-blue-100/50' : ''}`}>
+                              )
+                            })()}
+                            {isColVisible('state') && (() => {
+                              const hl = getCellHighlight(rowIdx, 'state')
+                              return (
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : rowChanges?.has('state') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
                                 {rowChanges?.has('state') ? (
                                   <ProposedChangeCell change={rowChanges.get('state')!} />
                                 ) : (
@@ -1131,9 +1138,12 @@ export default function Extract() {
                                   />
                                 )}
                               </td>
-                            )}
-                            {isColVisible('zip_code') && (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${rowChanges?.has('zip_code') ? 'bg-blue-100/50' : ''}`}>
+                              )
+                            })()}
+                            {isColVisible('zip_code') && (() => {
+                              const hl = getCellHighlight(rowIdx, 'zip_code')
+                              return (
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : rowChanges?.has('zip_code') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
                                 {rowChanges?.has('zip_code') ? (
                                   <ProposedChangeCell change={rowChanges.get('zip_code')!} />
                                 ) : (
@@ -1143,7 +1153,8 @@ export default function Extract() {
                                   />
                                 )}
                               </td>
-                            )}
+                              )
+                            })()}
                             {isColVisible('notes') && (
                               <td className="py-2 px-3 text-gray-600 text-xs max-w-[200px] truncate" title={entry.notes}>
                                 {entry.notes || <span className="text-gray-400">{'\u2014'}</span>}

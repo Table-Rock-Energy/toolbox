@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Filter, RotateCcw, Edit2, Columns, X, PanelLeftClose, PanelLeftOpen, ShieldAlert } from 'lucide-react'
-import { FileUpload, Modal, MineralExportModal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar, ProposedChangesSummary, ProposedChangeCell } from '../components'
+import { FileUpload, Modal, MineralExportModal, EditableCell, EnrichmentModal, UnifiedEnrichButton, ProposedChangeCell } from '../components'
 import type { PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
@@ -144,6 +144,9 @@ export default function Title() {
   // Enrichment feature flags
   const featureFlags = useFeatureFlags()
 
+
+  // Enrichment modal state
+  const [enrichModalOpen, setEnrichModalOpen] = useState(false)
 
   // Mineral export modal state
   const [showMineralExport, setShowMineralExport] = useState(false)
@@ -307,6 +310,10 @@ export default function Title() {
     keyField: '_uid' as keyof OwnerEntry,
     featureFlags,
   })
+
+  const getCellHighlight = (entryIndex: number, field: string) => {
+    return pipeline.enrichmentChanges.get(`${entryIndex}:${field}`) || null
+  }
 
   const getEntryStatus = (entry: OwnerEntry): { label: string; color: string } => {
     // When Hide Duplicates is active, the kept entries shouldn't show "Duplicate"
@@ -660,14 +667,23 @@ export default function Title() {
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    <EnrichmentToolbar
-                      {...featureFlags}
-                      onCleanUp={pipeline.onCleanUp}
-                      onValidate={pipeline.onValidate}
-                      onEnrich={pipeline.onEnrich}
-                      isProcessing={pipeline.isProcessing}
-                      activeAction={pipeline.activeAction}
+                    <UnifiedEnrichButton
+                      pipelineStatus={pipeline.pipelineStatus}
                       entryCount={preview.entriesToExport.length}
+                      anyStepEnabled={featureFlags.cleanUpEnabled || featureFlags.validateEnabled || featureFlags.enrichEnabled}
+                      onEnrich={() => { setEnrichModalOpen(true); pipeline.runAllSteps() }}
+                      onReopen={() => setEnrichModalOpen(true)}
+                      onUndo={pipeline.undoAllEnrichment}
+                      onClearHighlights={pipeline.clearHighlights}
+                      hasChanges={pipeline.enrichmentChanges.size > 0}
+                      hasSnapshot={pipeline.completedSteps.size > 0}
+                    />
+                    <EnrichmentModal
+                      isOpen={enrichModalOpen}
+                      onClose={() => setEnrichModalOpen(false)}
+                      stepStatuses={pipeline.stepStatuses}
+                      pipelineStatus={pipeline.pipelineStatus}
+                      enrichmentChanges={pipeline.enrichmentChanges}
                     />
                     <button
                       onClick={() => {
@@ -691,34 +707,11 @@ export default function Title() {
                 </div>
               </div>
 
-              {/* Auto-Applied Cleanup Changes */}
-              {pipeline.autoAppliedChanges.length > 0 && (
-                <div className="px-6 py-2 border-b border-gray-100">
-                  <AutoCorrectionsBanner
-                    corrections={pipeline.autoAppliedChanges}
-                    onUndo={pipeline.onUndoAutoApplied}
-                  />
-                </div>
-              )}
-
               {/* Pipeline Error */}
               {pipeline.errorMessage && (
                 <div className="px-6 py-3 border-b border-red-200 bg-red-50 flex items-center justify-between">
                   <p className="text-sm text-red-700">{pipeline.errorMessage}</p>
                   <button onClick={pipeline.onDismiss} className="text-sm text-red-500 hover:underline">Dismiss</button>
-                </div>
-              )}
-
-              {/* Proposed Changes Summary Bar */}
-              {pipeline.proposedChanges && (
-                <div className="px-6 py-3 border-b border-gray-100">
-                  <ProposedChangesSummary
-                    proposedChanges={pipeline.proposedChanges}
-                    checkedIndices={pipeline.checkedIndices}
-                    onToggleCheckAll={pipeline.toggleCheckAll}
-                    onApply={pipeline.onApply}
-                    onDismiss={pipeline.onDismiss}
-                  />
                 </div>
               )}
 
@@ -983,8 +976,10 @@ export default function Title() {
                                 />
                               </td>
                             )}
-                            {isColumnVisible('full_name') && (
-                              <td className={`py-2 px-3 text-gray-900 ${isExcluded ? 'line-through' : ''} ${rowChanges?.has('full_name') ? 'bg-blue-100/50' : ''}`} title={entry.full_name}>
+                            {isColumnVisible('full_name') && (() => {
+                              const hl = getCellHighlight(rowIdx, 'full_name')
+                              return (
+                              <td className={`py-2 px-3 text-gray-900 ${isExcluded ? 'line-through' : ''} ${hl ? 'bg-green-50' : rowChanges?.has('full_name') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : entry.full_name}>
                                 {rowChanges?.has('full_name') ? (
                                   <ProposedChangeCell change={rowChanges.get('full_name')!} />
                                 ) : (
@@ -994,7 +989,8 @@ export default function Title() {
                                   />
                                 )}
                               </td>
-                            )}
+                              )
+                            })()}
                             {isColumnVisible('first_name') && (
                               <td className="py-2 px-3 text-gray-600 text-xs">{entry.first_name || <span className="text-gray-400">{'\u2014'}</span>}</td>
                             )}
@@ -1023,8 +1019,10 @@ export default function Title() {
                                 </select>
                               </td>
                             )}
-                            {isColumnVisible('address') && (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${rowChanges?.has('address') ? 'bg-blue-100/50' : ''}`}>
+                            {isColumnVisible('address') && (() => {
+                              const hl = getCellHighlight(rowIdx, 'address')
+                              return (
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : rowChanges?.has('address') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
                                 {rowChanges?.has('address') ? (
                                   <ProposedChangeCell change={rowChanges.get('address')!} />
                                 ) : (
@@ -1034,9 +1032,12 @@ export default function Title() {
                                   />
                                 )}
                               </td>
-                            )}
-                            {isColumnVisible('address_line_2') && (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${rowChanges?.has('address_2') ? 'bg-blue-100/50' : ''}`}>
+                              )
+                            })()}
+                            {isColumnVisible('address_line_2') && (() => {
+                              const hl = getCellHighlight(rowIdx, 'address_line_2')
+                              return (
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : rowChanges?.has('address_2') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
                                 {rowChanges?.has('address_2') ? (
                                   <ProposedChangeCell change={rowChanges.get('address_2')!} />
                                 ) : (
@@ -1046,9 +1047,12 @@ export default function Title() {
                                   />
                                 )}
                               </td>
-                            )}
-                            {isColumnVisible('city') && (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${rowChanges?.has('city') ? 'bg-blue-100/50' : ''}`}>
+                              )
+                            })()}
+                            {isColumnVisible('city') && (() => {
+                              const hl = getCellHighlight(rowIdx, 'city')
+                              return (
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : rowChanges?.has('city') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
                                 {rowChanges?.has('city') ? (
                                   <ProposedChangeCell change={rowChanges.get('city')!} />
                                 ) : (
@@ -1058,9 +1062,12 @@ export default function Title() {
                                   />
                                 )}
                               </td>
-                            )}
-                            {isColumnVisible('state') && (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${rowChanges?.has('state') ? 'bg-blue-100/50' : ''}`}>
+                              )
+                            })()}
+                            {isColumnVisible('state') && (() => {
+                              const hl = getCellHighlight(rowIdx, 'state')
+                              return (
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : rowChanges?.has('state') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
                                 {rowChanges?.has('state') ? (
                                   <ProposedChangeCell change={rowChanges.get('state')!} />
                                 ) : (
@@ -1070,9 +1077,12 @@ export default function Title() {
                                   />
                                 )}
                               </td>
-                            )}
-                            {isColumnVisible('zip_code') && (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${rowChanges?.has('zip_code') ? 'bg-blue-100/50' : ''}`}>
+                              )
+                            })()}
+                            {isColumnVisible('zip_code') && (() => {
+                              const hl = getCellHighlight(rowIdx, 'zip_code')
+                              return (
+                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : rowChanges?.has('zip_code') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
                                 {rowChanges?.has('zip_code') ? (
                                   <ProposedChangeCell change={rowChanges.get('zip_code')!} />
                                 ) : (
@@ -1082,7 +1092,8 @@ export default function Title() {
                                   />
                                 )}
                               </td>
-                            )}
+                              )
+                            })()}
                             {isColumnVisible('legal_description') && (
                               <td className="py-2 px-3 text-gray-600 text-xs">{entry.legal_description}</td>
                             )}

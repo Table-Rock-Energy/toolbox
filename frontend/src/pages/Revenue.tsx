@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { DollarSign, Download, Upload, AlertCircle, CheckCircle, Columns, X, PanelLeftClose, PanelLeftOpen, Edit2, RotateCcw, Filter, ShieldAlert } from 'lucide-react'
-import { FileUpload, Modal, MineralExportModal, AutoCorrectionsBanner, EditableCell, EnrichmentToolbar, ProposedChangesSummary, ProposedChangeCell } from '../components'
+import { FileUpload, Modal, MineralExportModal, EditableCell, EnrichmentModal, UnifiedEnrichButton, ProposedChangeCell } from '../components'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
 import { useFeatureFlags } from '../hooks/useFeatureFlags'
@@ -163,6 +163,9 @@ export default function Revenue() {
 
   // Enrichment feature flags
   const featureFlags = useFeatureFlags()
+
+  // Enrichment modal state
+  const [enrichModalOpen, setEnrichModalOpen] = useState(false)
 
   // Mineral export modal state
   const [showMineralExport, setShowMineralExport] = useState(false)
@@ -518,6 +521,10 @@ export default function Revenue() {
 
   const isColVisible = (key: string) => visibleColumns.has(key)
 
+  const getCellHighlight = (entryIndex: number, field: string) => {
+    return pipeline.enrichmentChanges.get(`${entryIndex}:${field}`) || null
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -662,14 +669,23 @@ export default function Revenue() {
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    <EnrichmentToolbar
-                      {...featureFlags}
-                      onCleanUp={pipeline.onCleanUp}
-                      onValidate={pipeline.onValidate}
-                      onEnrich={pipeline.onEnrich}
-                      isProcessing={pipeline.isProcessing}
-                      activeAction={pipeline.activeAction}
+                    <UnifiedEnrichButton
+                      pipelineStatus={pipeline.pipelineStatus}
                       entryCount={preview.entriesToExport.length}
+                      anyStepEnabled={featureFlags.cleanUpEnabled || featureFlags.validateEnabled || featureFlags.enrichEnabled}
+                      onEnrich={() => { setEnrichModalOpen(true); pipeline.runAllSteps() }}
+                      onReopen={() => setEnrichModalOpen(true)}
+                      onUndo={pipeline.undoAllEnrichment}
+                      onClearHighlights={pipeline.clearHighlights}
+                      hasChanges={pipeline.enrichmentChanges.size > 0}
+                      hasSnapshot={pipeline.completedSteps.size > 0}
+                    />
+                    <EnrichmentModal
+                      isOpen={enrichModalOpen}
+                      onClose={() => setEnrichModalOpen(false)}
+                      stepStatuses={pipeline.stepStatuses}
+                      pipelineStatus={pipeline.pipelineStatus}
+                      enrichmentChanges={pipeline.enrichmentChanges}
                     />
                     <button
                       onClick={() => setShowMineralExport(true)}
@@ -683,34 +699,11 @@ export default function Revenue() {
                 </div>
               </div>
 
-              {/* Auto-Applied Cleanup Changes */}
-              {pipeline.autoAppliedChanges.length > 0 && (
-                <div className="px-6 py-2 border-b border-gray-100">
-                  <AutoCorrectionsBanner
-                    corrections={pipeline.autoAppliedChanges}
-                    onUndo={pipeline.onUndoAutoApplied}
-                  />
-                </div>
-              )}
-
               {/* Pipeline Error */}
               {pipeline.errorMessage && (
                 <div className="px-6 py-3 border-b border-red-200 bg-red-50 flex items-center justify-between">
                   <p className="text-sm text-red-700">{pipeline.errorMessage}</p>
                   <button onClick={pipeline.onDismiss} className="text-sm text-red-500 hover:underline">Dismiss</button>
-                </div>
-              )}
-
-              {/* Proposed Changes Summary Bar */}
-              {pipeline.proposedChanges && (
-                <div className="px-6 py-3 border-b border-gray-100">
-                  <ProposedChangesSummary
-                    proposedChanges={pipeline.proposedChanges}
-                    checkedIndices={pipeline.checkedIndices}
-                    onToggleCheckAll={pipeline.toggleCheckAll}
-                    onApply={pipeline.onApply}
-                    onDismiss={pipeline.onDismiss}
-                  />
                 </div>
               )}
 
@@ -893,8 +886,10 @@ export default function Revenue() {
                             {isColVisible('check_number') && <td className="py-2 px-2 text-gray-600 text-xs">{row.check_number || '\u2014'}</td>}
                             {isColVisible('check_amount') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{formatCurrency(row.check_amount)}</td>}
                             {isColVisible('check_date') && <td className="py-2 px-2 text-gray-600 text-xs">{row.check_date || '\u2014'}</td>}
-                            {isColVisible('property_name') && (
-                              <td className={`py-2 px-2 text-gray-900 text-xs whitespace-nowrap ${rowChanges?.has('property_name') ? 'bg-blue-100/50' : ''}`}>
+                            {isColVisible('property_name') && (() => {
+                              const hl = getCellHighlight(rowIdx, 'property_name')
+                              return (
+                              <td className={`py-2 px-2 text-gray-900 text-xs whitespace-nowrap ${hl ? 'bg-green-50' : rowChanges?.has('property_name') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
                                 {rowChanges?.has('property_name') ? (
                                   <ProposedChangeCell change={rowChanges.get('property_name')!} />
                                 ) : (
@@ -904,9 +899,12 @@ export default function Revenue() {
                                   />
                                 )}
                               </td>
-                            )}
-                            {isColVisible('property_number') && (
-                              <td className={`py-2 px-2 text-gray-600 text-xs ${rowChanges?.has('property_number') ? 'bg-blue-100/50' : ''}`}>
+                              )
+                            })()}
+                            {isColVisible('property_number') && (() => {
+                              const hl = getCellHighlight(rowIdx, 'property_number')
+                              return (
+                              <td className={`py-2 px-2 text-gray-600 text-xs ${hl ? 'bg-green-50' : rowChanges?.has('property_number') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
                                 {rowChanges?.has('property_number') ? (
                                   <ProposedChangeCell change={rowChanges.get('property_number')!} />
                                 ) : (
@@ -916,10 +914,13 @@ export default function Revenue() {
                                   />
                                 )}
                               </td>
-                            )}
+                              )
+                            })()}
                             {isColVisible('operator_name') && <td className="py-2 px-2 text-gray-600 text-xs whitespace-nowrap">{row.operator_name || '\u2014'}</td>}
-                            {isColVisible('owner_name') && (
-                              <td className={`py-2 px-2 text-gray-600 text-xs whitespace-nowrap ${rowChanges?.has('owner_name') ? 'bg-blue-100/50' : ''}`}>
+                            {isColVisible('owner_name') && (() => {
+                              const hl = getCellHighlight(rowIdx, 'owner_name')
+                              return (
+                              <td className={`py-2 px-2 text-gray-600 text-xs whitespace-nowrap ${hl ? 'bg-green-50' : rowChanges?.has('owner_name') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
                                 {rowChanges?.has('owner_name') ? (
                                   <ProposedChangeCell change={rowChanges.get('owner_name')!} />
                                 ) : (
@@ -929,7 +930,8 @@ export default function Revenue() {
                                   />
                                 )}
                               </td>
-                            )}
+                              )
+                            })()}
                             {isColVisible('owner_number') && <td className="py-2 px-2 text-gray-600 text-xs">{row.owner_number || '\u2014'}</td>}
                             {isColVisible('sales_date') && <td className="py-2 px-2 text-gray-600 text-xs">{row.sales_date || '\u2014'}</td>}
                             {isColVisible('product_code') && <td className="py-2 px-2 text-gray-600 text-xs">{row.product_code || '\u2014'}</td>}

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw, Filter, Settings, Edit2, Columns, X, PanelLeftClose, PanelLeftOpen, Search, ShieldAlert } from 'lucide-react'
-import { FileUpload, Modal, AutoCorrectionsBanner, EnrichmentToolbar, ProposedChangesSummary, ProposedChangeCell } from '../components'
+import { FileUpload, Modal, EnrichmentModal, UnifiedEnrichButton, ProposedChangeCell } from '../components'
 import type { PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useToolLayout } from '../hooks/useToolLayout'
@@ -200,6 +200,9 @@ export default function Proration() {
 
   // Enrichment feature flags
   const featureFlags = useFeatureFlags()
+
+  // Enrichment modal state
+  const [enrichModalOpen, setEnrichModalOpen] = useState(false)
 
   // Fetch missing RRC data state
   const [isFetchingMissing, setIsFetchingMissing] = useState(false)
@@ -725,6 +728,10 @@ export default function Proration() {
     }
   }
 
+  const getCellHighlight = (entryIndex: number, field: string) => {
+    return pipeline.enrichmentChanges.get(`${entryIndex}:${field}`) || null
+  }
+
   const isColumnVisible = (key: string): boolean => {
     const col = COLUMNS.find(c => c.key === key)
     if (col?.alwaysVisible) return true
@@ -1135,14 +1142,23 @@ export default function Proration() {
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    <EnrichmentToolbar
-                      {...featureFlags}
-                      onCleanUp={pipeline.onCleanUp}
-                      onValidate={pipeline.onValidate}
-                      onEnrich={pipeline.onEnrich}
-                      isProcessing={pipeline.isProcessing}
-                      activeAction={pipeline.activeAction}
+                    <UnifiedEnrichButton
+                      pipelineStatus={pipeline.pipelineStatus}
                       entryCount={preview.entriesToExport.length}
+                      anyStepEnabled={featureFlags.cleanUpEnabled || featureFlags.validateEnabled || featureFlags.enrichEnabled}
+                      onEnrich={() => { setEnrichModalOpen(true); pipeline.runAllSteps() }}
+                      onReopen={() => setEnrichModalOpen(true)}
+                      onUndo={pipeline.undoAllEnrichment}
+                      onClearHighlights={pipeline.clearHighlights}
+                      hasChanges={pipeline.enrichmentChanges.size > 0}
+                      hasSnapshot={pipeline.completedSteps.size > 0}
+                    />
+                    <EnrichmentModal
+                      isOpen={enrichModalOpen}
+                      onClose={() => setEnrichModalOpen(false)}
+                      stepStatuses={pipeline.stepStatuses}
+                      pipelineStatus={pipeline.pipelineStatus}
+                      enrichmentChanges={pipeline.enrichmentChanges}
                     />
                     <button
                       onClick={() => handleExport('excel')}
@@ -1155,34 +1171,11 @@ export default function Proration() {
                 </div>
               </div>
 
-              {/* Auto-Applied Cleanup Changes */}
-              {pipeline.autoAppliedChanges.length > 0 && (
-                <div className="px-6 py-2 border-b border-gray-100">
-                  <AutoCorrectionsBanner
-                    corrections={pipeline.autoAppliedChanges}
-                    onUndo={pipeline.onUndoAutoApplied}
-                  />
-                </div>
-              )}
-
               {/* Pipeline Error */}
               {pipeline.errorMessage && (
                 <div className="px-6 py-3 border-b border-red-200 bg-red-50 flex items-center justify-between">
                   <p className="text-sm text-red-700">{pipeline.errorMessage}</p>
                   <button onClick={pipeline.onDismiss} className="text-sm text-red-500 hover:underline">Dismiss</button>
-                </div>
-              )}
-
-              {/* Proposed Changes Summary Bar */}
-              {pipeline.proposedChanges && (
-                <div className="px-6 py-3 border-b border-gray-100">
-                  <ProposedChangesSummary
-                    proposedChanges={pipeline.proposedChanges}
-                    checkedIndices={pipeline.checkedIndices}
-                    onToggleCheckAll={pipeline.toggleCheckAll}
-                    onApply={pipeline.onApply}
-                    onDismiss={pipeline.onDismiss}
-                  />
                 </div>
               )}
 
@@ -1413,15 +1406,18 @@ export default function Proration() {
                               className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
                             />
                           </td>
-                          {isColumnVisible('owner') && (
-                            <td className={`py-2 px-3 text-gray-900 whitespace-nowrap ${rowChanges?.has('owner') ? 'bg-blue-100/50' : ''}`}>
+                          {isColumnVisible('owner') && (() => {
+                            const hl = getCellHighlight(rowIdx, 'owner')
+                            return (
+                            <td className={`py-2 px-3 text-gray-900 whitespace-nowrap ${hl ? 'bg-green-50' : rowChanges?.has('owner') ? 'bg-blue-100/50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
                               {rowChanges?.has('owner') ? (
                                 <ProposedChangeCell change={rowChanges.get('owner')!} />
                               ) : (
                                 row.owner
                               )}
                             </td>
-                          )}
+                            )
+                          })()}
                           {isColumnVisible('county') && <td className="py-2 px-3 text-gray-600">{row.county}</td>}
                           {isColumnVisible('year') && <td className="py-2 px-3 text-gray-600 text-xs">{row.year ?? '\u2014'}</td>}
                           {isColumnVisible('interest') && (
