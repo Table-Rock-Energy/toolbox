@@ -799,25 +799,24 @@ export default function Proration() {
         </button>
       </div>
 
-      {/* RRC Data Status - informational only */}
-      {rrcLoading ? (
-        <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-gray-50 border border-gray-200 animate-pulse">
-          <Database className="w-4 h-4 text-gray-400 flex-shrink-0" />
-          <span className="text-sm text-gray-400">Loading RRC data status...</span>
-        </div>
-      ) : (
-        <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-green-50 border border-green-200">
-          <Database className="w-4 h-4 text-green-600 flex-shrink-0" />
-          <span className="text-sm text-green-800">
-            <span className="font-medium">{totalRecords.toLocaleString()}</span> RRC records
-            <span className="text-green-600 mx-1">({oilRecords.toLocaleString()} oil, {gasRecords.toLocaleString()} gas)</span>
-          </span>
-        </div>
-      )}
-
       {/* Upload Section - compact row when panel collapsed and no active results */}
       {panelCollapsed && !activeJob?.result && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
+          {/* RRC Data Status */}
+          {rrcLoading ? (
+            <div className="flex items-center gap-2 mb-3 animate-pulse">
+              <Database className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+              <span className="text-xs text-gray-400">Loading RRC status...</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 mb-3">
+              <Database className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
+              <span className="text-xs text-green-700">
+                <span className="font-medium">{totalRecords.toLocaleString()}</span> RRC records
+                <span className="text-green-600 ml-1">({oilRecords.toLocaleString()} oil, {gasRecords.toLocaleString()} gas)</span>
+              </span>
+            </div>
+          )}
           {!showProcessingOptions ? (
             <>
               <FileUpload
@@ -945,6 +944,21 @@ export default function Proration() {
         <div className="space-y-6">
           {/* Upload Section */}
           <div className="bg-white rounded-xl border border-gray-200 p-6">
+            {/* RRC Data Status */}
+            {rrcLoading ? (
+              <div className="flex items-center gap-2 mb-3 animate-pulse">
+                <Database className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                <span className="text-xs text-gray-400">Loading RRC status...</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 mb-3">
+                <Database className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
+                <span className="text-xs text-green-700">
+                  <span className="font-medium">{totalRecords.toLocaleString()}</span> RRC records
+                  <span className="text-green-600 ml-1">({oilRecords.toLocaleString()} oil, {gasRecords.toLocaleString()} gas)</span>
+                </span>
+              </div>
+            )}
             {!showProcessingOptions ? (
               <>
                 <FileUpload
