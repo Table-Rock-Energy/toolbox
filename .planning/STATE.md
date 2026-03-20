@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Batch Processing & Resilience
 status: unknown
-stopped_at: Completed 17-01-PLAN.md
-last_updated: "2026-03-20T15:11:55.430Z"
+stopped_at: Completed 17-02-PLAN.md
+last_updated: "2026-03-20T15:25:12.193Z"
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # Project State
@@ -23,8 +23,8 @@ See: .planning/PROJECT.md (updated 2026-03-19)
 
 ## Current Position
 
-Phase: 17 (proration-performance) — EXECUTING
-Plan: 2 of 2
+Phase: 17 (proration-performance) — COMPLETE
+Plan: 2 of 2 (all complete)
 
 ## Accumulated Context
 
@@ -50,6 +50,8 @@ Plan: 2 of 2
 - [Phase 16]: Direct copy of collapsed view progress block into expanded view (no abstraction needed for two instances)
 - [Phase 17]: Cache uses atomic dict replacement on invalidate (new empty dict, not .clear())
 - [Phase 17]: Pre-warm only loads DataFrame via asyncio.to_thread, does NOT pre-load Firestore docs
+- [Phase 17]: Lease-only cache uses empty-string district key to avoid separate cache dict
+- [Phase 17]: Semaphore(25) concurrency limit for batched Firestore reads per research pitfall guidance
 
 ### Pending Todos
 
@@ -66,6 +68,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-20T15:11:14Z
-Stopped at: Completed 17-01-PLAN.md
+Last session: 2026-03-20T15:25:12.191Z
+Stopped at: Completed 17-02-PLAN.md
 Resume file: None
