@@ -151,6 +151,13 @@ async def startup_event() -> None:
             logger.warning(f"Database initialization failed: {e}")
             logger.warning("Continuing without database persistence")
 
+    # Pre-warm RRC DataFrame cache (PERF-02)
+    try:
+        from app.services.proration.rrc_cache import prewarm_rrc_cache
+        await prewarm_rrc_cache()
+    except Exception as e:
+        logger.warning(f"RRC pre-warm failed (will load on first request): {e}")
+
     # NOTE: RRC monthly download is triggered externally via GitHub Actions cron
     # (see .github/workflows/rrc-download.yml). APScheduler was removed because
     # Cloud Run scales to 0 instances, killing in-process schedulers.
