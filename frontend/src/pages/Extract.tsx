@@ -494,6 +494,7 @@ export default function Extract() {
     if (results) {
       setTimeout(() => {
         preview.updateEntries(results as PartyEntry[])
+        clearOperation() // Clear status bar after results applied (PERSIST-03)
       }, 0)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps

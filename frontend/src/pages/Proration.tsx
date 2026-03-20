@@ -409,6 +409,7 @@ export default function Proration() {
     if (results) {
       setTimeout(() => {
         preview.updateEntries(results as MineralHolderRow[])
+        clearOperation() // Clear status bar after results applied (PERSIST-03)
       }, 0)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
