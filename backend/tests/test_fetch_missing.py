@@ -7,9 +7,30 @@ RRC-03: Set per-row fetch_status on every row returned from fetch-missing.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from app.models.proration import MineralHolderRow
+
+
+async def _consume_streaming_response(response) -> dict:
+    """Consume a StreamingResponse and return the 'complete' event data."""
+    body = b""
+    async for chunk in response.body_iterator:
+        if isinstance(chunk, str):
+            body += chunk.encode()
+        else:
+            body += chunk
+
+    for line in body.decode().strip().split("\n"):
+        if not line.strip():
+            continue
+        event = json.loads(line)
+        if event.get("event") == "complete":
+            return event
+
+    raise AssertionError("No 'complete' event found in stream")
 
 
 # ---------------------------------------------------------------------------
@@ -98,12 +119,13 @@ async def test_split_lookup_status():
             ),
         ])
 
-        result = await fetch_missing_rrc_data(request, bg)
+        response = await fetch_missing_rrc_data(request, bg)
+        result = await _consume_streaming_response(response)
 
-        row = result.updated_rows[0]
-        assert row.fetch_status == "split_lookup"
-        assert row.sub_lease_results is not None
-        assert len(row.sub_lease_results) == 2
+        row = result["updated_rows"][0]
+        assert row["fetch_status"] == "split_lookup"
+        assert row["sub_lease_results"] is not None
+        assert len(row["sub_lease_results"]) == 2
 
 
 def test_sub_lease_results_annotation():
@@ -213,27 +235,20 @@ def test_model_sub_lease_results_defaults_none():
 
 @pytest.mark.asyncio
 async def test_individual_results_used_directly(monkeypatch):
-    """After individual fetch, results are used directly without calling lookup_rrc_acres again.
-
-    Mocks lookup_rrc_acres and lookup_rrc_by_lease_number in the Firestore
-    service to track whether they are called during the post-individual-fetch
-    re-application loop. They should NOT be called.
-    """
+    """After individual fetch, results are used directly without calling lookup_rrc_acres again."""
     from unittest.mock import AsyncMock, patch
 
-    # Track calls to Firestore lookup functions
     firestore_lookup_calls: list[str] = []
 
     async def mock_lookup_rrc_acres(district, lease_number):
         firestore_lookup_calls.append(f"lookup_rrc_acres({district},{lease_number})")
-        return None  # Simulate not found in Firestore
+        return None
 
     async def mock_lookup_rrc_by_lease_number(lease_number):
         firestore_lookup_calls.append(f"lookup_rrc_by_lease_number({lease_number})")
         return None
 
     async def mock_fetch_individual_leases(leases):
-        """Simulate successful individual fetch returning results."""
         results = {}
         for d, ln, _cc in leases:
             results[(d, ln)] = {"acres": 640.0, "type": "oil"}
@@ -245,10 +260,7 @@ async def test_individual_results_used_directly(monkeypatch):
     def mock_lookup_county(name):
         return ("123", "08", name.upper())
 
-    # fetch_individual_leases and ensure_counties_fresh are imported at top of proration.py
-    # lookup_rrc_acres/by_lease_number are imported inside the function from firestore_service
-    # lookup_county is imported inside the function from rrc_county_codes
-    from app.api import proration as proration_mod  # force module load
+    from app.api import proration as proration_mod
 
     with patch.object(proration_mod, "fetch_individual_leases", side_effect=mock_fetch_individual_leases), \
          patch.object(proration_mod, "ensure_counties_fresh", side_effect=mock_ensure_counties_fresh), \
@@ -259,7 +271,6 @@ async def test_individual_results_used_directly(monkeypatch):
         from app.api.proration import fetch_missing_rrc_data
         from app.models.proration import FetchMissingRequest
 
-        # Create a mock BackgroundTasks
         bg = AsyncMock()
         bg.add_task = lambda *a, **kw: None
 
@@ -274,23 +285,18 @@ async def test_individual_results_used_directly(monkeypatch):
             ),
         ])
 
-        # Clear call tracker before the endpoint runs
         firestore_lookup_calls.clear()
 
-        result = await fetch_missing_rrc_data(request, bg)
+        response = await fetch_missing_rrc_data(request, bg)
+        result = await _consume_streaming_response(response)
 
-        # Step 1 Firestore lookups are expected (initial check)
         step1_calls = [c for c in firestore_lookup_calls if "lookup_rrc_acres" in c or "lookup_rrc_by_lease_number" in c]
-        # After individual_results are populated, lookup_rrc_acres should NOT
-        # be called again in the re-application loop. The total calls should be
-        # only from Step 1 (at most 2: lookup_rrc_acres + lookup_rrc_by_lease_number).
         assert len(step1_calls) <= 2, (
             f"Expected at most 2 Firestore lookups (Step 1 only), got {len(step1_calls)}: {step1_calls}"
         )
 
-        # The row should be matched via individual_results
-        assert result.matched_count == 1
-        assert result.updated_rows[0].rrc_acres == 640.0
+        assert result["matched_count"] == 1
+        assert result["updated_rows"][0]["rrc_acres"] == 640.0
 
 
 # ---------------------------------------------------------------------------
@@ -309,7 +315,6 @@ async def test_fetch_status_set_on_returned_rows(monkeypatch):
         return None
 
     async def mock_fetch_individual_leases(leases):
-        # Only return data for lease 41100 (Owner A), not 99999 (Owner B)
         results = {}
         for d, ln, _cc in leases:
             if ln == "41100":
@@ -355,9 +360,9 @@ async def test_fetch_status_set_on_returned_rows(monkeypatch):
             ),
         ])
 
-        result = await fetch_missing_rrc_data(request, bg)
+        response = await fetch_missing_rrc_data(request, bg)
+        result = await _consume_streaming_response(response)
 
-        # First row should be "found", second should be "not_found"
-        statuses = {row.owner: row.fetch_status for row in result.updated_rows}
+        statuses = {row["owner"]: row["fetch_status"] for row in result["updated_rows"]}
         assert statuses["Owner A"] == "found"
         assert statuses["Owner B"] == "not_found"
