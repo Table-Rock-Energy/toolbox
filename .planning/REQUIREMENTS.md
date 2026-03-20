@@ -29,8 +29,8 @@ Requirements for v1.7 Batch Processing & Resilience. Each maps to roadmap phases
 
 ### Proration Performance
 
-- [ ] **PERF-01**: Proration lookups check in-memory cache before Firestore
-- [ ] **PERF-02**: RRC DataFrame cache pre-warms on application startup
+- [x] **PERF-01**: Proration lookups check in-memory cache before Firestore
+- [x] **PERF-02**: RRC DataFrame cache pre-warms on application startup
 - [ ] **PERF-03**: Proration Firestore reads use asyncio.gather for parallel execution
 - [ ] **PERF-04**: In-memory cache updates when background RRC sync completes
 
@@ -76,8 +76,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PERSIST-01 | Phase 13 | Complete |
 | PERSIST-02 | Phase 15 | Complete |
 | PERSIST-03 | Phase 15 | Complete |
-| PERF-01 | Phase 17 | Pending |
-| PERF-02 | Phase 17 | Pending |
+| PERF-01 | Phase 17 | Complete |
+| PERF-02 | Phase 17 | Complete |
 | PERF-03 | Phase 17 | Pending |
 | PERF-04 | Phase 17 | Pending |
 | REV-01 | Phase 16 | Complete |

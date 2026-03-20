@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Batch Processing & Resilience
 status: unknown
-stopped_at: Completed 16-02-PLAN.md
-last_updated: "2026-03-20T14:58:05.786Z"
+stopped_at: Completed 17-01-PLAN.md
+last_updated: "2026-03-20T15:11:55.430Z"
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 7
-  completed_plans: 7
+  total_plans: 9
+  completed_plans: 8
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-19)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Phase 16 — revenue-multi-pdf-streaming
+**Current focus:** Phase 17 — proration-performance
 
 ## Current Position
 
-Phase: 16 (revenue-multi-pdf-streaming) — EXECUTING
-Plan: 1 of 1
+Phase: 17 (proration-performance) — EXECUTING
+Plan: 2 of 2
 
 ## Accumulated Context
 
@@ -48,6 +48,8 @@ Plan: 1 of 1
 - [Phase 15]: OperationStatusBar uses useOperationState only (read-only, no re-render storms from actions)
 - [Phase 16]: Extracted _process_single_pdf helper for shared parsing between sync and streaming endpoints
 - [Phase 16]: Direct copy of collapsed view progress block into expanded view (no abstraction needed for two instances)
+- [Phase 17]: Cache uses atomic dict replacement on invalidate (new empty dict, not .clear())
+- [Phase 17]: Pre-warm only loads DataFrame via asyncio.to_thread, does NOT pre-load Firestore docs
 
 ### Pending Todos
 
@@ -64,6 +66,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-20T14:56:05.948Z
-Stopped at: Completed 16-02-PLAN.md
+Last session: 2026-03-20T15:11:14Z
+Stopped at: Completed 17-01-PLAN.md
 Resume file: None
