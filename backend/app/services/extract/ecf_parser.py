@@ -157,10 +157,16 @@ def _extract_metadata(text: str) -> CaseMetadata:
 
 def _extract_exhibit_a_section(text: str) -> str:
     """Extract only the Exhibit A respondent list portion."""
-    # Find EXHIBIT "A" marker
+    # Find standalone EXHIBIT "A" header on its own line (not inline references
+    # like 'set out on Exhibit "A", attached hereto')
     exhibit_match = re.search(
-        r'EXHIBIT\s+["\u201c]?A["\u201d]?', text, re.IGNORECASE
+        r'^EXHIBIT\s+["\u201c]?A["\u201d]?\s*$', text, re.IGNORECASE | re.MULTILINE
     )
+    if not exhibit_match:
+        # Fallback: any EXHIBIT "A" that is followed by numbered entries
+        exhibit_match = re.search(
+            r'EXHIBIT\s+["\u201c]?A["\u201d]?', text, re.IGNORECASE
+        )
     if exhibit_match:
         text = text[exhibit_match.end():]
 

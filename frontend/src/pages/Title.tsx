@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Filter, RotateCcw, Edit2, Columns, X, PanelLeftClose, PanelLeftOpen, ShieldAlert } from 'lucide-react'
-import { FileUpload, Modal, MineralExportModal, EditableCell, EnrichmentModal, UnifiedEnrichButton, CancelConfirmDialog } from '../components'
+import { FileUpload, Modal, MineralExportModal, EditableCell, EnrichmentModal, UnifiedEnrichButton, CancelConfirmDialog, HighlightedCell } from '../components'
 import type { PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useOperationContext } from '../contexts/OperationContext'
@@ -357,13 +357,8 @@ export default function Title() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const STEP_SOURCE_LABELS: Record<string, string> = { cleanup: 'AI Cleanup', validate: 'Google Maps', enrich: 'Enrichment' }
   const getCellHighlight = (entryIndex: number, field: string) => {
     return enrichmentChanges.get(`${entryIndex}:${field}`) || null
-  }
-  const formatHighlightTitle = (hl: EnrichmentCellChange) => {
-    const source = STEP_SOURCE_LABELS[hl.step] || hl.step
-    return `Was: ${hl.original_value || '(empty)'} → Changed by ${source}`
   }
 
   const getEntryStatus = (entry: OwnerEntry): { label: string; color: string } => {
@@ -1031,12 +1026,12 @@ export default function Title() {
                             {isColumnVisible('full_name') && (() => {
                               const hl = getCellHighlight(rowIdx, 'full_name')
                               return (
-                              <td className={`py-2 px-3 text-gray-900 ${isExcluded ? 'line-through' : ''} ${hl ? 'bg-green-50' : ''}`} title={hl ? formatHighlightTitle(hl) : entry.full_name}>
+                              <HighlightedCell highlight={hl} value={entry.full_name} className={`py-2 px-3 text-gray-900 ${isExcluded ? 'line-through' : ''}`}>
                                 <EditableCell
                                   value={entry.full_name}
                                   onCommit={(val) => preview.editField(entryKey, 'full_name', val)}
                                 />
-                              </td>
+                              </HighlightedCell>
                               )
                             })()}
                             {isColumnVisible('first_name') && (
@@ -1070,56 +1065,56 @@ export default function Title() {
                             {isColumnVisible('address') && (() => {
                               const hl = getCellHighlight(rowIdx, 'address')
                               return (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : ''}`} title={hl ? formatHighlightTitle(hl) : undefined}>
+                              <HighlightedCell highlight={hl} value={entry.address} className="py-2 px-3 text-gray-600 text-xs">
                                 <EditableCell
                                   value={entry.address}
                                   onCommit={(val) => preview.editField(entryKey, 'address', val)}
                                 />
-                              </td>
+                              </HighlightedCell>
                               )
                             })()}
                             {isColumnVisible('address_line_2') && (() => {
                               const hl = getCellHighlight(rowIdx, 'address_line_2')
                               return (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : ''}`} title={hl ? formatHighlightTitle(hl) : undefined}>
+                              <HighlightedCell highlight={hl} value={entry.address_line_2} className="py-2 px-3 text-gray-600 text-xs">
                                 <EditableCell
                                   value={entry.address_line_2}
                                   onCommit={(val) => preview.editField(entryKey, 'address_line_2', val)}
                                 />
-                              </td>
+                              </HighlightedCell>
                               )
                             })()}
                             {isColumnVisible('city') && (() => {
                               const hl = getCellHighlight(rowIdx, 'city')
                               return (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : ''}`} title={hl ? formatHighlightTitle(hl) : undefined}>
+                              <HighlightedCell highlight={hl} value={entry.city} className="py-2 px-3 text-gray-600 text-xs">
                                 <EditableCell
                                   value={entry.city}
                                   onCommit={(val) => preview.editField(entryKey, 'city', val)}
                                 />
-                              </td>
+                              </HighlightedCell>
                               )
                             })()}
                             {isColumnVisible('state') && (() => {
                               const hl = getCellHighlight(rowIdx, 'state')
                               return (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : ''}`} title={hl ? formatHighlightTitle(hl) : undefined}>
+                              <HighlightedCell highlight={hl} value={entry.state} className="py-2 px-3 text-gray-600 text-xs">
                                 <EditableCell
                                   value={entry.state}
                                   onCommit={(val) => preview.editField(entryKey, 'state', val)}
                                 />
-                              </td>
+                              </HighlightedCell>
                               )
                             })()}
                             {isColumnVisible('zip_code') && (() => {
                               const hl = getCellHighlight(rowIdx, 'zip_code')
                               return (
-                              <td className={`py-2 px-3 text-gray-600 text-xs ${hl ? 'bg-green-50' : ''}`} title={hl ? formatHighlightTitle(hl) : undefined}>
+                              <HighlightedCell highlight={hl} value={entry.zip_code} className="py-2 px-3 text-gray-600 text-xs">
                                 <EditableCell
                                   value={entry.zip_code}
                                   onCommit={(val) => preview.editField(entryKey, 'zip_code', val)}
                                 />
-                              </td>
+                              </HighlightedCell>
                               )
                             })()}
                             {isColumnVisible('legal_description') && (

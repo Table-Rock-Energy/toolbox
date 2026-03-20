@@ -225,6 +225,18 @@ def _run_rrc_download(job_id: str) -> None:
             logger.error(f"Job {job_id} failed at gas sync: {e}")
             return
 
+        # Update RRC metadata cache with final counts
+        try:
+            from app.services.firestore_service import update_rrc_metadata_counts
+            asyncio.run(update_rrc_metadata_counts(
+                oil_rows=oil_count,
+                gas_rows=gas_count,
+                last_sync_at=datetime.utcnow(),
+            ))
+            logger.info(f"Job {job_id}: Updated RRC metadata cache ({oil_count:,} oil, {gas_count:,} gas)")
+        except Exception as e:
+            logger.warning(f"Job {job_id}: Failed to update RRC metadata cache: {e}")
+
         # Clear in-memory caches so next request picks up fresh data (PERF-04)
         rrc_data_service._combined_lookup = None
         rrc_data_service._oil_df = None

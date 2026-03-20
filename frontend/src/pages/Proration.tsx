@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw, Filter, Settings, Edit2, Columns, X, PanelLeftClose, PanelLeftOpen, Search, ShieldAlert } from 'lucide-react'
-import { FileUpload, Modal, EnrichmentModal, UnifiedEnrichButton, CancelConfirmDialog } from '../components'
+import { FileUpload, Modal, EnrichmentModal, UnifiedEnrichButton, CancelConfirmDialog, FetchRrcModal } from '../components'
 import type { PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useOperationContext } from '../contexts/OperationContext'
@@ -210,8 +210,18 @@ export default function Proration() {
   // Fetch missing RRC data state
   const [isFetchingMissing, setIsFetchingMissing] = useState(false)
   const [fetchMissingMessage, setFetchMissingMessage] = useState<string | null>(null)
-  const [hideMissingRrc, setHideMissingRrc] = useState(false)
-  const [hideUnfetchable, setHideUnfetchable] = useState(false)
+  const [filterMode, setFilterMode] = useState<'all' | 'matched' | 'fetchable' | 'not_found'>('all')
+  const [showFetchModal, setShowFetchModal] = useState(false)
+  const [fetchProgress, setFetchProgress] = useState<{
+    event: 'started' | 'progress' | 'complete'
+    phase?: 'db_lookup' | 'rrc_query'
+    checked?: number
+    total?: number
+    matched?: number
+    matched_count?: number
+    still_missing_count?: number
+    updated_rows?: Record<string, unknown>[]
+  } | null>(null)
 
   // Edit Row Modal State
   const [editingRow, setEditingRow] = useState<MineralHolderRow | null>(null)
@@ -354,15 +364,16 @@ export default function Proration() {
       return aOrder - bOrder
     })
 
-    if (hideMissingRrc) {
-      rows = rows.filter(r => r.rrc_acres)
-    }
-    if (hideUnfetchable) {
-      rows = rows.filter(r => !isUnfetchable(r))
+    if (filterMode === 'matched') {
+      rows = rows.filter(r => !!r.rrc_acres)
+    } else if (filterMode === 'fetchable') {
+      rows = rows.filter(r => isFetchable(r))
+    } else if (filterMode === 'not_found') {
+      rows = rows.filter(r => isUnfetchable(r))
     }
 
     return rows
-  }, [activeJob?.result?.rows, hideMissingRrc, hideUnfetchable])
+  }, [activeJob?.result?.rows, filterMode])
 
   // Preview state: exclusion, row sorting
   const preview = usePreviewState({
@@ -717,6 +728,8 @@ export default function Proration() {
     setIsFetchingMissing(true)
     setFetchMissingMessage(null)
     setError(null)
+    setShowFetchModal(true)
+    setFetchProgress({ event: 'started', total: unmatchedRows.length })
 
     try {
       const hdrs = await authHeaders()
@@ -731,44 +744,77 @@ export default function Proration() {
         throw new Error(errorData.detail || 'Failed to fetch missing data')
       }
 
-      const result = await response.json()
+      // Read NDJSON stream
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let finalResult: { matched_count: number; still_missing_count: number; updated_rows: MineralHolderRow[] } | null = null
 
-      // Merge updated rows back into the full row list
-      const updatedMap = new Map<string, MineralHolderRow>()
-      for (const row of result.updated_rows) {
-        // Key by owner + county + rrc_lease for matching
-        const key = `${row.owner}|${row.county}|${row.rrc_lease || row.raw_rrc || ''}`
-        updatedMap.set(key, row)
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+
+          // Process complete lines
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+          for (const line of lines) {
+            if (!line.trim()) continue
+            try {
+              const event = JSON.parse(line)
+              setFetchProgress(event)
+              if (event.event === 'complete') {
+                finalResult = event
+              }
+            } catch { /* skip malformed lines */ }
+          }
+        }
+        // Process remaining buffer
+        if (buffer.trim()) {
+          try {
+            const event = JSON.parse(buffer)
+            setFetchProgress(event)
+            if (event.event === 'complete') {
+              finalResult = event
+            }
+          } catch { /* skip */ }
+        }
       }
 
-      const mergedRows = activeJob.result.rows.map(row => {
-        if (row.rrc_acres) return row // Already matched, skip
-        const key = `${row.owner}|${row.county}|${row.rrc_lease || row.raw_rrc || ''}`
-        return updatedMap.get(key) || row
-      })
+      if (finalResult) {
+        // Merge updated rows back into the full row list
+        const updatedMap = new Map<string, MineralHolderRow>()
+        for (const row of finalResult.updated_rows) {
+          const key = `${row.owner}|${row.county}|${row.rrc_lease || row.raw_rrc || ''}`
+          updatedMap.set(key, row)
+        }
 
-      setActiveJob({
-        ...activeJob,
-        result: {
-          ...activeJob.result,
-          rows: mergedRows,
-          matched_rows: mergedRows.filter(r => r.rrc_acres).length,
-        },
-      })
+        const mergedRows = activeJob.result.rows.map(row => {
+          if (row.rrc_acres) return row
+          const key = `${row.owner}|${row.county}|${row.rrc_lease || row.raw_rrc || ''}`
+          return updatedMap.get(key) || row
+        })
 
-      // Build descriptive message with per-status counts
-      const foundCount = result.updated_rows.filter((r: MineralHolderRow) => r.fetch_status === 'found' || r.fetch_status === 'split_lookup').length
-      const notFoundCount = result.updated_rows.filter((r: MineralHolderRow) => r.fetch_status === 'not_found').length
-      const multipleCount = result.updated_rows.filter((r: MineralHolderRow) => r.fetch_status === 'multiple_matches').length
+        setActiveJob({
+          ...activeJob,
+          result: {
+            ...activeJob.result,
+            rows: mergedRows,
+            matched_rows: mergedRows.filter(r => r.rrc_acres).length,
+          },
+        })
 
-      const parts: string[] = []
-      if (foundCount > 0) parts.push(`found ${foundCount}`)
-      if (notFoundCount > 0) parts.push(`not found ${notFoundCount}`)
-      if (multipleCount > 0) parts.push(`multiple matches ${multipleCount}`)
-      const msg = parts.length > 0 ? parts.join(', ') : 'No additional RRC data found'
-      setFetchMissingMessage(msg)
+        const foundCount = finalResult.updated_rows.filter((r: MineralHolderRow) => r.fetch_status === 'found' || r.fetch_status === 'split_lookup').length
+        const notFoundCount = finalResult.updated_rows.filter((r: MineralHolderRow) => r.fetch_status === 'not_found').length
+        const parts: string[] = []
+        if (foundCount > 0) parts.push(`found ${foundCount}`)
+        if (notFoundCount > 0) parts.push(`not found ${notFoundCount}`)
+        setFetchMissingMessage(parts.length > 0 ? parts.join(', ') : 'No additional RRC data found')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch missing data')
+      setShowFetchModal(false)
     } finally {
       setIsFetchingMissing(false)
     }
@@ -905,26 +951,6 @@ export default function Proration() {
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
-                    checked={hideMissingRrc}
-                    onChange={(e) => setHideMissingRrc(e.target.checked)}
-                    className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
-                  />
-                  <span>Hide Missing RRC</span>
-                </label>
-
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={hideUnfetchable}
-                    onChange={(e) => setHideUnfetchable(e.target.checked)}
-                    className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
-                  />
-                  <span>Hide No Lease #</span>
-                </label>
-
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
                     checked={newRecordOnly}
                     onChange={(e) => setNewRecordOnly(e.target.checked)}
                     className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
@@ -1043,16 +1069,6 @@ export default function Proration() {
                     <Filter className="w-4 h-4" />
                     <span>Filters</span>
                   </div>
-
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={hideMissingRrc}
-                      onChange={(e) => setHideMissingRrc(e.target.checked)}
-                      className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
-                    />
-                    <span>Hide Missing RRC</span>
-                  </label>
 
                   <label className="flex items-center gap-2 text-sm">
                     <input
@@ -1247,40 +1263,41 @@ export default function Proration() {
                 </div>
               )}
 
-              {/* Stats */}
+              {/* Stats — click to filter */}
               {(() => {
                 const rows = activeJob.result.rows || []
                 const totalCount = activeJob.result.total_rows || rows.length
                 const matchedCount = rows.filter(r => r.rrc_acres).length
                 const fetchableCount = rows.filter(r => isFetchable(r)).length
                 const unfetchableCount = rows.filter(r => isUnfetchable(r)).length
+                const toggle = (mode: typeof filterMode) => setFilterMode(prev => prev === mode ? 'all' : mode)
                 return (
                   <div className="grid grid-cols-5 gap-4 p-6 border-b border-gray-100">
-                    <div className="text-center">
+                    <button onClick={() => setFilterMode('all')} className={`text-center rounded-lg py-2 transition-colors ${filterMode === 'all' ? 'bg-tre-navy/5 ring-1 ring-tre-navy/20' : 'hover:bg-gray-50'}`}>
                       <p className="text-2xl font-oswald font-semibold text-tre-navy">
                         {totalCount}
                       </p>
                       <p className="text-sm text-gray-500">Total Rows</p>
-                    </div>
-                    <div className="text-center">
+                    </button>
+                    <button onClick={() => toggle('matched')} className={`text-center rounded-lg py-2 transition-colors ${filterMode === 'matched' ? 'bg-green-50 ring-1 ring-green-200' : 'hover:bg-gray-50'}`}>
                       <p className="text-2xl font-oswald font-semibold text-green-600">
                         {matchedCount}
                       </p>
                       <p className="text-sm text-gray-500">RRC Matched</p>
-                    </div>
-                    <div className="text-center">
+                    </button>
+                    <button onClick={() => toggle('fetchable')} className={`text-center rounded-lg py-2 transition-colors ${filterMode === 'fetchable' ? 'bg-orange-50 ring-1 ring-orange-200' : 'hover:bg-gray-50'}`}>
                       <p className={`text-2xl font-oswald font-semibold ${fetchableCount > 0 ? 'text-orange-500' : 'text-gray-400'}`}>
                         {fetchableCount}
                       </p>
                       <p className="text-sm text-gray-500">Fetchable</p>
-                    </div>
-                    <div className="text-center">
+                    </button>
+                    <button onClick={() => toggle('not_found')} className={`text-center rounded-lg py-2 transition-colors ${filterMode === 'not_found' ? 'bg-gray-100 ring-1 ring-gray-300' : 'hover:bg-gray-50'}`}>
                       <p className={`text-2xl font-oswald font-semibold ${unfetchableCount > 0 ? 'text-gray-500' : 'text-gray-400'}`}>
                         {unfetchableCount}
                       </p>
                       <p className="text-sm text-gray-500">No Lease #</p>
-                    </div>
-                    <div className="text-center">
+                    </button>
+                    <div className="text-center py-2">
                       <p className="text-2xl font-oswald font-semibold text-tre-teal">
                         {preview.entriesToExport.length}
                       </p>
@@ -1378,7 +1395,33 @@ export default function Proration() {
                   <h4 className="font-medium text-gray-900 flex items-center gap-2">
                     <Users className="w-4 h-4" />
                     Proration Preview
+                    {filterMode !== 'all' && (
+                      <span className="text-xs font-normal text-gray-500 ml-1">
+                        ({rowsWithKeys.length} shown)
+                      </span>
+                    )}
                   </h4>
+                  <div className="flex items-center gap-2">
+                    {/* Inline filter pills */}
+                    {(['all', 'matched', 'fetchable', 'not_found'] as const).map(mode => {
+                      const labels: Record<typeof mode, string> = { all: 'All', matched: 'Matched', fetchable: 'Fetchable', not_found: 'No Lease #' }
+                      const colors: Record<typeof mode, string> = {
+                        all: filterMode === 'all' ? 'bg-tre-navy text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                        matched: filterMode === 'matched' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                        fetchable: filterMode === 'fetchable' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                        not_found: filterMode === 'not_found' ? 'bg-gray-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                      }
+                      return (
+                        <button
+                          key={mode}
+                          onClick={() => setFilterMode(prev => prev === mode && mode !== 'all' ? 'all' : mode)}
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${colors[mode]}`}
+                        >
+                          {labels[mode]}
+                        </button>
+                      )
+                    })}
+                  </div>
                   <div className="relative" ref={columnPickerRef}>
                     <button
                       onClick={() => setShowColumnPicker(!showColumnPicker)}
@@ -1638,6 +1681,13 @@ export default function Proration() {
           )}
         </div>
       )}
+
+      {/* Fetch RRC Progress Modal */}
+      <FetchRrcModal
+        isOpen={showFetchModal}
+        onClose={() => setShowFetchModal(false)}
+        progress={fetchProgress}
+      />
 
       {/* Cancel Confirm Dialog */}
       <CancelConfirmDialog

@@ -27,7 +27,9 @@ class EntityType(str, Enum):
 class OwnerEntry(BaseModel):
     """A single owner entry extracted from title documents."""
 
-    full_name: str = Field(..., description="Complete entity name")
+    model_config = {"extra": "ignore"}
+
+    full_name: str = Field("", description="Complete entity name")
     first_name: Optional[str] = Field(None, description="Parsed first name (individuals only)")
     middle_name: Optional[str] = Field(None, description="Parsed middle name/initial (individuals only)")
     last_name: Optional[str] = Field(None, description="Parsed last name (individuals only)")
@@ -39,7 +41,7 @@ class OwnerEntry(BaseModel):
     city: Optional[str] = Field(None, description="City name")
     state: Optional[str] = Field(None, description="2-letter state code")
     zip_code: Optional[str] = Field(None, description="ZIP code")
-    legal_description: str = Field(..., description="Section-Township-Range")
+    legal_description: str = Field("", description="Section-Township-Range")
     notes: Optional[str] = Field(None, description="Additional info, a/k/a, references")
     campaign_name: Optional[str] = Field(None, description="Campaign name from uploaded file")
     county: Optional[str] = Field(None, description="County from uploaded file")

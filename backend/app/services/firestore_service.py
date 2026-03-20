@@ -649,8 +649,57 @@ async def lookup_rrc_by_lease_number(lease_number: str) -> Optional[dict]:
     }
 
 
+RRC_METADATA_COLLECTION = "rrc_metadata"
+
+
+async def get_rrc_cached_status() -> Optional[dict]:
+    """Read cached RRC status from rrc_metadata/counts (O(1) read)."""
+    db = get_firestore_client()
+    doc = await db.collection(RRC_METADATA_COLLECTION).document("counts").get()
+    if not doc.exists:
+        return None
+    data = doc.to_dict()
+    oil_rows = data.get("oil_rows", 0)
+    gas_rows = data.get("gas_rows", 0)
+    last_sync_at = data.get("last_sync_at")
+    return {
+        "oil_available": oil_rows > 0,
+        "gas_available": gas_rows > 0,
+        "oil_rows": oil_rows,
+        "gas_rows": gas_rows,
+        "oil_modified": last_sync_at.isoformat() if last_sync_at else None,
+        "gas_modified": last_sync_at.isoformat() if last_sync_at else None,
+        "last_sync": {
+            "completed_at": last_sync_at.isoformat() if last_sync_at else None,
+            "new_records": data.get("new_records", 0),
+            "updated_records": data.get("updated_records", 0),
+        } if last_sync_at else None,
+    }
+
+
+async def update_rrc_metadata_counts(
+    oil_rows: int,
+    gas_rows: int,
+    last_sync_at: Optional[datetime] = None,
+    new_records: int = 0,
+    updated_records: int = 0,
+) -> None:
+    """Write/merge RRC counts to rrc_metadata/counts doc."""
+    db = get_firestore_client()
+    data = {
+        "oil_rows": oil_rows,
+        "gas_rows": gas_rows,
+        "updated_at": datetime.utcnow(),
+    }
+    if last_sync_at:
+        data["last_sync_at"] = last_sync_at
+        data["new_records"] = new_records
+        data["updated_records"] = updated_records
+    await db.collection(RRC_METADATA_COLLECTION).document("counts").set(data, merge=True)
+
+
 async def get_rrc_data_status() -> dict:
-    """Get RRC data status from Firestore."""
+    """Get RRC data status from Firestore (expensive fallback with 5 queries)."""
     db = get_firestore_client()
 
     # Count oil records
@@ -694,6 +743,18 @@ async def get_rrc_data_status() -> dict:
             "new_records": sync_data.get("new_records", 0),
             "updated_records": sync_data.get("updated_records", 0),
         }
+
+    # Populate the cache for next time
+    try:
+        await update_rrc_metadata_counts(
+            oil_rows=oil_rows,
+            gas_rows=gas_rows,
+            last_sync_at=sync_docs[0].to_dict().get("completed_at") if sync_docs else None,
+            new_records=last_sync.get("new_records", 0) if last_sync else 0,
+            updated_records=last_sync.get("updated_records", 0) if last_sync else 0,
+        )
+    except Exception as e:
+        logger.warning("Failed to populate RRC metadata cache: %s", e)
 
     return {
         "oil_available": oil_rows > 0,
