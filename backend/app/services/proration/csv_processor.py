@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 import re
@@ -18,6 +19,7 @@ from app.models.proration import (
 )
 from app.services.proration.calculation_service import calculate_metrics
 from app.services.proration.legal_description_parser import parse_legal_description
+from app.services.proration.rrc_cache import get_from_cache, update_cache
 from app.services.proration.rrc_county_codes import lookup_county
 from app.services.proration.rrc_data_service import rrc_data_service
 
@@ -117,35 +119,125 @@ async def process_csv(
         df_filtered = apply_filters(df, options.filters)
         filtered_rows = len(df_filtered)
 
-        # Convert to MineralHolderRow objects
+        # Convert to MineralHolderRow objects using 3-phase approach:
+        # Phase 1: Parse rows, check cache, collect misses
+        # Phase 2: Batch Firestore reads for all cache misses (PERF-03)
+        # Phase 3: Build MineralHolderRow objects using cached results
         rows: list[MineralHolderRow] = []
         failed_count = 0
         matched_count = 0
 
+        # Phase 1: Parse all rows, check in-memory cache, collect misses
+        parsed_rows: list[dict] = []
+        cache_misses: set[tuple[str, str]] = set()  # (district, lease_number)
+        lease_only_misses: set[str] = set()  # lease_number only
+
         for idx, row_data in df_filtered.iterrows():
             try:
-                # Parse RRC lease number using the new service
                 rrc_lease_str = row_data.get("RRC Lease #") or row_data.get("Raw RRC", "")
                 district, lease_number = rrc_data_service.parse_rrc_lease(rrc_lease_str)
 
-                # Parse legal description
                 block, section, abstract = parse_legal_description(
                     row_data.get("Legal Description", "")
                 )
-
-                # Determine well type from RRC lookup or estimates
                 well_type = determine_well_type(row_data, options.well_type_override)
 
-                # Look up acres from RRC master database (Firestore),
-                # falling back to in-memory CSV if Firestore unavailable
+                # Determine lookup path and check cache
+                lookup_type = None  # "district", "lease_only", or None
+                lease_only = None
+
+                if district and lease_number:
+                    cached = get_from_cache(district, lease_number)
+                    if cached is None and _use_firestore:
+                        cache_misses.add((district, lease_number))
+                    lookup_type = "district"
+                elif lease_number or rrc_lease_str:
+                    lease_only = lease_number
+                    if not lease_only and rrc_lease_str:
+                        numbers = re.findall(r'\d+', str(rrc_lease_str))
+                        if numbers:
+                            lease_only = numbers[0]
+                    if lease_only:
+                        # For lease-only, cache key uses empty district
+                        cached = get_from_cache("", lease_only)
+                        if cached is None and _use_firestore:
+                            lease_only_misses.add(lease_only)
+                        lookup_type = "lease_only"
+
+                parsed_rows.append({
+                    "idx": idx,
+                    "row_data": row_data,
+                    "district": district,
+                    "lease_number": lease_number,
+                    "lease_only": lease_only,
+                    "block": block,
+                    "section": section,
+                    "abstract": abstract,
+                    "well_type": well_type,
+                    "rrc_lease_str": rrc_lease_str,
+                    "lookup_type": lookup_type,
+                })
+            except Exception as e:
+                logger.exception(f"Error parsing row {idx}: {e}")
+                failed_count += 1
+
+        # Phase 2: Batch Firestore reads for all cache misses (PERF-03)
+        if cache_misses and _use_firestore:
+            sem = asyncio.Semaphore(25)
+
+            async def bounded_lookup(d: str, ln: str) -> tuple[tuple[str, str], dict | None]:
+                async with sem:
+                    return (d, ln), await _lookup_from_firestore(d, ln)
+
+            results = await asyncio.gather(
+                *[bounded_lookup(d, ln) for d, ln in cache_misses],
+                return_exceptions=True,
+            )
+
+            for result in results:
+                if not isinstance(result, Exception):
+                    key, info = result
+                    update_cache(key, info)
+
+        if lease_only_misses and _use_firestore:
+            sem = asyncio.Semaphore(25)
+
+            async def bounded_lease_lookup(ln: str) -> tuple[str, dict | None]:
+                async with sem:
+                    return ln, await _lookup_by_lease_from_firestore(ln)
+
+            lease_results = await asyncio.gather(
+                *[bounded_lease_lookup(ln) for ln in lease_only_misses],
+                return_exceptions=True,
+            )
+
+            for result in lease_results:
+                if not isinstance(result, Exception):
+                    ln, info = result
+                    update_cache(("", ln), info)
+
+        # Phase 3: Build MineralHolderRow objects using cache
+        for parsed in parsed_rows:
+            try:
+                idx = parsed["idx"]
+                row_data = parsed["row_data"]
+                district = parsed["district"]
+                lease_number = parsed["lease_number"]
+                lease_only = parsed["lease_only"]
+                block = parsed["block"]
+                section = parsed["section"]
+                abstract = parsed["abstract"]
+                well_type = parsed["well_type"]
+                rrc_lease_str = parsed["rrc_lease_str"]
+                lookup_type = parsed["lookup_type"]
+
                 rrc_acres = None
                 rrc_info = None
                 notes = None
 
-                if district and lease_number:
-                    # Try Firestore master database first
-                    if _use_firestore:
-                        rrc_info = await _lookup_from_firestore(district, lease_number)
+                if lookup_type == "district":
+                    # Check cache (now populated from Phase 2)
+                    rrc_info = get_from_cache(district, lease_number)
 
                     # Fall back to in-memory CSV lookup
                     if rrc_info is None:
@@ -166,40 +258,31 @@ async def process_csv(
                         matched_count += 1
                     else:
                         notes = "Not found in RRC data"
-                elif lease_number or rrc_lease_str:
-                    # No district parsed - try looking up by lease number only
-                    lease_only = lease_number
-                    if not lease_only and rrc_lease_str:
-                        numbers = re.findall(r'\d+', str(rrc_lease_str))
-                        if numbers:
-                            lease_only = numbers[0]
+                elif lookup_type == "lease_only" and lease_only:
+                    # Check cache (now populated from Phase 2)
+                    rrc_info = get_from_cache("", lease_only)
 
-                    if lease_only:
-                        # Try Firestore first
-                        if _use_firestore:
-                            rrc_info = await _lookup_by_lease_from_firestore(lease_only)
+                    # Fall back to in-memory CSV
+                    if rrc_info is None:
+                        rrc_info = rrc_data_service.lookup_by_lease_number(lease_only)
 
-                        # Fall back to in-memory CSV
-                        if rrc_info is None:
-                            rrc_info = rrc_data_service.lookup_by_lease_number(lease_only)
-
-                        if rrc_info:
-                            rrc_acres = rrc_info.get("acres")
-                            well_type_str = rrc_info.get("type", "")
-                            if well_type_str == "oil":
-                                well_type = WellType.OIL
-                            elif well_type_str == "gas":
-                                well_type = WellType.GAS
-                            elif well_type_str == "both":
-                                well_type = WellType.BOTH
-                            districts_found = rrc_info.get("districts_found", 1)
-                            if districts_found > 1:
-                                notes = f"Found in {districts_found} districts, acres summed"
-                            matched_count += 1
-                        else:
-                            notes = "Not found in RRC data"
+                    if rrc_info:
+                        rrc_acres = rrc_info.get("acres")
+                        well_type_str = rrc_info.get("type", "")
+                        if well_type_str == "oil":
+                            well_type = WellType.OIL
+                        elif well_type_str == "gas":
+                            well_type = WellType.GAS
+                        elif well_type_str == "both":
+                            well_type = WellType.BOTH
+                        districts_found = rrc_info.get("districts_found", 1)
+                        if districts_found > 1:
+                            notes = f"Found in {districts_found} districts, acres summed"
+                        matched_count += 1
                     else:
-                        notes = "No valid RRC Lease #"
+                        notes = "Not found in RRC data"
+                elif lookup_type == "lease_only":
+                    notes = "No valid RRC Lease #"
                 else:
                     notes = "No valid RRC Lease #"
 
@@ -268,7 +351,7 @@ async def process_csv(
                 rows.append(mineral_row)
 
             except Exception as e:
-                logger.exception(f"Error processing row {idx}: {e}")
+                logger.exception(f"Error processing row {parsed['idx']}: {e}")
                 failed_count += 1
                 continue
 
