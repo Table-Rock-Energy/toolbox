@@ -36,7 +36,7 @@ Requirements for v1.7 Batch Processing & Resilience. Each maps to roadmap phases
 
 ### Revenue Streaming
 
-- [ ] **REV-01**: User sees per-PDF progress during multi-PDF revenue upload via SSE
+- [x] **REV-01**: User sees per-PDF progress during multi-PDF revenue upload via SSE
 
 ## Future Requirements
 
@@ -80,7 +80,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PERF-02 | Phase 17 | Pending |
 | PERF-03 | Phase 17 | Pending |
 | PERF-04 | Phase 17 | Pending |
-| REV-01 | Phase 16 | Pending |
+| REV-01 | Phase 16 | Complete |
 
 **Coverage:**
 - v1.7 requirements: 16 total

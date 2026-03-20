@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Batch Processing & Resilience
 status: unknown
-stopped_at: Completed 15-01-PLAN.md
-last_updated: "2026-03-20T14:28:42.216Z"
+stopped_at: Completed 16-01-PLAN.md
+last_updated: "2026-03-20T14:44:16.328Z"
 progress:
   total_phases: 5
-  completed_phases: 3
-  total_plans: 5
-  completed_plans: 5
+  completed_phases: 4
+  total_plans: 6
+  completed_plans: 6
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-19)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Phase 15 — operation-persistence-ui
+**Current focus:** Phase 16 — revenue-multi-pdf-streaming
 
 ## Current Position
 
-Phase: 15 (operation-persistence-ui) — COMPLETE
-Plan: 1 of 1 (done)
+Phase: 16 (revenue-multi-pdf-streaming) — EXECUTING
+Plan: 1 of 1
 
 ## Accumulated Context
 
@@ -46,6 +46,7 @@ Plan: 1 of 1 (done)
 - [Phase 14]: fetchBatchConfig falls back to defaults on 401/403 (non-admin users)
 - [Phase 15]: Status bar hidden when user is on active tool page (avoids redundancy with EnrichmentModal)
 - [Phase 15]: OperationStatusBar uses useOperationState only (read-only, no re-render storms from actions)
+- [Phase 16]: Extracted _process_single_pdf helper for shared parsing between sync and streaming endpoints
 
 ### Pending Todos
 
@@ -62,6 +63,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-20T14:17:27Z
-Stopped at: Completed 15-01-PLAN.md
+Last session: 2026-03-20T14:44:16.326Z
+Stopped at: Completed 16-01-PLAN.md
 Resume file: None
