@@ -1,5 +1,15 @@
 # Milestones
 
+## v1.7 Batch Processing & Resilience (Shipped: 2026-03-20)
+
+**Phases completed:** 5 phases, 9 plans, 0 tasks
+
+**Key accomplishments:**
+
+- (none recorded)
+
+---
+
 ## v1.6 Pipeline Fixes & Unified Enrichment (Shipped: 2026-03-19)
 
 **Phases completed:** 3 phases, 6 plans

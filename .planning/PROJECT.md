@@ -109,7 +109,7 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - **Test suite:** 50+ pytest tests (auth smoke, CORS, extract parsers, revenue parser), CI via GitHub Actions
 - **Extract formats:** Standard OCC Exhibit A, ECF multiunit well filings (with optional Convey 640 CSV/Excel)
 - **Shipped:** v1.3 Security Hardening (2026-03-11), v1.4 ECF Extraction (2026-03-12), v1.5 Enrichment Pipeline (2026-03-17), v1.6 Pipeline Fixes & Unified Enrichment (2026-03-19)
-- **In progress:** v1.7 Batch Processing & Resilience — All phases complete, pending lifecycle
+- **Shipped:** v1.7 Batch Processing & Resilience (2026-03-20)
 
 ## Constraints
 
@@ -144,4 +144,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Local variable threading in runAllSteps (not React state) | Avoids stale closure between sequential async steps | ✓ Good — v1.6 |
 
 ---
-*Last updated: 2026-03-19 after v1.7 milestone start*
+*Last updated: 2026-03-20 after v1.7 milestone complete*
