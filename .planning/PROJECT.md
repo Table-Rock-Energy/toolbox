@@ -65,6 +65,7 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - ✓ Operation status bar in MainLayout header: shows active operations with tool name, step, and batch progress — v1.7
 - ✓ Auto-restore completed results on tool page return with clearOperation after apply — v1.7
 - ✓ Revenue multi-PDF streaming: NDJSON per-file progress with inline UI counter in both panel views — v1.7
+- ✓ Proration cache-first lookups: in-memory RRC cache with startup pre-warming, batch Firestore reads via asyncio.gather, cache invalidation after RRC sync — v1.7
 
 ### Active
 
@@ -108,7 +109,7 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - **Test suite:** 50+ pytest tests (auth smoke, CORS, extract parsers, revenue parser), CI via GitHub Actions
 - **Extract formats:** Standard OCC Exhibit A, ECF multiunit well filings (with optional Convey 640 CSV/Excel)
 - **Shipped:** v1.3 Security Hardening (2026-03-11), v1.4 ECF Extraction (2026-03-12), v1.5 Enrichment Pipeline (2026-03-17), v1.6 Pipeline Fixes & Unified Enrichment (2026-03-19)
-- **In progress:** v1.7 Batch Processing & Resilience — Phase 16 complete (revenue multi-PDF streaming with NDJSON progress)
+- **In progress:** v1.7 Batch Processing & Resilience — All phases complete, pending lifecycle
 
 ## Constraints
 
