@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import { X, Check, Loader2, AlertCircle } from 'lucide-react'
 import type { StepStatus, PipelineStatus, PipelineStep, EnrichmentCellChange } from '../hooks/useEnrichmentPipeline'
 import type { BatchProgress, StepBatchResult } from '../contexts/OperationContext'
@@ -19,14 +19,49 @@ const STEP_LABELS: Record<string, string> = {
   enrich: 'Enrich',
 }
 
-function calculateBatchEta(batchTimings: number[], remainingBatches: number): string | null {
+function formatCountdown(seconds: number): string {
+  if (seconds <= 0) return ''
+  if (seconds >= 60) {
+    const min = Math.floor(seconds / 60)
+    const sec = seconds % 60
+    return sec > 0 ? `${min}m ${sec}s remaining` : `${min}m remaining`
+  }
+  return `${seconds}s remaining`
+}
+
+function useCountdownEta(estimatedSeconds: number | null): string | null {
+  const [remaining, setRemaining] = useState<number | null>(null)
+  const targetRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (estimatedSeconds === null || estimatedSeconds <= 0) {
+      setRemaining(null)
+      targetRef.current = null
+      return
+    }
+    // Set target time when estimate changes
+    targetRef.current = Date.now() + estimatedSeconds * 1000
+    setRemaining(estimatedSeconds)
+
+    const interval = setInterval(() => {
+      if (!targetRef.current) return
+      const left = Math.max(0, Math.ceil((targetRef.current - Date.now()) / 1000))
+      setRemaining(left)
+      if (left <= 0) clearInterval(interval)
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [estimatedSeconds])
+
+  if (remaining === null || remaining <= 0) return null
+  return formatCountdown(remaining)
+}
+
+function estimateBatchSeconds(batchTimings: number[], remainingBatches: number): number | null {
   if (batchTimings.length === 0 || remainingBatches <= 0) return null
   const avgMs = batchTimings.reduce((a, b) => a + b, 0) / batchTimings.length
-  const remainingMs = remainingBatches * avgMs
-  const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000))
-  if (remainingSec === 0) return null
-  if (remainingSec >= 60) return `About ${Math.ceil(remainingSec / 60)} min remaining`
-  return `About ${remainingSec}s remaining`
+  const sec = Math.max(0, Math.ceil((remainingBatches * avgMs) / 1000))
+  return sec > 0 ? sec : null
 }
 
 export default function EnrichmentModal({
@@ -47,8 +82,8 @@ export default function EnrichmentModal({
   const activeStep = stepStatuses.find(s => s.status === 'active')
   const activeStepIndex = activeStep ? stepStatuses.indexOf(activeStep) : -1
 
-  // ETA calculation (step-level)
-  const eta = useMemo(() => {
+  // ETA calculation (step-level) — estimate seconds for countdown
+  const stepEtaSeconds = useMemo(() => {
     if (completedCount === 0 || isFinished) return null
     const completedSteps = stepStatuses.filter(s => s.completedAt && s.startedAt)
     if (completedSteps.length === 0) return null
@@ -58,21 +93,20 @@ export default function EnrichmentModal({
     )
     const avgStepTime = totalElapsed / completedSteps.length
     const remaining = totalSteps - completedCount
-    const remainingMs = remaining * avgStepTime
-    const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000))
-    if (remainingSec === 0) return null
-    if (remainingSec >= 60) {
-      return `About ${Math.ceil(remainingSec / 60)} min remaining`
-    }
-    return `About ${remainingSec}s remaining`
+    const sec = Math.max(0, Math.ceil((remaining * avgStepTime) / 1000))
+    return sec > 0 ? sec : null
   }, [stepStatuses, completedCount, totalSteps, isFinished])
 
-  // Batch-level ETA
-  const batchEta = useMemo(() => {
+  // Batch-level ETA — estimate seconds for countdown
+  const batchEtaSeconds = useMemo(() => {
     if (!batchProgress || batchProgress.batchTimings.length === 0) return null
     const remaining = batchProgress.totalBatches - batchProgress.currentBatch
-    return calculateBatchEta(batchProgress.batchTimings, remaining)
+    return estimateBatchSeconds(batchProgress.batchTimings, remaining)
   }, [batchProgress])
+
+  // Countdown timers that tick every second
+  const eta = useCountdownEta(stepEtaSeconds)
+  const batchEta = useCountdownEta(batchEtaSeconds)
 
   // Completion summary
   const totalChanges = useMemo(() => {
