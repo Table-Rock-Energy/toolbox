@@ -24,8 +24,8 @@ Requirements for v1.7 Batch Processing & Resilience. Each maps to roadmap phases
 ### Operation Persistence
 
 - [x] **PERSIST-01**: Active operations continue when user navigates between pages
-- [ ] **PERSIST-02**: User sees active operation status bar in MainLayout header
-- [ ] **PERSIST-03**: User can return to a tool page and see results from an operation that completed while away
+- [x] **PERSIST-02**: User sees active operation status bar in MainLayout header
+- [x] **PERSIST-03**: User can return to a tool page and see results from an operation that completed while away
 
 ### Proration Performance
 
@@ -74,8 +74,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RESIL-03 | Phase 13 | Complete |
 | RESIL-04 | Phase 14 | Complete |
 | PERSIST-01 | Phase 13 | Complete |
-| PERSIST-02 | Phase 15 | Pending |
-| PERSIST-03 | Phase 15 | Pending |
+| PERSIST-02 | Phase 15 | Complete |
+| PERSIST-03 | Phase 15 | Complete |
 | PERF-01 | Phase 17 | Pending |
 | PERF-02 | Phase 17 | Pending |
 | PERF-03 | Phase 17 | Pending |

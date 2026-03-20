@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Batch Processing & Resilience
-status: unknown
-stopped_at: Completed 14-02-PLAN.md
-last_updated: "2026-03-19T21:55:49.539Z"
+status: phase-complete
+stopped_at: Completed 15-01-PLAN.md
+last_updated: "2026-03-20T14:17:27Z"
 progress:
   total_phases: 5
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  completed_phases: 3
+  total_plans: 5
+  completed_plans: 5
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-19)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Phase 14 — ai-cleanup-batching
+**Current focus:** Phase 15 — operation-persistence-ui
 
 ## Current Position
 
-Phase: 14 (ai-cleanup-batching) — COMPLETE
-Plan: 2 of 2 (all complete)
+Phase: 15 (operation-persistence-ui) — COMPLETE
+Plan: 1 of 1 (done)
 
 ## Accumulated Context
 
@@ -44,6 +44,8 @@ Plan: 2 of 2 (all complete)
 - [Phase 14]: Batch config in separate batch_config section of app_settings.json
 - [Phase 14]: useRef for batchConfigRef (read inside async loop, avoids stale closure and re-renders)
 - [Phase 14]: fetchBatchConfig falls back to defaults on 401/403 (non-admin users)
+- [Phase 15]: Status bar hidden when user is on active tool page (avoids redundancy with EnrichmentModal)
+- [Phase 15]: OperationStatusBar uses useOperationState only (read-only, no re-render storms from actions)
 
 ### Pending Todos
 
@@ -60,6 +62,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-19T21:49:28Z
-Stopped at: Completed 14-02-PLAN.md
+Last session: 2026-03-20T14:17:27Z
+Stopped at: Completed 15-01-PLAN.md
 Resume file: None
