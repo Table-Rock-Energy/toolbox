@@ -374,10 +374,15 @@ export default function Proration() {
   const toolName = 'proration'
   const pipelineStatus: PipelineStatus = operation?.tool === toolName ? (operation.status as PipelineStatus) : 'idle'
   const stepStatuses = operation?.tool === toolName ? operation.stepStatuses : []
-  const enrichmentChanges = useMemo<Map<string, EnrichmentCellChange>>(
+  const operationChanges = useMemo<Map<string, EnrichmentCellChange>>(
     () => operation?.tool === toolName ? operation.enrichmentChanges : new Map(),
     [operation?.tool, operation?.enrichmentChanges, toolName]
   )
+  const [persistedChanges, setPersistedChanges] = useState<Map<string, EnrichmentCellChange>>(new Map())
+  if (operationChanges.size > 0 && operationChanges !== persistedChanges && operationChanges.size !== persistedChanges.size) {
+    setPersistedChanges(operationChanges)
+  }
+  const enrichmentChanges = operationChanges.size > 0 ? operationChanges : persistedChanges
   const completedSteps = operation?.tool === toolName ? operation.completedSteps : new Set<PipelineStep>()
   const batchProgress = operation?.tool === toolName ? operation.batchProgress : null
   const stepBatchResults = operation?.tool === toolName ? operation.stepBatchResults : new Map<PipelineStep, import('../contexts/OperationContext').StepBatchResult>()
@@ -769,8 +774,13 @@ export default function Proration() {
     }
   }
 
+  const STEP_SOURCE_LABELS: Record<string, string> = { cleanup: 'AI Cleanup', validate: 'Google Maps', enrich: 'Enrichment' }
   const getCellHighlight = (entryIndex: number, field: string) => {
     return enrichmentChanges.get(`${entryIndex}:${field}`) || null
+  }
+  const formatHighlightTitle = (hl: EnrichmentCellChange) => {
+    const source = STEP_SOURCE_LABELS[hl.step] || hl.step
+    return `Was: ${hl.original_value || '(empty)'} → Changed by ${source}`
   }
 
   const isColumnVisible = (key: string): boolean => {
@@ -1466,7 +1476,7 @@ export default function Proration() {
                           {isColumnVisible('owner') && (() => {
                             const hl = getCellHighlight(rowIdx, 'owner')
                             return (
-                            <td className={`py-2 px-3 text-gray-900 whitespace-nowrap ${hl ? 'bg-green-50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
+                            <td className={`py-2 px-3 text-gray-900 whitespace-nowrap ${hl ? 'bg-green-50' : ''}`} title={hl ? formatHighlightTitle(hl) : undefined}>
                               {row.owner}
                             </td>
                             )

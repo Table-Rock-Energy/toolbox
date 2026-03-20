@@ -192,33 +192,33 @@ async def pipeline_validate(request: PipelineRequest) -> PipelineResponse:
             entries_processed=len(request.entries),
         )
 
-    proposed_changes: list[ProposedChange] = []
+    # Build validation tasks for all entries with addresses
+    semaphore = asyncio.Semaphore(5)  # Limit concurrent Google Maps requests
 
-    for i, entry in enumerate(request.entries):
+    async def _validate_one(i: int, entry: dict) -> list[ProposedChange]:
         street = entry.get(street_field) or ""
         street_2 = entry.get(street_2_field) or ""
         city = entry.get(city_field) or ""
         state = entry.get(state_field) or ""
         zip_code = entry.get(zip_field) or ""
 
-        # Skip entries without any address
         if not any([street, city, state, zip_code]):
-            continue
+            return []
 
-        # Run sync validate_address in a thread
-        result = await asyncio.to_thread(
-            validate_address,
-            street=street,
-            street_2=street_2,
-            city=city,
-            state=state,
-            zip_code=zip_code,
-        )
+        async with semaphore:
+            result = await asyncio.to_thread(
+                validate_address,
+                street=street,
+                street_2=street_2,
+                city=city,
+                state=state,
+                zip_code=zip_code,
+            )
 
+        changes: list[ProposedChange] = []
         if result.confidence in ("high", "partial") and result.changed:
-            # Build ProposedChange per changed field
             if result.validated_street and result.validated_street.lower() != street.strip().lower():
-                proposed_changes.append(
+                changes.append(
                     ProposedChange(
                         entry_index=i,
                         field=street_field,
@@ -232,7 +232,7 @@ async def pipeline_validate(request: PipelineRequest) -> PipelineResponse:
                 )
 
             if result.validated_city and city and result.validated_city.lower() != city.strip().lower():
-                proposed_changes.append(
+                changes.append(
                     ProposedChange(
                         entry_index=i,
                         field=city_field,
@@ -246,7 +246,7 @@ async def pipeline_validate(request: PipelineRequest) -> PipelineResponse:
                 )
 
             if result.validated_state and state and result.validated_state.upper() != state.strip().upper():
-                proposed_changes.append(
+                changes.append(
                     ProposedChange(
                         entry_index=i,
                         field=state_field,
@@ -260,7 +260,7 @@ async def pipeline_validate(request: PipelineRequest) -> PipelineResponse:
                 )
 
             if result.validated_zip and zip_code and not zip_code.strip().startswith(result.validated_zip):
-                proposed_changes.append(
+                changes.append(
                     ProposedChange(
                         entry_index=i,
                         field=zip_field,
@@ -272,6 +272,18 @@ async def pipeline_validate(request: PipelineRequest) -> PipelineResponse:
                         authoritative=True,
                     )
                 )
+        return changes
+
+    # Run all validations concurrently (up to 5 at a time)
+    results = await asyncio.gather(
+        *[_validate_one(i, entry) for i, entry in enumerate(request.entries)],
+        return_exceptions=True,
+    )
+
+    proposed_changes: list[ProposedChange] = []
+    for r in results:
+        if isinstance(r, list):
+            proposed_changes.extend(r)
 
     return PipelineResponse(
         success=True,

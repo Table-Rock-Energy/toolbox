@@ -304,10 +304,15 @@ export default function Revenue() {
   const toolName = 'revenue'
   const pipelineStatus: PipelineStatus = operation?.tool === toolName ? (operation.status as PipelineStatus) : 'idle'
   const stepStatuses = operation?.tool === toolName ? operation.stepStatuses : []
-  const enrichmentChanges = useMemo<Map<string, EnrichmentCellChange>>(
+  const operationChanges = useMemo<Map<string, EnrichmentCellChange>>(
     () => operation?.tool === toolName ? operation.enrichmentChanges : new Map(),
     [operation?.tool, operation?.enrichmentChanges, toolName]
   )
+  const [persistedChanges, setPersistedChanges] = useState<Map<string, EnrichmentCellChange>>(new Map())
+  if (operationChanges.size > 0 && operationChanges !== persistedChanges && operationChanges.size !== persistedChanges.size) {
+    setPersistedChanges(operationChanges)
+  }
+  const enrichmentChanges = operationChanges.size > 0 ? operationChanges : persistedChanges
   const completedSteps = operation?.tool === toolName ? operation.completedSteps : new Set<PipelineStep>()
   const batchProgress = operation?.tool === toolName ? operation.batchProgress : null
   const stepBatchResults = operation?.tool === toolName ? operation.stepBatchResults : new Map<PipelineStep, import('../contexts/OperationContext').StepBatchResult>()
@@ -593,8 +598,13 @@ export default function Revenue() {
 
   const isColVisible = (key: string) => visibleColumns.has(key)
 
+  const STEP_SOURCE_LABELS: Record<string, string> = { cleanup: 'AI Cleanup', validate: 'Google Maps', enrich: 'Enrichment' }
   const getCellHighlight = (entryIndex: number, field: string) => {
     return enrichmentChanges.get(`${entryIndex}:${field}`) || null
+  }
+  const formatHighlightTitle = (hl: EnrichmentCellChange) => {
+    const source = STEP_SOURCE_LABELS[hl.step] || hl.step
+    return `Was: ${hl.original_value || '(empty)'} → Changed by ${source}`
   }
 
   return (
@@ -999,7 +1009,7 @@ export default function Revenue() {
                             {isColVisible('property_name') && (() => {
                               const hl = getCellHighlight(rowIdx, 'property_name')
                               return (
-                              <td className={`py-2 px-2 text-gray-900 text-xs whitespace-nowrap ${hl ? 'bg-green-50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
+                              <td className={`py-2 px-2 text-gray-900 text-xs whitespace-nowrap ${hl ? 'bg-green-50' : ''}`} title={hl ? formatHighlightTitle(hl) : undefined}>
                                 <EditableCell
                                   value={row.property_name}
                                   onCommit={(val) => preview.editField(row._id, 'property_name', val)}
@@ -1010,7 +1020,7 @@ export default function Revenue() {
                             {isColVisible('property_number') && (() => {
                               const hl = getCellHighlight(rowIdx, 'property_number')
                               return (
-                              <td className={`py-2 px-2 text-gray-600 text-xs ${hl ? 'bg-green-50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
+                              <td className={`py-2 px-2 text-gray-600 text-xs ${hl ? 'bg-green-50' : ''}`} title={hl ? formatHighlightTitle(hl) : undefined}>
                                 <EditableCell
                                   value={row.property_number}
                                   onCommit={(val) => preview.editField(row._id, 'property_number', val)}
@@ -1022,7 +1032,7 @@ export default function Revenue() {
                             {isColVisible('owner_name') && (() => {
                               const hl = getCellHighlight(rowIdx, 'owner_name')
                               return (
-                              <td className={`py-2 px-2 text-gray-600 text-xs whitespace-nowrap ${hl ? 'bg-green-50' : ''}`} title={hl ? `Original: ${hl.original_value}` : undefined}>
+                              <td className={`py-2 px-2 text-gray-600 text-xs whitespace-nowrap ${hl ? 'bg-green-50' : ''}`} title={hl ? formatHighlightTitle(hl) : undefined}>
                                 <EditableCell
                                   value={row.owner_name}
                                   onCommit={(val) => preview.editField(row._id, 'owner_name', val)}

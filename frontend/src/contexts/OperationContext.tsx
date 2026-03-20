@@ -65,7 +65,7 @@ export function OperationProvider({ children }: { children: ReactNode }) {
   const [operation, setOperation] = useState<OperationState | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const updateEntriesRef = useRef<((entries: Record<string, unknown>[]) => void) | null>(null)
-  const batchConfigRef = useRef({ batchSize: DEFAULT_BATCH_SIZE, maxRetries: DEFAULT_MAX_RETRIES })
+  const batchConfigRef = useRef({ batchSize: DEFAULT_BATCH_SIZE, maxRetries: DEFAULT_MAX_RETRIES, maxConcurrency: 2 })
 
   // beforeunload: abort in-flight fetches on tab/window close only
   useEffect(() => {
@@ -85,6 +85,7 @@ export function OperationProvider({ children }: { children: ReactNode }) {
         batchConfigRef.current = {
           batchSize: data.batch_size ?? DEFAULT_BATCH_SIZE,
           maxRetries: data.batch_max_retries ?? DEFAULT_MAX_RETRIES,
+          maxConcurrency: data.batch_max_concurrency ?? 2,
         }
       }
     } catch {
@@ -100,6 +101,7 @@ export function OperationProvider({ children }: { children: ReactNode }) {
     const { tool, entries, editedFields, keyField, featureFlags, sourceData } = opts
     const batchSize = batchConfigRef.current.batchSize
     const maxRetries = batchConfigRef.current.maxRetries
+    const maxConcurrency = batchConfigRef.current.maxConcurrency
 
     // Determine enabled steps
     const steps: PipelineStep[] = []
@@ -146,10 +148,10 @@ export function OperationProvider({ children }: { children: ReactNode }) {
       let skippedEntries = 0
       const failedBatchRanges: { start: number; end: number }[] = []
       let stepChangesApplied = 0
+      let completedBatchCount = 0
 
-      for (let bi = 0; bi < totalBatches; bi++) {
-        if (controller.signal.aborted) break
-
+      // Process a single batch and return its result
+      const processBatch = async (bi: number) => {
         const batchStart = bi * batchSize
         const batch = currentEntries.slice(batchStart, batchStart + batchSize)
         const batchStartTime = Date.now()
@@ -162,7 +164,7 @@ export function OperationProvider({ children }: { children: ReactNode }) {
             step === 'cleanup' ? sourceData : undefined,
           )
 
-          if (controller.signal.aborted) break
+          if (controller.signal.aborted) return
 
           const elapsed = Date.now() - batchStartTime
           batchTimings.push(elapsed)
@@ -172,7 +174,6 @@ export function OperationProvider({ children }: { children: ReactNode }) {
               const globalIndex = batchStart + change.entry_index
               if (globalIndex >= currentEntries.length) continue
 
-              // Respect manual edits
               const entryKey = String(currentEntries[globalIndex][keyField])
               const userEdits = editedFields.get(entryKey)
               if (userEdits && change.field in (userEdits as Record<string, unknown>)) continue
@@ -181,7 +182,6 @@ export function OperationProvider({ children }: { children: ReactNode }) {
               currentEntries[globalIndex][change.field] = change.proposed_value
               stepChangesApplied++
 
-              // First-change-only tracking
               const changeKey = `${globalIndex}:${change.field}`
               if (!allChanges.has(changeKey)) {
                 allChanges.set(changeKey, {
@@ -197,49 +197,42 @@ export function OperationProvider({ children }: { children: ReactNode }) {
               }
             }
           }
-
-          // Progressive apply: push updated entries to the tool page
-          updateEntriesRef.current?.(currentEntries.map(e => ({ ...e })))
-
-          // Update batch progress
-          setOperation(prev => {
-            if (!prev) return prev
-            return {
-              ...prev,
-              enrichmentChanges: new Map(allChanges),
-              batchProgress: {
-                currentBatch: bi + 1,
-                totalBatches,
-                failedBatches,
-                skippedEntries,
-                currentStep: step,
-                batchTimings: [...batchTimings],
-              },
-            }
-          })
         } catch {
-          // Skip and continue (RESIL-03)
           failedBatches++
           skippedEntries += batch.length
           failedBatchRanges.push({ start: batchStart, end: batchStart + batch.length })
-
-          // Update batch progress with failure counts
-          setOperation(prev => {
-            if (!prev) return prev
-            return {
-              ...prev,
-              batchProgress: {
-                currentBatch: bi + 1,
-                totalBatches,
-                failedBatches,
-                skippedEntries,
-                currentStep: step,
-                batchTimings: [...batchTimings],
-              },
-            }
-          })
-          continue
         }
+
+        completedBatchCount++
+
+        // Progressive apply + progress update after each batch completes
+        updateEntriesRef.current?.(currentEntries.map(e => ({ ...e })))
+        setOperation(prev => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            enrichmentChanges: new Map(allChanges),
+            batchProgress: {
+              currentBatch: completedBatchCount,
+              totalBatches,
+              failedBatches,
+              skippedEntries,
+              currentStep: step,
+              batchTimings: [...batchTimings],
+            },
+          }
+        })
+      }
+
+      // Run batches in concurrent waves
+      for (let wi = 0; wi < totalBatches; wi += maxConcurrency) {
+        if (controller.signal.aborted) break
+        const waveEnd = Math.min(wi + maxConcurrency, totalBatches)
+        const wave = []
+        for (let bi = wi; bi < waveEnd; bi++) {
+          wave.push(processBatch(bi))
+        }
+        await Promise.all(wave)
       }
 
       // --- End-of-step retry for failed batches (RESIL-04) ---
