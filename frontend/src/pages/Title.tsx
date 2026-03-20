@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { FileText, Download, Upload, Users, AlertCircle, CheckCircle, Filter, RotateCcw, Edit2, Columns, X, PanelLeftClose, PanelLeftOpen, ShieldAlert } from 'lucide-react'
-import { FileUpload, Modal, MineralExportModal, EditableCell, EnrichmentModal, UnifiedEnrichButton, ProposedChangeCell, CancelConfirmDialog } from '../components'
+import { FileUpload, Modal, MineralExportModal, EditableCell, EnrichmentModal, UnifiedEnrichButton, CancelConfirmDialog } from '../components'
 import type { PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useOperationContext } from '../contexts/OperationContext'
@@ -11,7 +11,7 @@ import { usePreviewState } from '../hooks/usePreviewState'
 import type { PipelineStatus, EnrichmentCellChange, PipelineStep } from '../hooks/useEnrichmentPipeline'
 
 interface OwnerEntry {
-  _uid?: string
+  _uid: string
   full_name: string
   first_name?: string
   middle_name?: string
@@ -324,7 +324,7 @@ export default function Title() {
     const opts: StartOperationOpts = {
       tool: toolName,
       entries: preview.previewEntries.map(e => ({...e} as Record<string, unknown>)),
-      updateEntries: (entries) => preview.updateEntries(entries as OwnerEntry[]),
+      updateEntries: (entries) => preview.updateEntries(entries as unknown as OwnerEntry[]),
       editedFields: preview.editedFields as Map<string, unknown>,
       keyField: '_uid',
       featureFlags,
@@ -341,7 +341,7 @@ export default function Title() {
     const results = getResultsForTool(toolName)
     if (results) {
       setTimeout(() => {
-        preview.updateEntries(results as OwnerEntry[])
+        preview.updateEntries(results as unknown as OwnerEntry[])
         clearOperation() // Clear status bar after results applied (PERSIST-03)
       }, 0)
     }

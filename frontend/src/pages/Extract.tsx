@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { FileSearch, Download, Upload, Users, AlertCircle, CheckCircle, Flag, Filter, RotateCcw, Edit2, Columns, X, PanelLeftClose, PanelLeftOpen, Play, ShieldAlert } from 'lucide-react'
-import { FileUpload, Modal, EditableCell, EnrichmentModal, UnifiedEnrichButton, ProposedChangeCell, CancelConfirmDialog } from '../components'
+import { FileUpload, Modal, EditableCell, EnrichmentModal, UnifiedEnrichButton, CancelConfirmDialog } from '../components'
 import MineralExportModal from '../components/MineralExportModal'
 import type { PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
@@ -475,7 +475,7 @@ export default function Extract() {
     const opts: StartOperationOpts = {
       tool: toolName,
       entries: preview.previewEntries.map(e => ({...e} as Record<string, unknown>)),
-      updateEntries: (entries) => preview.updateEntries(entries as PartyEntry[]),
+      updateEntries: (entries) => preview.updateEntries(entries as unknown as PartyEntry[]),
       editedFields: preview.editedFields as Map<string, unknown>,
       keyField: 'entry_number',
       featureFlags,
@@ -493,7 +493,7 @@ export default function Extract() {
     const results = getResultsForTool(toolName)
     if (results) {
       setTimeout(() => {
-        preview.updateEntries(results as PartyEntry[])
+        preview.updateEntries(results as unknown as PartyEntry[])
         clearOperation() // Clear status bar after results applied (PERSIST-03)
       }, 0)
     }

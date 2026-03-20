@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { Calculator, Download, Upload, Users, AlertCircle, CheckCircle, AlertTriangle, Database, RefreshCw, Filter, Settings, Edit2, Columns, X, PanelLeftClose, PanelLeftOpen, Search, ShieldAlert } from 'lucide-react'
-import { FileUpload, Modal, EnrichmentModal, UnifiedEnrichButton, ProposedChangeCell, CancelConfirmDialog } from '../components'
+import { FileUpload, Modal, EnrichmentModal, UnifiedEnrichButton, CancelConfirmDialog } from '../components'
 import type { PostProcessResult } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useOperationContext } from '../contexts/OperationContext'
@@ -11,7 +11,7 @@ import { usePreviewState } from '../hooks/usePreviewState'
 import type { PipelineStatus, EnrichmentCellChange, PipelineStep } from '../hooks/useEnrichmentPipeline'
 
 interface MineralHolderRow {
-  _uid?: string
+  _uid: string
   county: string
   state?: string
   year?: number
@@ -391,7 +391,7 @@ export default function Proration() {
     const opts: StartOperationOpts = {
       tool: toolName,
       entries: preview.previewEntries.map(e => ({...e} as Record<string, unknown>)),
-      updateEntries: (entries) => preview.updateEntries(entries as MineralHolderRow[]),
+      updateEntries: (entries) => preview.updateEntries(entries as unknown as MineralHolderRow[]),
       editedFields: preview.editedFields as Map<string, unknown>,
       keyField: '_uid',
       featureFlags,
@@ -408,7 +408,7 @@ export default function Proration() {
     const results = getResultsForTool(toolName)
     if (results) {
       setTimeout(() => {
-        preview.updateEntries(results as MineralHolderRow[])
+        preview.updateEntries(results as unknown as MineralHolderRow[])
         clearOperation() // Clear status bar after results applied (PERSIST-03)
       }, 0)
     }

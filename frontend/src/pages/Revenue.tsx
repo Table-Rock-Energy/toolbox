@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { DollarSign, Download, Upload, AlertCircle, CheckCircle, Columns, X, PanelLeftClose, PanelLeftOpen, Edit2, RotateCcw, Filter, ShieldAlert } from 'lucide-react'
-import { FileUpload, Modal, MineralExportModal, EditableCell, EnrichmentModal, UnifiedEnrichButton, ProposedChangeCell, CancelConfirmDialog } from '../components'
+import { FileUpload, Modal, MineralExportModal, EditableCell, EnrichmentModal, UnifiedEnrichButton, CancelConfirmDialog } from '../components'
 import { useAuth } from '../contexts/AuthContext'
 import { useOperationContext } from '../contexts/OperationContext'
 import type { StartOperationOpts } from '../contexts/OperationContext'
@@ -321,7 +321,7 @@ export default function Revenue() {
     const opts: StartOperationOpts = {
       tool: toolName,
       entries: preview.previewEntries.map(e => ({...e} as Record<string, unknown>)),
-      updateEntries: (entries) => preview.updateEntries(entries as FlatRow[]),
+      updateEntries: (entries) => preview.updateEntries(entries as unknown as FlatRow[]),
       editedFields: preview.editedFields as Map<string, unknown>,
       keyField: '_id',
       featureFlags,
@@ -338,7 +338,7 @@ export default function Revenue() {
     const results = getResultsForTool(toolName)
     if (results) {
       setTimeout(() => {
-        preview.updateEntries(results as FlatRow[])
+        preview.updateEntries(results as unknown as FlatRow[])
         clearOperation() // Clear status bar after results applied (PERSIST-03)
       }, 0)
     }
