@@ -25,8 +25,8 @@ function calculateBatchEta(batchTimings: number[], remainingBatches: number): st
   const remainingMs = remainingBatches * avgMs
   const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000))
   if (remainingSec === 0) return null
-  if (remainingSec >= 60) return `~${Math.ceil(remainingSec / 60)} min remaining`
-  return `~${remainingSec}s remaining`
+  if (remainingSec >= 60) return `About ${Math.ceil(remainingSec / 60)} min remaining`
+  return `About ${remainingSec}s remaining`
 }
 
 export default function EnrichmentModal({
@@ -62,9 +62,9 @@ export default function EnrichmentModal({
     const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000))
     if (remainingSec === 0) return null
     if (remainingSec >= 60) {
-      return `~${Math.ceil(remainingSec / 60)} min remaining`
+      return `About ${Math.ceil(remainingSec / 60)} min remaining`
     }
-    return `~${remainingSec}s remaining`
+    return `About ${remainingSec}s remaining`
   }, [stepStatuses, completedCount, totalSteps, isFinished])
 
   // Batch-level ETA
