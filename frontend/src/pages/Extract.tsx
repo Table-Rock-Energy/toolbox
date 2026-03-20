@@ -591,7 +591,7 @@ export default function Extract() {
           <FileUpload
             onFilesSelected={handleFileStaged}
             accept=".pdf"
-            label="Upload OCC Exhibit A"
+            label="Upload PDF File"
             description="Drop your PDF file here"
           />
           <div className="mt-3 flex items-center gap-2">
@@ -671,7 +671,7 @@ export default function Extract() {
             <FileUpload
               onFilesSelected={handleFileStaged}
               accept=".pdf"
-              label="Upload OCC Exhibit A"
+              label="Upload PDF File"
               description="Drop your PDF file here"
             />
             <div className="mt-3 flex items-center gap-2">
