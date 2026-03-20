@@ -44,25 +44,27 @@ def _entry(
 
 
 # ---------------------------------------------------------------------------
-# MRG-01: PDF wins contact fields
+# MRG-01: CSV is base, PDF enriches
 # ---------------------------------------------------------------------------
 
-class TestPdfWinsContactFields:
-    """PDF entry contact fields always take precedence over CSV."""
+class TestCsvIsBase:
+    """CSV entry data is the base; PDF enriches with notes/section_type."""
 
-    def test_pdf_name_wins_over_csv_ocr_error(self):
+    def test_csv_name_used_as_base(self):
         pdf = ECFParseResult(entries=[_entry("1", name="JOHN SMITH")])
         csv = Convey640ParseResult(entries=[_entry("1", name="J0HN SMITH")])
         result = merge_entries(pdf, csv)
-        assert result.entries[0].primary_name == "JOHN SMITH"
+        # CSV is base — CSV name is kept
+        assert result.entries[0].primary_name == "J0HN SMITH"
 
-    def test_pdf_address_wins_when_both_present(self):
+    def test_csv_address_used_when_both_present(self):
         pdf = ECFParseResult(entries=[_entry("1", address="123 Main St")])
         csv = Convey640ParseResult(entries=[_entry("1", address="456 Oak Ave")])
         result = merge_entries(pdf, csv)
-        assert result.entries[0].mailing_address == "123 Main St"
+        # CSV is base — CSV address is kept
+        assert result.entries[0].mailing_address == "456 Oak Ave"
 
-    def test_all_pdf_contact_fields_populated_ignores_csv(self):
+    def test_csv_contact_fields_used_as_base(self):
         pdf = ECFParseResult(entries=[
             _entry("1", name="ALICE", address="100 Elm", city="Dallas", state="TX", zip_code="75201"),
         ])
@@ -71,11 +73,12 @@ class TestPdfWinsContactFields:
         ])
         result = merge_entries(pdf, csv)
         e = result.entries[0]
-        assert e.primary_name == "ALICE"
-        assert e.mailing_address == "100 Elm"
-        assert e.city == "Dallas"
-        assert e.state == "TX"
-        assert e.zip_code == "75201"
+        # CSV is base — all CSV fields kept
+        assert e.primary_name == "AL1CE"
+        assert e.mailing_address == "999 Oak"
+        assert e.city == "Austin"
+        assert e.state == "OK"
+        assert e.zip_code == "73301"
 
 
 # ---------------------------------------------------------------------------
@@ -149,23 +152,25 @@ class TestEntryNumberMatching:
         assert len(result.entries) == 3
         assert not any(e.flagged for e in result.entries)
 
-    def test_partial_match_pdf_only_not_flagged(self):
+    def test_partial_match_pdf_only_flagged(self):
         pdf = ECFParseResult(entries=[_entry("1"), _entry("2"), _entry("3")])
         csv = Convey640ParseResult(entries=[_entry("1"), _entry("3")])
         result = merge_entries(pdf, csv)
-        # All 3 PDF entries present, none flagged
+        # 2 CSV + 1 PDF-only (flagged)
         assert len(result.entries) == 3
-        assert not any(e.flagged for e in result.entries)
+        flagged = [e for e in result.entries if e.flagged]
+        assert len(flagged) == 1
+        assert flagged[0].entry_number == "2"
 
     def test_exact_string_match(self):
-        # Need enough matched entries to stay above 50% threshold
         pdf = ECFParseResult(entries=[_entry("1"), _entry("2"), _entry("1A")])
         csv = Convey640ParseResult(entries=[_entry("1"), _entry("2"), _entry("1a")])
         result = merge_entries(pdf, csv)
-        # "1A" != "1a" so "1a" CSV entry is unmatched (flagged)
-        csv_only = [e for e in result.entries if e.flagged]
-        assert len(csv_only) == 1
-        assert csv_only[0].entry_number == "1a"
+        # "1A" != "1a" so both unmatched entries appear:
+        # "1a" CSV entry is unflagged (CSV-only), "1A" PDF entry is flagged
+        flagged = [e for e in result.entries if e.flagged]
+        assert len(flagged) == 1
+        assert flagged[0].entry_number == "1A"
 
 
 # ---------------------------------------------------------------------------
@@ -173,35 +178,45 @@ class TestEntryNumberMatching:
 # ---------------------------------------------------------------------------
 
 class TestMismatchWarnings:
-    """CSV-only entries flagged; warnings generated; >50% fallback."""
+    """CSV-only entries unflagged; PDF-only flagged; warnings generated."""
 
-    def test_csv_only_entries_flagged(self):
+    def test_csv_only_entries_not_flagged(self):
         pdf = ECFParseResult(entries=[_entry("1")])
         csv = Convey640ParseResult(entries=[_entry("1"), _entry("99", name="EXTRA")])
         result = merge_entries(pdf, csv)
         extra = [e for e in result.entries if e.entry_number == "99"]
         assert len(extra) == 1
+        # CSV-only entries are NOT flagged (CSV is the base)
+        assert extra[0].flagged is False
+
+    def test_pdf_only_entries_flagged(self):
+        pdf = ECFParseResult(entries=[_entry("1"), _entry("99", name="PDF ONLY")])
+        csv = Convey640ParseResult(entries=[_entry("1")])
+        result = merge_entries(pdf, csv)
+        extra = [e for e in result.entries if e.entry_number == "99"]
+        assert len(extra) == 1
         assert extra[0].flagged is True
-        assert "No PDF match" in extra[0].flag_reason
+        assert "Not in Convey 640" in extra[0].flag_reason
 
     def test_warnings_include_match_summary(self):
         pdf = ECFParseResult(entries=[_entry("1"), _entry("2")])
         csv = Convey640ParseResult(entries=[_entry("1")])
         result = merge_entries(pdf, csv)
-        assert any("1 of 2" in w for w in result.warnings)
+        assert any("1 matched" in w for w in result.warnings)
 
-    def test_fallback_when_over_50_percent_unmatched(self):
-        # 10 PDF entries, CSV has only 4 matching -> 4/10 = 40% match rate < 50%
+    def test_many_unmatched_still_works(self):
+        # 10 PDF entries, CSV has only 4 matching — no fallback mode in new logic
         pdf_entries = [_entry(str(i)) for i in range(1, 11)]
         csv_entries = [_entry(str(i)) for i in range(1, 5)]  # match 1-4 only
         pdf = ECFParseResult(entries=pdf_entries)
         csv = Convey640ParseResult(entries=csv_entries)
         result = merge_entries(pdf, csv)
-        # In fallback mode: PDF entries returned unchanged, no CSV-only entries added
+        # 4 CSV + 6 PDF-only (flagged)
         assert len(result.entries) == 10
-        assert any("falling back" in w.lower() for w in result.warnings)
+        flagged = [e for e in result.entries if e.flagged]
+        assert len(flagged) == 6
 
-    def test_fallback_still_merges_metadata(self):
+    def test_metadata_always_merged(self):
         pdf_entries = [_entry(str(i)) for i in range(1, 11)]
         csv_entries = [_entry(str(i)) for i in range(1, 5)]
         pdf = ECFParseResult(
@@ -234,31 +249,33 @@ class TestEdgeCases:
         assert result.metadata.county == "CADDO"
         assert result.warnings == []
 
-    def test_empty_pdf_entries_returns_empty(self):
+    def test_empty_pdf_entries_csv_still_returned(self):
         pdf = ECFParseResult(entries=[])
         csv = Convey640ParseResult(entries=[_entry("1")])
         result = merge_entries(pdf, csv)
-        # CSV-only entries still included (flagged)
-        flagged = [e for e in result.entries if e.flagged]
-        assert len(flagged) == 1
+        # CSV entries included unflagged (CSV is base)
+        assert len(result.entries) == 1
+        assert not result.entries[0].flagged
 
-    def test_csv_fills_blank_pdf_address(self):
-        pdf = ECFParseResult(entries=[_entry("1", address=None)])
-        csv = Convey640ParseResult(entries=[_entry("1", address="200 Oak St")])
+    def test_pdf_fills_blank_csv_address(self):
+        pdf = ECFParseResult(entries=[_entry("1", address="200 Oak St")])
+        csv = Convey640ParseResult(entries=[_entry("1", address=None)])
         result = merge_entries(pdf, csv)
         assert result.entries[0].mailing_address == "200 Oak St"
 
-    def test_csv_fills_blank_pdf_city_state_zip(self):
-        pdf = ECFParseResult(entries=[_entry("1")])
+    def test_csv_address_kept_when_both_present(self):
+        pdf = ECFParseResult(entries=[_entry("1", address="PDF Addr")])
         csv = Convey640ParseResult(entries=[
-            _entry("1", city="Tulsa", state="OK", zip_code="74101"),
+            _entry("1", address="CSV Addr", city="Tulsa", state="OK", zip_code="74101"),
         ])
         result = merge_entries(pdf, csv)
+        # CSV is base — CSV address kept
+        assert result.entries[0].mailing_address == "CSV Addr"
         assert result.entries[0].city == "Tulsa"
         assert result.entries[0].state == "OK"
         assert result.entries[0].zip_code == "74101"
 
-    def test_existing_notes_preserved(self):
+    def test_notes_merged_when_both_present(self):
         pdf = ECFParseResult(entries=[
             _entry("1", notes="c/o Jane Smith"),
         ])
@@ -266,7 +283,9 @@ class TestEdgeCases:
             _entry("1", notes="Different note"),
         ])
         result = merge_entries(pdf, csv)
-        assert result.entries[0].notes == "c/o Jane Smith"
+        # Both notes merged
+        assert "Different note" in result.entries[0].notes
+        assert "c/o Jane Smith" in result.entries[0].notes
 
     def test_no_mutation_of_input_entries(self):
         pdf_entry = _entry("1", address=None)
