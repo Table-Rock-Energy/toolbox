@@ -65,9 +65,12 @@ class TestStreamingUpload:
             new_callable=AsyncMock,
             return_value=(fake_stmt, []),
         ), patch(
-            "app.api.revenue.auto_enrich",
+            "app.api.revenue._run_post_processing",
             new_callable=AsyncMock,
-            side_effect=Exception("skip post-processing in test"),
+            return_value=None,
+        ), patch(
+            "app.api.revenue._persist_result",
+            new_callable=AsyncMock,
         ):
             files = [
                 ("files", ("test1.pdf", b"%PDF-1.4 fake content 1", "application/pdf")),
@@ -98,9 +101,12 @@ class TestStreamingUpload:
             new_callable=AsyncMock,
             return_value=(fake_stmt, []),
         ), patch(
-            "app.api.revenue.auto_enrich",
+            "app.api.revenue._run_post_processing",
             new_callable=AsyncMock,
-            side_effect=Exception("skip"),
+            return_value=None,
+        ), patch(
+            "app.api.revenue._persist_result",
+            new_callable=AsyncMock,
         ):
             files = [
                 ("files", ("shape_test.pdf", b"%PDF-1.4 fake", "application/pdf")),
@@ -132,9 +138,12 @@ class TestStreamingUpload:
             new_callable=AsyncMock,
             return_value=(fake_stmt, []),
         ), patch(
-            "app.api.revenue.auto_enrich",
+            "app.api.revenue._run_post_processing",
             new_callable=AsyncMock,
-            side_effect=Exception("skip"),
+            return_value=None,
+        ), patch(
+            "app.api.revenue._persist_result",
+            new_callable=AsyncMock,
         ):
             files = [
                 ("files", ("result_test.pdf", b"%PDF-1.4 fake", "application/pdf")),
@@ -158,14 +167,21 @@ class TestStreamingUpload:
         """Non-PDF file yields progress with status=error, processing continues."""
         fake_stmt = _make_fake_statement("valid.pdf")
 
+        async def _mock_process(file):
+            if file.filename and file.filename.endswith(".pdf"):
+                return fake_stmt, []
+            return None, [f"Invalid file type: {file.filename}. Only PDF files are accepted."]
+
         with patch(
             "app.api.revenue._process_single_pdf",
-            new_callable=AsyncMock,
-            return_value=(fake_stmt, []),
+            side_effect=_mock_process,
         ), patch(
-            "app.api.revenue.auto_enrich",
+            "app.api.revenue._run_post_processing",
             new_callable=AsyncMock,
-            side_effect=Exception("skip"),
+            return_value=None,
+        ), patch(
+            "app.api.revenue._persist_result",
+            new_callable=AsyncMock,
         ):
             files = [
                 ("files", ("bad.txt", b"not a pdf", "text/plain")),
