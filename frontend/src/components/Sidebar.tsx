@@ -101,7 +101,7 @@ export default function Sidebar({ mobile, onClose }: SidebarProps) {
       : location.pathname.startsWith(path)
 
     if (isCollapsed) {
-      return `flex items-center justify-center p-3 rounded-lg transition-all duration-200 group ${
+      return `relative flex items-center justify-center p-3 rounded-lg transition-all duration-200 group ${
         isActive
           ? 'bg-tre-teal/20 text-tre-teal'
           : 'text-gray-300 hover:bg-tre-navy/50 hover:text-tre-teal'
@@ -175,7 +175,6 @@ export default function Sidebar({ mobile, onClose }: SidebarProps) {
         <NavLink
           to="/"
           className={getLinkClassName('/')}
-          title={isCollapsed ? 'Dashboard' : undefined}
         >
           <LayoutDashboard className="w-5 h-5 flex-shrink-0" />
           {!isCollapsed && (
@@ -183,6 +182,11 @@ export default function Sidebar({ mobile, onClose }: SidebarProps) {
               <span className="font-oswald font-light tracking-wide">Dashboard</span>
               <ChevronRight className="w-4 h-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
             </>
+          )}
+          {isCollapsed && (
+            <span className="pointer-events-none absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-50 shadow-lg">
+              Dashboard
+            </span>
           )}
         </NavLink>
 
@@ -208,15 +212,14 @@ export default function Sidebar({ mobile, onClose }: SidebarProps) {
             )}
 
             {/* Group items */}
-            <div className={`space-y-1 overflow-hidden transition-all duration-200 ${
-              !isCollapsed && !expandedGroups[navGroup.id] ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'
+            <div className={`space-y-1 transition-all duration-200 ${
+              isCollapsed ? '' : !expandedGroups[navGroup.id] ? 'max-h-0 opacity-0 overflow-hidden' : 'max-h-96 opacity-100 overflow-hidden'
             }`}>
               {navGroup.items.map((item) => (
                 <NavLink
                   key={item.path}
                   to={item.path}
                   className={getLinkClassName(item.path)}
-                  title={isCollapsed ? item.name : undefined}
                 >
                   <item.icon className="w-5 h-5 flex-shrink-0" />
                   {!isCollapsed && (
@@ -224,6 +227,11 @@ export default function Sidebar({ mobile, onClose }: SidebarProps) {
                       <span className="font-oswald font-light tracking-wide">{item.name}</span>
                       <ChevronRight className="w-4 h-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
                     </>
+                  )}
+                  {isCollapsed && (
+                    <span className="pointer-events-none absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-50 shadow-lg">
+                      {item.name}
+                    </span>
                   )}
                 </NavLink>
               ))}
@@ -240,29 +248,29 @@ export default function Sidebar({ mobile, onClose }: SidebarProps) {
       >
         {/* Flyout Menu */}
         {isUserMenuVisible && (
-          <div className={`absolute bottom-full ${isCollapsed ? 'left-2 right-2' : 'left-4 right-4'} mb-2 bg-tre-navy border border-tre-teal/30 rounded-lg shadow-xl overflow-hidden z-50`}>
+          <div className={`absolute bottom-full ${isCollapsed ? 'left-0 min-w-[160px]' : 'left-4 right-4'} mb-2 bg-tre-navy border border-tre-teal/30 rounded-lg shadow-xl overflow-hidden z-50`}>
             <button
               onClick={() => { navigate('/settings'); setIsUserMenuVisible(false) }}
               className="w-full flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-tre-teal/10 hover:text-tre-teal transition-colors"
             >
-              <User className="w-4 h-4" />
-              {!isCollapsed && <span className="text-sm">Profile Settings</span>}
+              <User className="w-4 h-4 flex-shrink-0" />
+              <span className="text-sm">Profile Settings</span>
             </button>
             {isAdmin && (
               <button
                 onClick={() => { navigate('/admin'); setIsUserMenuVisible(false) }}
                 className="w-full flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-tre-teal/10 hover:text-tre-teal transition-colors border-t border-tre-teal/20"
               >
-                <Shield className="w-4 h-4" />
-                {!isCollapsed && <span className="text-sm">Admin Settings</span>}
+                <Shield className="w-4 h-4 flex-shrink-0" />
+                <span className="text-sm">Admin Settings</span>
               </button>
             )}
             <button
               onClick={() => { handleSignOut(); setIsUserMenuVisible(false) }}
               className="w-full flex items-center gap-3 px-4 py-3 text-gray-300 hover:text-red-400 hover:bg-red-400/10 transition-colors border-t border-tre-teal/20"
             >
-              <LogOut className="w-4 h-4" />
-              {!isCollapsed && <span className="text-sm">Sign Out</span>}
+              <LogOut className="w-4 h-4 flex-shrink-0" />
+              <span className="text-sm">Sign Out</span>
             </button>
           </div>
         )}

@@ -1212,14 +1212,12 @@ export default function Extract() {
                             {isColVisible('status') && (
                               <td className="py-2 px-3">
                                 {entry.flagged ? (
-                                  <span className="inline-flex items-center gap-1 text-yellow-600 text-xs relative group cursor-help">
+                                  <span
+                                    className="inline-flex items-center gap-1 text-yellow-600 text-xs cursor-help"
+                                    title={entry.flag_reason || 'Flagged for review'}
+                                  >
                                     <Flag className="w-3 h-3" />
                                     Review
-                                    {entry.flag_reason && (
-                                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-gray-900 text-white text-[10px] rounded px-2 py-1 whitespace-nowrap z-20 shadow-lg">
-                                        {entry.flag_reason}
-                                      </span>
-                                    )}
                                   </span>
                                 ) : (
                                   <span className="text-green-600 text-xs">OK</span>
