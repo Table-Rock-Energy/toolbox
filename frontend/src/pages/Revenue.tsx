@@ -663,11 +663,29 @@ export default function Revenue() {
             <FileUpload
               onFilesSelected={handleFilesSelected}
               accept=".pdf"
-              multiple={false}
-              label="Upload Revenue Statement"
-              description="Drop your PDF file here"
+              multiple={true}
+              label="Upload Revenue Statements"
+              description="Drop your PDF files here"
             />
-            {isProcessing && (
+            {isProcessing && streamProgress && streamProgress.total > 0 && (
+              <div className="mt-4 space-y-2">
+                <div className="flex items-center gap-2 text-tre-teal">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
+                  <span className="text-sm font-medium">
+                    {streamProgress.status === 'post-processing'
+                      ? 'Finalizing results...'
+                      : `Processing ${streamProgress.index} of ${streamProgress.total}: ${streamProgress.file}`}
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-1.5">
+                  <div
+                    className="bg-tre-teal h-1.5 rounded-full transition-all duration-300"
+                    style={{ width: `${(streamProgress.index / streamProgress.total) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            {isProcessing && !streamProgress && (
               <div className="mt-4 flex items-center gap-2 text-tre-teal">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
                 <span className="text-sm">Processing...</span>
