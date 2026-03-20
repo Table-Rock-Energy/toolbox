@@ -225,6 +225,18 @@ def _run_rrc_download(job_id: str) -> None:
             logger.error(f"Job {job_id} failed at gas sync: {e}")
             return
 
+        # Clear in-memory caches so next request picks up fresh data (PERF-04)
+        rrc_data_service._combined_lookup = None
+        rrc_data_service._oil_df = None
+        rrc_data_service._gas_df = None
+
+        try:
+            from app.services.proration.rrc_cache import invalidate_cache
+            invalidate_cache()
+            logger.info(f"Job {job_id}: In-memory RRC caches invalidated")
+        except Exception as e:
+            logger.warning(f"Job {job_id}: Cache invalidation failed: {e}")
+
         # All steps complete
         update_rrc_sync_job(job_id, {
             "status": "complete",
