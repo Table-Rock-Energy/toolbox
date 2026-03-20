@@ -59,6 +59,15 @@ interface UploadResponse {
   post_process?: PostProcessResult | null
 }
 
+interface StreamProgress {
+  type: 'progress'
+  file: string
+  index: number
+  total: number
+  status: 'processing' | 'done' | 'error' | 'post-processing'
+  error?: string
+}
+
 interface RevenueJob {
   id: string
   job_id?: string
@@ -162,6 +171,7 @@ export default function Revenue() {
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [isLoadingEntries, setIsLoadingEntries] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [streamProgress, setStreamProgress] = useState<StreamProgress | null>(null)
 
   // Enrichment feature flags
   const featureFlags = useFeatureFlags()
@@ -350,23 +360,24 @@ export default function Revenue() {
   const handleFilesSelected = async (files: File[]) => {
     if (files.length === 0) return
 
-    const file = files[0]
     setIsProcessing(true)
     setError(null)
+    setStreamProgress(null)
 
+    const documentName = files.length > 1 ? `${files.length} PDFs` : files[0].name
     const newJob: RevenueJob = {
       id: String(Date.now()),
-      documentName: file.name,
+      documentName,
       user: user?.displayName || user?.email || 'Unknown',
       timestamp: new Date().toLocaleString(),
     }
 
     try {
       const formData = new FormData()
-      formData.append('files', file)
+      files.forEach(f => formData.append('files', f))
 
       const hdrs = await authHeaders()
-      const response = await fetch(`${API_BASE}/revenue/upload`, {
+      const response = await fetch(`${API_BASE}/revenue/upload-stream`, {
         method: 'POST',
         headers: {
           ...hdrs,
@@ -381,9 +392,28 @@ export default function Revenue() {
         throw new Error(errorData.detail || 'Upload failed')
       }
 
-      const data: UploadResponse = await response.json()
-      newJob.result = data
-      newJob.job_id = data.job_id
+      const reader = response.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop()!
+        for (const line of lines) {
+          if (!line.trim()) continue
+          const msg = JSON.parse(line)
+          if (msg.type === 'progress') {
+            setStreamProgress(msg as StreamProgress)
+          } else if (msg.type === 'result') {
+            const data: UploadResponse = msg.data
+            newJob.result = data
+            newJob.job_id = data.job_id
+          }
+        }
+      }
 
       setJobs((prev) => [newJob, ...prev])
       setActiveJob(newJob)
@@ -396,6 +426,7 @@ export default function Revenue() {
       setJobs((prev) => [newJob, ...prev])
     } finally {
       setIsProcessing(false)
+      setStreamProgress(null)
     }
   }
 
@@ -593,11 +624,29 @@ export default function Revenue() {
           <FileUpload
             onFilesSelected={handleFilesSelected}
             accept=".pdf"
-            multiple={false}
-            label="Upload Revenue Statement"
-            description="Drop your PDF file here"
+            multiple={true}
+            label="Upload Revenue Statements"
+            description="Drop your PDF files here"
           />
-          {isProcessing && (
+          {isProcessing && streamProgress && streamProgress.total > 0 && (
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center gap-2 text-tre-teal">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
+                <span className="text-sm font-medium">
+                  {streamProgress.status === 'post-processing'
+                    ? 'Finalizing results...'
+                    : `Processing ${streamProgress.index} of ${streamProgress.total}: ${streamProgress.file}`}
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-1.5">
+                <div
+                  className="bg-tre-teal h-1.5 rounded-full transition-all duration-300"
+                  style={{ width: `${(streamProgress.index / streamProgress.total) * 100}%` }}
+                />
+              </div>
+            </div>
+          )}
+          {isProcessing && !streamProgress && (
             <div className="mt-4 flex items-center gap-2 text-tre-teal">
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tre-teal"></div>
               <span className="text-sm">Processing...</span>
