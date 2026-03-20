@@ -121,7 +121,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 16-01: TBD
+- [ ] 16-01-PLAN.md — NDJSON streaming endpoint + frontend progress UI
 
 ### Phase 17: Proration Performance
 **Goal**: Proration lookups are fast from first request and scale with row count
