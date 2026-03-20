@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Batch Processing & Resilience
 status: unknown
-stopped_at: Completed 16-01-PLAN.md
-last_updated: "2026-03-20T14:44:16.328Z"
+stopped_at: Completed 16-02-PLAN.md
+last_updated: "2026-03-20T14:56:05.950Z"
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 7
+  completed_plans: 7
 ---
 
 # Project State
@@ -47,6 +47,7 @@ Plan: 1 of 1
 - [Phase 15]: Status bar hidden when user is on active tool page (avoids redundancy with EnrichmentModal)
 - [Phase 15]: OperationStatusBar uses useOperationState only (read-only, no re-render storms from actions)
 - [Phase 16]: Extracted _process_single_pdf helper for shared parsing between sync and streaming endpoints
+- [Phase 16]: Direct copy of collapsed view progress block into expanded view (no abstraction needed for two instances)
 
 ### Pending Todos
 
@@ -63,6 +64,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-20T14:44:16.326Z
-Stopped at: Completed 16-01-PLAN.md
+Last session: 2026-03-20T14:56:05.948Z
+Stopped at: Completed 16-02-PLAN.md
 Resume file: None
