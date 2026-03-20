@@ -473,7 +473,7 @@ Production is deployed to Google Cloud Run via GitHub Actions on push to `main`.
 - **Service:** table-rock-tools
 - **Region:** us-central1
 - **URL:** https://tools.tablerocktx.com
-- **Resources:** 1 CPU, 1Gi memory, 600s timeout, 0-10 instances
+- **Resources:** 1 CPU, 1Gi memory, 1200s timeout, 1-10 instances (min 1 keeps warm)
 - **Container:** Multi-stage Docker (Node 20 build → Python 3.11 runtime on port 8080)
 - **Health check:** `curl -f http://localhost:8080/api/health` (30s interval)
 
