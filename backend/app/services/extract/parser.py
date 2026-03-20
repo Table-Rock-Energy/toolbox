@@ -295,7 +295,7 @@ def _separate_name_and_address(text: str, is_address_unknown: bool) -> tuple[str
 
     # Patterns for address line detection
     street_pattern = re.compile(
-        r"^(\d+\s+|P\.?O\.?\s*Box|c/o\s+)",
+        r"^(\d+\s+|P\.?\s*O\.?\s*Box|c/o\s+)",
         re.IGNORECASE,
     )
     city_state_zip_pattern = re.compile(
@@ -334,7 +334,7 @@ def _separate_name_and_address(text: str, is_address_unknown: bool) -> tuple[str
 
     # Look for address markers
     address_start_pattern = re.compile(
-        r"(?:^|\s)(\d+\s+[A-Za-z]|P\.?O\.?\s*Box|c/o\s+)",
+        r"(?:^|\s)(\d+\s+[A-Za-z]|P\.?\s*O\.?\s*Box|c/o\s+)",
         re.IGNORECASE,
     )
 
@@ -367,7 +367,7 @@ def _separate_name_and_address(text: str, is_address_unknown: bool) -> tuple[str
                             return name, address
                     break
 
-            po_match = re.search(r"P\.?O\.?\s*Box", text_before_state, re.IGNORECASE)
+            po_match = re.search(r"P\.?\s*O\.?\s*Box", text_before_state, re.IGNORECASE)
             if po_match:
                 name = text_before_state[: po_match.start()].strip().rstrip(",").strip()
                 address = flat_text[po_match.start() :].strip()

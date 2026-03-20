@@ -475,6 +475,15 @@ export default function Extract() {
   // Derive modal isOpen from context
   const enrichModalOpen = operation?.tool === toolName && (operation.status === 'running' || operation.status === 'completed' || operation.status === 'error')
 
+  // Map entry_number → original (unfiltered) index for correct highlight lookup
+  const entryOriginalIndex = useMemo(() => {
+    const map = new Map<string, number>()
+    if (activeJob?.result?.entries) {
+      activeJob.result.entries.forEach((e, i) => map.set(e.entry_number, i))
+    }
+    return map
+  }, [activeJob?.result?.entries])
+
   // Derive affectedEntryIndices from enrichmentChanges
   const affectedEntryIndices = useMemo(() => {
     const indices = new Set<number>()
@@ -1057,17 +1066,20 @@ export default function Extract() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {(() => {
-                        // Build display list with original indices, sort changed rows to top
-                        const indexed = preview.previewEntries.map((entry, idx) => ({ entry, origIdx: idx }))
+                        // Build display list, map to original unfiltered indices for correct highlight lookup
+                        const indexed = preview.previewEntries.map((entry) => ({
+                          entry,
+                          globalIdx: entryOriginalIndex.get(entry.entry_number) ?? -1,
+                        }))
                         if (affectedEntryIndices.size > 0) {
                           indexed.sort((a, b) => {
-                            const aChanged = affectedEntryIndices.has(a.origIdx) ? 0 : 1
-                            const bChanged = affectedEntryIndices.has(b.origIdx) ? 0 : 1
+                            const aChanged = affectedEntryIndices.has(a.globalIdx) ? 0 : 1
+                            const bChanged = affectedEntryIndices.has(b.globalIdx) ? 0 : 1
                             return aChanged - bChanged
                           })
                         }
                         return indexed
-                      })().map(({ entry, origIdx: rowIdx }) => {
+                      })().map(({ entry, globalIdx: rowIdx }) => {
                         const isExcluded = preview.isExcluded(entry.entry_number)
                         const hasChanges = affectedEntryIndices.has(rowIdx)
                         return (

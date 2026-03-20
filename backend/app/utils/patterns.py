@@ -200,11 +200,18 @@ LLC_PATTERN = re.compile(r"\bL\.?L\.?C\.?\b", re.IGNORECASE)
 INC_PATTERN = re.compile(r"\b(?:Inc\.?|Incorporated)\b", re.IGNORECASE)
 CORP_PATTERN = re.compile(r"\b(?:Corp\.?|Corporation)\b", re.IGNORECASE)
 LP_PATTERN = re.compile(r"\bL\.?P\.?\b(?!\s*\d)", re.IGNORECASE)
-PARTNERSHIP_PATTERN = re.compile(r"\bPartnership\b", re.IGNORECASE)
+PARTNERSHIP_PATTERN = re.compile(r"\b(?:Partnership|Partners)\b", re.IGNORECASE)
 TRUST_PATTERN = re.compile(r"\b(?:Trust|Trustee)\b", re.IGNORECASE)
 ESTATE_PATTERN = re.compile(r"\b(?:Estate\s+of|,\s*Deceased)\b", re.IGNORECASE)
 UNKNOWN_HEIRS_PATTERN = re.compile(
     r"\b(?:Unknown\s+Heirs|heirs\s+and\s+assigns)\b",
+    re.IGNORECASE,
+)
+COMPANY_PATTERN = re.compile(
+    r"\b(?:Group|Company|Co\.|Associates|Association|Enterprises|Holdings|"
+    r"Industries|Services|Resources|Investments?|Fund|Foundation|"
+    r"Salvation\s+Army|Ministries|Church)\b|"
+    r"\b\w+\s+&\s+(?:Investment|Land|Gas|Oil|Energy|Associates|Company|Sons?)\b",
     re.IGNORECASE,
 )
 GOVERNMENT_PATTERN = re.compile(
@@ -250,11 +257,11 @@ def detect_entity_type(text: str) -> str:
     if INC_PATTERN.search(text) or CORP_PATTERN.search(text):
         return EntityType.CORPORATION.value
     if LP_PATTERN.search(text):
-        # Make sure it's not "Partners" without being a limited partnership
-        if not re.search(r"\bPartners\b", text) or PARTNERSHIP_PATTERN.search(text):
-            return EntityType.PARTNERSHIP.value
+        return EntityType.PARTNERSHIP.value
     if PARTNERSHIP_PATTERN.search(text):
         return EntityType.PARTNERSHIP.value
     if GOVERNMENT_PATTERN.search(text):
         return EntityType.GOVERNMENT.value
+    if COMPANY_PATTERN.search(text):
+        return EntityType.CORPORATION.value
     return EntityType.INDIVIDUAL.value
