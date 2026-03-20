@@ -1068,7 +1068,7 @@ export default function Revenue() {
                             )}
                             {isColVisible('deduct_code') && <td className="py-2 px-2 text-gray-600 text-xs">{row.deduct_code || '\u2014'}</td>}
                             {isColVisible('owner_net_revenue') && (
-                              <td className="py-2 px-2 text-green-600 font-medium text-right text-xs">
+                              <td className={`py-2 px-2 font-medium text-right text-xs ${(toNum(row.owner_net_revenue) ?? 0) < 0 ? 'text-red-600' : 'text-green-600'}`}>
                                 {formatCurrency(row.owner_net_revenue)}
                               </td>
                             )}

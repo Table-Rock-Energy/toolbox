@@ -38,7 +38,7 @@ jobs:
             --memory 1Gi \
             --cpu 1 \
             --timeout 1200 \
-            --min-instances 0 \
+            --min-instances 1 \
             --max-instances 10
 
       - name: Show deployment URL

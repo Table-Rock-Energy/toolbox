@@ -67,12 +67,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuthError(null);
 
       if (user?.email) {
-        // Probe backend health before authorization check
-        try {
-          await fetch(`${API_BASE}/health`);
-          setBackendReachable(true);
-        } catch {
-          setBackendReachable(false);
+        // Probe backend health before authorization check (retry for cold starts)
+        let reachable = false;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            await fetch(`${API_BASE}/health`, { signal: controller.signal });
+            clearTimeout(timeoutId);
+            reachable = true;
+            break;
+          } catch {
+            if (attempt < 2) await new Promise(r => setTimeout(r, 2000));
+          }
+        }
+        setBackendReachable(reachable);
+        if (!reachable) {
           setIsAuthorized(false);
           setLoading(false);
           return;

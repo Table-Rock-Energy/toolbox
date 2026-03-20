@@ -643,15 +643,18 @@ def _parse_data_row(
 
 
 def _apply_net_revenue_calculation(rows: list[RevenueRow]) -> list[RevenueRow]:
-    """Post-process rows to compute owner_net_revenue for separate-tax-row statements.
+    """Merge separate tax/deduction rows into their parent revenue row.
 
-    In Petro-Hunt/Oxyrock layouts, revenue and tax/deduction rows are separate.
-    Revenue rows have owner_value but taxes are None; tax rows have owner_tax_amount
-    or owner_deduct_amount but no owner_value. This groups rows by
-    (property_number, product_code, sales_date) and computes net on the revenue row.
+    In Petro-Hunt/Oxyrock layouts, revenue and tax/deduction rows are separate:
+    - Revenue row: has owner_value, owner_volume, but no tax/deduct
+    - Tax row: has owner_tax_amount only (interest_type like PRODUCTION TAX)
+    - Deduction row: has owner_deduct_amount only (interest_type like COMPRESSION)
 
-    For Magnolia-style rows with inline T&D (where net is already computed per-row),
-    this is a no-op since tax rows won't exist in the same group.
+    This merges tax/deduction data into the revenue row and removes the
+    standalone tax/deduction rows so each product shows as a single line.
+
+    For Magnolia-style rows with inline T&D (where net is already computed
+    per-row), this is a no-op since tax rows won't exist in the same group.
     """
     from collections import defaultdict
 
@@ -660,26 +663,49 @@ def _apply_net_revenue_calculation(rows: list[RevenueRow]) -> list[RevenueRow]:
         key = (row.property_number, row.product_code, row.sales_date)
         groups[key].append(i)
 
+    remove_indices: set[int] = set()
+
     for indices in groups.values():
         revenue_idx = None
         total_tax = 0.0
         total_deduct = 0.0
+        tax_type = None
+        deduct_code = None
+        tax_indices: list[int] = []
 
         for idx in indices:
             row = rows[idx]
             if row.owner_value is not None:
                 revenue_idx = idx
+            else:
+                # This is a standalone tax/deduction row — collect and mark for removal
+                tax_indices.append(idx)
             if row.owner_tax_amount is not None:
                 total_tax += row.owner_tax_amount
+                if row.tax_type:
+                    tax_type = row.tax_type
             if row.owner_deduct_amount is not None:
                 total_deduct += row.owner_deduct_amount
+                if row.deduct_code:
+                    deduct_code = row.deduct_code
 
-        # Only adjust if there are separate tax/deduction rows to subtract
-        if revenue_idx is not None and (total_tax or total_deduct):
+        if revenue_idx is not None and tax_indices:
             rev = rows[revenue_idx]
-            rev.owner_net_revenue = round(
-                (rev.owner_value or 0) - total_tax - total_deduct, 2
-            )
+            if total_tax:
+                rev.owner_tax_amount = round(total_tax, 2)
+                rev.tax_type = tax_type
+            if total_deduct:
+                rev.owner_deduct_amount = round(total_deduct, 2)
+                rev.deduct_code = deduct_code
+            if total_tax or total_deduct:
+                rev.owner_net_revenue = round(
+                    (rev.owner_value or 0) - total_tax - total_deduct, 2
+                )
+            # Remove standalone tax/deduction rows — merged into revenue row
+            remove_indices.update(tax_indices)
+
+    if remove_indices:
+        rows = [r for i, r in enumerate(rows) if i not in remove_indices]
 
     return rows
 
