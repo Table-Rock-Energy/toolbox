@@ -86,3 +86,8 @@ test-data/
 # Temp artifacts
 exportGrid_*.csv
 test_ghl_upload.csv
+
+# User data files (not for repo)
+*.pdf
+*.xlsx
+backend/data/app_settings.json
