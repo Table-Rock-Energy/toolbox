@@ -37,3 +37,12 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #0e2431;
 }
+
+/* Operation status bar shimmer */
+@keyframes status-shimmer {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 1; }
+}
+.animate-status-shimmer {
+  animation: status-shimmer 2s ease-in-out infinite;
+}

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { Menu, X } from 'lucide-react'
 import Sidebar from '../components/Sidebar'
+import OperationStatusBar from '../components/OperationStatusBar'
 import { OperationProvider } from '../contexts/OperationContext'
 
 const toolNames: Record<string, string> = {
@@ -72,6 +73,7 @@ export default function MainLayout() {
 
         {/* Page Content */}
         <OperationProvider>
+          <OperationStatusBar />
           <div className="p-4 lg:p-6">
             <Outlet />
           </div>
