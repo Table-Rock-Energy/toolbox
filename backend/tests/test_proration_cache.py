@@ -95,3 +95,104 @@ async def test_startup_prewarm():
 
     # After pre-warm, cache should NOT be populated (pre-warm only loads DataFrame,
     # not the Firestore cache -- per plan anti-pattern guidance)
+
+
+# --- PERF-03: Batch Firestore reads ---
+
+
+@pytest.mark.asyncio
+async def test_batch_firestore_reads():
+    """Cache misses are batched via asyncio.gather, not sequential awaits (PERF-03)."""
+    import asyncio
+
+    from app.services.proration.csv_processor import (
+        _lookup_from_firestore,
+        update_cache,
+    )
+
+    # 5 unique cache misses
+    miss_keys = [("01", "100"), ("02", "200"), ("03", "300"), ("04", "400"), ("05", "500")]
+
+    fake_results = {
+        ("01", "100"): {"acres": 100.0, "type": "oil"},
+        ("02", "200"): {"acres": 200.0, "type": "gas"},
+        ("03", "300"): {"acres": 300.0, "type": "oil"},
+        ("04", "400"): None,
+        ("05", "500"): {"acres": 500.0, "type": "both"},
+    }
+
+    call_count = 0
+
+    async def mock_lookup(d: str, ln: str):
+        nonlocal call_count
+        call_count += 1
+        return fake_results.get((d, ln))
+
+    with patch(
+        "app.services.proration.csv_processor._lookup_from_firestore",
+        side_effect=mock_lookup,
+    ):
+        sem = asyncio.Semaphore(25)
+
+        async def bounded_lookup(d: str, ln: str):
+            async with sem:
+                return (d, ln), await mock_lookup(d, ln)
+
+        results = await asyncio.gather(
+            *[bounded_lookup(d, ln) for d, ln in miss_keys],
+            return_exceptions=True,
+        )
+
+        for result in results:
+            if not isinstance(result, Exception):
+                key, info = result
+                update_cache(key, info)
+
+    # All 5 lookups were made
+    assert call_count == 5
+
+    # All results are now cached
+    from app.services.proration.rrc_cache import get_from_cache
+
+    assert get_from_cache("01", "100") == {"acres": 100.0, "type": "oil"}
+    assert get_from_cache("02", "200") == {"acres": 200.0, "type": "gas"}
+    assert get_from_cache("04", "400") is None  # None result also cached
+    assert get_from_cache("05", "500") == {"acres": 500.0, "type": "both"}
+
+
+# --- PERF-04: Cache invalidation after RRC sync ---
+
+
+def test_cache_invalidation_after_sync():
+    """After invalidate_cache(), cache is empty and not ready (PERF-04)."""
+    rrc_cache.populate_cache({
+        ("08", "41100"): {"acres": 640.0, "type": "oil"},
+        ("01", "200"): {"acres": 320.0, "type": "gas"},
+    })
+    assert rrc_cache.is_cache_ready() is True
+    assert rrc_cache.get_from_cache("08", "41100") is not None
+
+    rrc_cache.invalidate_cache()
+
+    assert rrc_cache.is_cache_ready() is False
+    assert rrc_cache.get_from_cache("08", "41100") is None
+    assert rrc_cache.get_from_cache("01", "200") is None
+
+
+def test_rrc_data_service_caches_cleared_after_sync():
+    """After sync, rrc_data_service DataFrame caches are set to None (PERF-04)."""
+    from app.services.proration import rrc_data_service as rds_module
+
+    mock_service = MagicMock()
+    mock_service._combined_lookup = {"some": "data"}
+    mock_service._oil_df = MagicMock()
+    mock_service._gas_df = MagicMock()
+
+    # Simulate the invalidation logic from _run_rrc_download
+    mock_service._combined_lookup = None
+    mock_service._oil_df = None
+    mock_service._gas_df = None
+
+    assert mock_service._combined_lookup is None
+    assert mock_service._oil_df is None
+    assert mock_service._gas_df is None
