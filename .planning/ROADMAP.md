@@ -77,7 +77,7 @@ See: `.planning/milestones/v1.6-ROADMAP.md` for full details
   3. User sees an ETA for remaining batches that updates after each batch completes
   4. If a batch fails mid-run, user receives all results from previously successful batches
   5. Navigating away from a page cancels any pending fetch requests (no orphaned connections)
-**Plans**: 2 plans
+**Plans**: 1 plan
 
 Plans:
 - [ ] 13-01-PLAN.md — OperationContext provider with batch-aware pipeline engine
@@ -92,7 +92,7 @@ Plans:
   2. System sends multiple batch requests concurrently when Gemini rate limits allow
   3. When user cancels an in-flight operation, backend stops Gemini processing within one batch cycle
   4. Failed batches are automatically retried up to the configured limit before returning partial results
-**Plans**: 2 plans
+**Plans**: 1 plan
 
 Plans:
 - [ ] 14-01-PLAN.md — Backend batch config, concurrency, thread safety, disconnect detection
@@ -106,10 +106,10 @@ Plans:
   1. User sees a status bar in the header showing active operations with tool name and progress
   2. User can navigate to another page, return to the tool, and see results from an operation that completed while away
   3. Status bar clears completed operations after user has viewed the results
-**Plans**: 2 plans
+**Plans**: 1 plan
 
 Plans:
-- [ ] 15-01: TBD
+- [ ] 15-01-PLAN.md — Status bar component, MainLayout integration, and auto-restore clearing
 
 ### Phase 16: Revenue Multi-PDF Streaming
 **Goal**: Revenue multi-PDF uploads show per-file progress instead of blocking with no feedback
@@ -118,7 +118,7 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. User sees progress update for each PDF as it completes during a multi-PDF revenue upload
   2. User sees which PDF is currently being processed and how many remain
-**Plans**: 2 plans
+**Plans**: 1 plan
 
 Plans:
 - [ ] 16-01: TBD
@@ -132,7 +132,7 @@ Plans:
   2. Proration lookups check in-memory DataFrame before hitting Firestore
   3. Proration upload with 200 rows completes noticeably faster than sequential per-row Firestore reads
   4. After a background RRC sync completes, subsequent proration lookups use the fresh data without restart
-**Plans**: 2 plans
+**Plans**: 1 plan
 
 Plans:
 - [ ] 17-01: TBD
