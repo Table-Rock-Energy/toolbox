@@ -38,16 +38,19 @@ export function usePreviewState<T extends object>(
   const [excludedKeys, setExcludedKeys] = useState<Set<string>>(new Set())
   const [editedFields, setEditedFields] = useState<Map<string, Partial<T>>>(new Map())
 
-  // Track sourceEntries reference to reset state when new data arrives
-  const prevSourceRef = useRef(sourceEntries)
+  // Track sourceEntries identity to reset state when genuinely new data arrives (new upload).
+  // Use a fingerprint (length + first key) to avoid resetting on mere re-renders
+  // that produce a new array reference with the same data.
+  const fingerprintRef = useRef('')
   useEffect(() => {
-    if (prevSourceRef.current !== sourceEntries) {
-      prevSourceRef.current = sourceEntries
+    const fp = `${sourceEntries.length}:${sourceEntries.length > 0 ? String(sourceEntries[0][keyField]) : ''}`
+    if (fingerprintRef.current && fingerprintRef.current !== fp) {
       setOverrideEntries(null)
       setExcludedKeys(new Set())
       setEditedFields(new Map())
     }
-  }, [sourceEntries])
+    fingerprintRef.current = fp
+  }, [sourceEntries, keyField])
 
   const entries = overrideEntries ?? sourceEntries
 
