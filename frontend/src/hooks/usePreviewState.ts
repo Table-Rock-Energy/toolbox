@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 
 export interface UsePreviewStateOptions<T> {
   entries: T[]
@@ -41,16 +41,17 @@ export function usePreviewState<T extends object>(
   // Track sourceEntries identity to reset state when genuinely new data arrives (new upload).
   // Use a fingerprint (length + first key) to avoid resetting on mere re-renders
   // that produce a new array reference with the same data.
-  const fingerprintRef = useRef('')
-  useEffect(() => {
-    const fp = `${sourceEntries.length}:${sourceEntries.length > 0 ? String(sourceEntries[0][keyField]) : ''}`
-    if (fingerprintRef.current && fingerprintRef.current !== fp) {
+  // Reset state when genuinely new data arrives (render-time state adjustment per React docs)
+  const fp = `${sourceEntries.length}:${sourceEntries.length > 0 ? String(sourceEntries[0][keyField]) : ''}`
+  const [prevFingerprint, setPrevFingerprint] = useState(fp)
+  if (prevFingerprint !== fp) {
+    setPrevFingerprint(fp)
+    if (prevFingerprint) {
       setOverrideEntries(null)
       setExcludedKeys(new Set())
       setEditedFields(new Map())
     }
-    fingerprintRef.current = fp
-  }, [sourceEntries, keyField])
+  }
 
   const entries = overrideEntries ?? sourceEntries
 

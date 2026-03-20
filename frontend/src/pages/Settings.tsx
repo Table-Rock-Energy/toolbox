@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Settings as SettingsIcon, User, Bell, Shield, Database, Check, AlertCircle, Upload } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -12,12 +12,12 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 export default function Settings() {
   const { user, getIdToken } = useAuth()
 
-  const authHeaders = async (): Promise<Record<string, string>> => {
+  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
     const token = await getIdToken()
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
-  }
+  }, [getIdToken])
 
   // Section refs for scroll navigation
   const profileRef = useRef<HTMLDivElement>(null)
@@ -77,7 +77,7 @@ export default function Settings() {
       }
     }
     loadPreferences()
-  }, [user?.email])
+  }, [user?.email, authHeaders])
 
   const handleSaveNotifications = async () => {
     if (!user?.email) return

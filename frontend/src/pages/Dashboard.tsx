@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -101,12 +101,12 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const { getIdToken } = useAuth()
 
-  const authHeaders = async (): Promise<Record<string, string>> => {
+  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
     const token = await getIdToken()
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
-  }
+  }, [getIdToken])
 
   const [recentJobs, setRecentJobs] = useState<RecentJob[]>([])
   const [toolCounts, setToolCounts] = useState<Record<string, number>>({})
@@ -132,7 +132,7 @@ export default function Dashboard() {
       }
     }
     fetchJobs()
-  }, [])
+  }, [authHeaders])
 
   const totalJobs = Object.values(toolCounts).reduce((sum, c) => sum + c, 0)
 

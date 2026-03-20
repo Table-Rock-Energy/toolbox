@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Repeat, Download, Upload, AlertCircle, Send, XCircle, FileWarning, Pencil, CheckCircle, X, PanelLeftClose, PanelLeftOpen, ShieldAlert } from 'lucide-react'
 import { FileUpload, GhlSendModal, Modal } from '../components'
 import { useAuth } from '../contexts/AuthContext'
@@ -49,12 +49,12 @@ export default function GhlPrep() {
   const { user, userName, getIdToken } = useAuth()
   const { panelCollapsed, togglePanel } = useToolLayout('ghl-prep', user?.uid, STORAGE_KEY_PREFIX)
 
-  const authHeaders = async (): Promise<Record<string, string>> => {
+  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
     const token = await getIdToken()
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
-  }
+  }, [getIdToken])
 
   const [jobs, setJobs] = useState<GhlPrepJob[]>([])
   const [activeJob, setActiveJob] = useState<GhlPrepJob | null>(null)
@@ -115,7 +115,7 @@ export default function GhlPrep() {
       }
     }
     loadJobs()
-  }, [])
+  }, [authHeaders])
 
   // Fetch GHL connections from backend
   useEffect(() => {

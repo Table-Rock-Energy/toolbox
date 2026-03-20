@@ -109,12 +109,12 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 export default function Extract() {
   const { user, userName, getIdToken } = useAuth()
 
-  const authHeaders = async (): Promise<Record<string, string>> => {
+  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
     const token = await getIdToken()
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
-  }
+  }, [getIdToken])
   const { panelCollapsed, togglePanel, activeStorageKey } = useToolLayout('extract', user?.uid, STORAGE_KEY_PREFIX)
   const [jobs, setJobs] = useState<ExtractJob[]>([])
   const [activeJob, setActiveJob] = useState<ExtractJob | null>(null)
@@ -215,7 +215,7 @@ export default function Extract() {
       }
     }
     loadJobs()
-  }, [])
+  }, [authHeaders])
 
 
   // Clear CSV file when switching away from ECF format
@@ -232,17 +232,21 @@ export default function Extract() {
     setStagedFile(file)
     setError(null)
 
-    // Auto-detect format via backend
+    // Auto-detect format via backend (with timeout to avoid infinite hangs)
     setIsDetecting(true)
     try {
       const formData = new FormData()
       formData.append('file', file)
       const headers = await authHeaders()
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 15000)
       const response = await fetch(`${API_BASE}/extract/detect-format`, {
         method: 'POST',
         headers,
         body: formData,
+        signal: controller.signal,
       })
+      clearTimeout(timeout)
       if (response.ok) {
         const data = await response.json()
         if (data.format) {
@@ -250,7 +254,7 @@ export default function Extract() {
         }
       }
     } catch {
-      // Detection failed silently -- user can still manually select format
+      // Detection failed or timed out — user can still manually select format
     } finally {
       setIsDetecting(false)
     }
@@ -454,7 +458,10 @@ export default function Extract() {
   // Derived state from context
   const pipelineStatus: PipelineStatus = operation?.tool === toolName ? (operation.status as PipelineStatus) : 'idle'
   const stepStatuses = operation?.tool === toolName ? operation.stepStatuses : []
-  const enrichmentChanges: Map<string, EnrichmentCellChange> = operation?.tool === toolName ? operation.enrichmentChanges : new Map()
+  const enrichmentChanges = useMemo<Map<string, EnrichmentCellChange>>(
+    () => operation?.tool === toolName ? operation.enrichmentChanges : new Map(),
+    [operation?.tool, operation?.enrichmentChanges, toolName]
+  )
   const completedSteps = operation?.tool === toolName ? operation.completedSteps : new Set<PipelineStep>()
   const batchProgress = operation?.tool === toolName ? operation.batchProgress : null
   const stepBatchResults = operation?.tool === toolName ? operation.stepBatchResults : new Map<PipelineStep, import('../contexts/OperationContext').StepBatchResult>()
@@ -471,12 +478,13 @@ export default function Extract() {
   }, [enrichmentChanges])
 
   // Start enrichment via OperationContext
+  const { previewEntries, updateEntries: updatePreviewEntries, editedFields } = preview
   const handleStartEnrichment = useCallback(() => {
     const opts: StartOperationOpts = {
       tool: toolName,
-      entries: preview.previewEntries.map(e => ({...e} as Record<string, unknown>)),
-      updateEntries: (entries) => preview.updateEntries(entries as unknown as PartyEntry[]),
-      editedFields: preview.editedFields as Map<string, unknown>,
+      entries: previewEntries.map(e => ({...e} as Record<string, unknown>)),
+      updateEntries: (entries) => updatePreviewEntries(entries as unknown as PartyEntry[]),
+      editedFields: editedFields as Map<string, unknown>,
       keyField: 'entry_number',
       featureFlags,
       sourceData: formatHint === 'ECF' ? originalCsvEntries : undefined,
@@ -486,7 +494,7 @@ export default function Extract() {
     } else {
       startOperation(opts)
     }
-  }, [preview.previewEntries, preview.updateEntries, preview.editedFields, featureFlags, operation?.status, startOperation, toolName, formatHint, originalCsvEntries])
+  }, [previewEntries, updatePreviewEntries, editedFields, featureFlags, operation?.status, startOperation, toolName, formatHint, originalCsvEntries])
 
   // Auto-restore on mount (PERSIST-01)
   useEffect(() => {
@@ -836,6 +844,7 @@ export default function Extract() {
                     <EnrichmentModal
                       isOpen={!!enrichModalOpen}
                       onClose={() => clearOperation()}
+                      onStop={() => abortOperation()}
                       stepStatuses={stepStatuses}
                       pipelineStatus={pipelineStatus}
                       enrichmentChanges={enrichmentChanges}

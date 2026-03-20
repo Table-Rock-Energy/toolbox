@@ -203,7 +203,7 @@ export function useEnrichmentPipeline<T extends object>(
     } finally {
       setActiveAction(null)
     }
-  }, [completedSteps, previewEntries, tool, sourceData])
+  }, [completedSteps, previewEntries, tool, sourceData, editedFields, keyField, updateEntries])
 
   const onCleanUp = useCallback(() => { runStep('cleanup') }, [runStep])
   const onValidate = useCallback(() => { runStep('validate') }, [runStep])

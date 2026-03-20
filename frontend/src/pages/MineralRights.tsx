@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import {
   Search,
@@ -101,12 +101,12 @@ const verificationBadge = (status: string) => {
 export default function MineralRights() {
   const { getIdToken } = useAuth()
 
-  const authHeaders = async (): Promise<Record<string, string>> => {
+  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
     const token = await getIdToken()
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
-  }
+  }, [getIdToken])
 
   const [status, setStatus] = useState<PipelineStatus | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -117,12 +117,7 @@ export default function MineralRights() {
   const [loading, setLoading] = useState(false)
   const [searchLoading, setSearchLoading] = useState(false)
 
-  // Load pipeline status on mount
-  useEffect(() => {
-    fetchStatus()
-  }, [])
-
-  const fetchStatus = async () => {
+  const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/etl/status`, {
         headers: await authHeaders(),
@@ -133,7 +128,12 @@ export default function MineralRights() {
     } catch (e) {
       console.error('Failed to fetch ETL status:', e)
     }
-  }
+  }, [authHeaders])
+
+  // Load pipeline status on mount
+  useEffect(() => {
+    fetchStatus()
+  }, [fetchStatus])
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return

@@ -159,12 +159,12 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 export default function Proration() {
   const { user, userName, getIdToken } = useAuth()
 
-  const authHeaders = async (): Promise<Record<string, string>> => {
+  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
     const token = await getIdToken()
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
-  }
+  }, [getIdToken])
   const { panelCollapsed, togglePanel, activeStorageKey } = useToolLayout('proration', user?.uid, STORAGE_KEY_PREFIX)
   const [jobs, setJobs] = useState<ProrationJob[]>([])
   const [jobsLoading, setJobsLoading] = useState(true)
@@ -332,7 +332,7 @@ export default function Proration() {
       }
     }
     loadRecentJobs()
-  }, [])
+  }, [authHeaders])
 
 
   // Categorize rows: matched, fetchable (has lease info), unfetchable (no lease info)
@@ -374,7 +374,10 @@ export default function Proration() {
   const toolName = 'proration'
   const pipelineStatus: PipelineStatus = operation?.tool === toolName ? (operation.status as PipelineStatus) : 'idle'
   const stepStatuses = operation?.tool === toolName ? operation.stepStatuses : []
-  const enrichmentChanges: Map<string, EnrichmentCellChange> = operation?.tool === toolName ? operation.enrichmentChanges : new Map()
+  const enrichmentChanges = useMemo<Map<string, EnrichmentCellChange>>(
+    () => operation?.tool === toolName ? operation.enrichmentChanges : new Map(),
+    [operation?.tool, operation?.enrichmentChanges, toolName]
+  )
   const completedSteps = operation?.tool === toolName ? operation.completedSteps : new Set<PipelineStep>()
   const batchProgress = operation?.tool === toolName ? operation.batchProgress : null
   const stepBatchResults = operation?.tool === toolName ? operation.stepBatchResults : new Map<PipelineStep, import('../contexts/OperationContext').StepBatchResult>()
@@ -387,12 +390,13 @@ export default function Proration() {
     return indices
   }, [enrichmentChanges])
 
+  const { previewEntries, updateEntries: updatePreviewEntries, editedFields } = preview
   const handleStartEnrichment = useCallback(() => {
     const opts: StartOperationOpts = {
       tool: toolName,
-      entries: preview.previewEntries.map(e => ({...e} as Record<string, unknown>)),
-      updateEntries: (entries) => preview.updateEntries(entries as unknown as MineralHolderRow[]),
-      editedFields: preview.editedFields as Map<string, unknown>,
+      entries: previewEntries.map(e => ({...e} as Record<string, unknown>)),
+      updateEntries: (entries) => updatePreviewEntries(entries as unknown as MineralHolderRow[]),
+      editedFields: editedFields as Map<string, unknown>,
       keyField: '_uid',
       featureFlags,
     }
@@ -401,7 +405,7 @@ export default function Proration() {
     } else {
       startOperation(opts)
     }
-  }, [preview.previewEntries, preview.updateEntries, preview.editedFields, featureFlags, operation?.status, startOperation])
+  }, [previewEntries, updatePreviewEntries, editedFields, featureFlags, operation?.status, startOperation])
 
   // Auto-restore on mount (PERSIST-01)
   useEffect(() => {
@@ -1207,6 +1211,7 @@ export default function Proration() {
                     <EnrichmentModal
                       isOpen={!!enrichModalOpen}
                       onClose={() => clearOperation()}
+                      onStop={() => abortOperation()}
                       stepStatuses={stepStatuses}
                       pipelineStatus={pipelineStatus}
                       enrichmentChanges={enrichmentChanges}

@@ -121,12 +121,12 @@ export default function Title() {
   const { user, userName, getIdToken } = useAuth()
   const { panelCollapsed, togglePanel, activeStorageKey } = useToolLayout('title', user?.uid, STORAGE_KEY_PREFIX)
 
-  const authHeaders = async (): Promise<Record<string, string>> => {
+  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
     const token = await getIdToken()
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
-  }
+  }, [getIdToken])
   const [jobs, setJobs] = useState<TitleJob[]>([])
   const [activeJob, setActiveJob] = useState<TitleJob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -230,7 +230,7 @@ export default function Title() {
       }
     }
     loadRecentJobs()
-  }, [])
+  }, [authHeaders])
 
   const isColumnVisible = (key: string): boolean => {
     const col = COLUMNS.find((c) => c.key === key)
@@ -307,7 +307,10 @@ export default function Title() {
   const toolName = 'title'
   const pipelineStatus: PipelineStatus = operation?.tool === toolName ? (operation.status as PipelineStatus) : 'idle'
   const stepStatuses = operation?.tool === toolName ? operation.stepStatuses : []
-  const enrichmentChanges: Map<string, EnrichmentCellChange> = operation?.tool === toolName ? operation.enrichmentChanges : new Map()
+  const enrichmentChanges = useMemo<Map<string, EnrichmentCellChange>>(
+    () => operation?.tool === toolName ? operation.enrichmentChanges : new Map(),
+    [operation?.tool, operation?.enrichmentChanges, toolName]
+  )
   const completedSteps = operation?.tool === toolName ? operation.completedSteps : new Set<PipelineStep>()
   const batchProgress = operation?.tool === toolName ? operation.batchProgress : null
   const stepBatchResults = operation?.tool === toolName ? operation.stepBatchResults : new Map<PipelineStep, import('../contexts/OperationContext').StepBatchResult>()
@@ -320,12 +323,13 @@ export default function Title() {
     return indices
   }, [enrichmentChanges])
 
+  const { previewEntries, updateEntries: updatePreviewEntries, editedFields } = preview
   const handleStartEnrichment = useCallback(() => {
     const opts: StartOperationOpts = {
       tool: toolName,
-      entries: preview.previewEntries.map(e => ({...e} as Record<string, unknown>)),
-      updateEntries: (entries) => preview.updateEntries(entries as unknown as OwnerEntry[]),
-      editedFields: preview.editedFields as Map<string, unknown>,
+      entries: previewEntries.map(e => ({...e} as Record<string, unknown>)),
+      updateEntries: (entries) => updatePreviewEntries(entries as unknown as OwnerEntry[]),
+      editedFields: editedFields as Map<string, unknown>,
       keyField: '_uid',
       featureFlags,
     }
@@ -334,7 +338,7 @@ export default function Title() {
     } else {
       startOperation(opts)
     }
-  }, [preview.previewEntries, preview.updateEntries, preview.editedFields, featureFlags, operation?.status, startOperation])
+  }, [previewEntries, updatePreviewEntries, editedFields, featureFlags, operation?.status, startOperation])
 
   // Auto-restore on mount (PERSIST-01)
   useEffect(() => {
@@ -717,6 +721,7 @@ export default function Title() {
                     <EnrichmentModal
                       isOpen={!!enrichModalOpen}
                       onClose={() => clearOperation()}
+                      onStop={() => abortOperation()}
                       stepStatuses={stepStatuses}
                       pipelineStatus={pipelineStatus}
                       enrichmentChanges={enrichmentChanges}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Shield,
   Users,
@@ -57,12 +57,12 @@ interface GoogleCloudSettings {
 export default function AdminSettings() {
   const { getIdToken } = useAuth()
 
-  const authHeaders = async (): Promise<Record<string, string>> => {
+  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
     const token = await getIdToken()
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
-  }
+  }, [getIdToken])
 
   // Users state
   const [users, setUsers] = useState<UserEntry[]>([])
@@ -189,15 +189,7 @@ export default function AdminSettings() {
     setIsAddingNew(false)
   }
 
-  useEffect(() => {
-    fetchUsers()
-    fetchOptions()
-    fetchGoogleCloudSettings()
-    loadEnrichmentConfig()
-    fetchConnections()
-  }, [])
-
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/admin/users`, { headers: await authHeaders() })
       if (res.ok) {
@@ -209,9 +201,9 @@ export default function AdminSettings() {
     } finally {
       setLoadingUsers(false)
     }
-  }
+  }, [authHeaders])
 
-  const fetchOptions = async () => {
+  const fetchOptions = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/admin/options`, { headers: await authHeaders() })
       if (res.ok) {
@@ -221,9 +213,9 @@ export default function AdminSettings() {
     } catch (err) {
       console.error('Error fetching options:', err)
     }
-  }
+  }, [authHeaders])
 
-  const fetchGoogleCloudSettings = async () => {
+  const fetchGoogleCloudSettings = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/admin/settings/google-cloud`, { headers: await authHeaders() })
       if (res.ok) {
@@ -241,7 +233,15 @@ export default function AdminSettings() {
     } catch (err) {
       console.error('Error fetching Google Cloud settings:', err)
     }
-  }
+  }, [authHeaders])
+
+  useEffect(() => {
+    fetchUsers()
+    fetchOptions()
+    fetchGoogleCloudSettings()
+    loadEnrichmentConfig()
+    fetchConnections()
+  }, [fetchUsers, fetchOptions, fetchGoogleCloudSettings])
 
   const handleSaveGoogleCloud = async () => {
     setIsSavingGoogleCloud(true)

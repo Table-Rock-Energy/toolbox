@@ -1,11 +1,12 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
-import { X, Check, Loader2, AlertCircle } from 'lucide-react'
+import { X, Check, Loader2, AlertCircle, Square } from 'lucide-react'
 import type { StepStatus, PipelineStatus, PipelineStep, EnrichmentCellChange } from '../hooks/useEnrichmentPipeline'
 import type { BatchProgress, StepBatchResult } from '../contexts/OperationContext'
 
 interface EnrichmentModalProps {
   isOpen: boolean
   onClose: () => void
+  onStop?: () => void
   stepStatuses: StepStatus[]
   pipelineStatus: PipelineStatus
   enrichmentChanges: Map<string, EnrichmentCellChange>
@@ -35,11 +36,11 @@ function useCountdownEta(estimatedSeconds: number | null): string | null {
 
   useEffect(() => {
     if (estimatedSeconds === null || estimatedSeconds <= 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- legitimate timer reset
       setRemaining(null)
       targetRef.current = null
       return
     }
-    // Set target time when estimate changes
     targetRef.current = Date.now() + estimatedSeconds * 1000
     setRemaining(estimatedSeconds)
 
@@ -67,6 +68,7 @@ function estimateBatchSeconds(batchTimings: number[], remainingBatches: number):
 export default function EnrichmentModal({
   isOpen,
   onClose,
+  onStop,
   stepStatuses,
   pipelineStatus,
   enrichmentChanges,
@@ -256,6 +258,19 @@ export default function EnrichmentModal({
           {isFinished && totalChanges === 0 && (
             <div className="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
               <p className="text-sm text-gray-600">No changes were needed.</p>
+            </div>
+          )}
+
+          {/* Stop button while running */}
+          {!isFinished && onStop && (
+            <div className="mt-6 flex justify-center">
+              <button
+                onClick={onStop}
+                className="flex items-center gap-2 px-5 py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium shadow-sm"
+              >
+                <Square className="w-4 h-4 fill-current" />
+                Stop Enrichment
+              </button>
             </div>
           )}
 
