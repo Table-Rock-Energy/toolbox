@@ -11,12 +11,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Refresh tracked RRC counties
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           echo "Triggering weekly RRC county refresh..."
 
           HTTP_STATUS=$(curl -s -o response.json -w "%{http_code}" \
             -X POST "https://tools.tablerocktx.com/api/proration/rrc/refresh-counties" \
             -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $CRON_SECRET" \
             --max-time 600)
 
           echo "HTTP Status: $HTTP_STATUS"

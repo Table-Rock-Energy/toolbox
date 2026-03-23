@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     batch_max_concurrency: int = 2
     batch_max_retries: int = 1
 
+    # Shared secret for cron/CI auth (bypasses Firebase token verification)
+    cron_secret: Optional[str] = None
+
     # Google Maps API settings (address validation)
     google_maps_api_key: Optional[str] = None
     google_maps_enabled: bool = False

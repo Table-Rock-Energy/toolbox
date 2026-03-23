@@ -18,16 +18,18 @@ on:
 jobs:
   trigger-rrc-download:
     runs-on: ubuntu-latest
-    env:
-      FORCE_INPUT: ${{ github.event.inputs.force || 'true' }}
     steps:
       - name: Trigger RRC data download
+        env:
+          FORCE_INPUT: ${{ github.event.inputs.force || 'true' }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           echo "Triggering RRC download (force=$FORCE_INPUT)..."
 
           HTTP_STATUS=$(curl -s -o response.json -w "%{http_code}" \
             -X POST "https://tools.tablerocktx.com/api/proration/rrc/download?force=$FORCE_INPUT" \
             -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $CRON_SECRET" \
             --max-time 540)
 
           echo "HTTP Status: $HTTP_STATUS"

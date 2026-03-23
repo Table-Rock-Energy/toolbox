@@ -311,12 +311,19 @@ async def get_current_user(
     """Get the current authenticated user from the request.
 
     Returns user info if authenticated and authorized, None otherwise.
-    Requires a valid Firebase ID token — no dev-mode bypass.
+    Accepts a valid Firebase ID token or a CRON_SECRET for CI/cron jobs.
     """
     if credentials is None:
         return None
 
     token = credentials.credentials
+
+    # Check for cron secret (CI/scheduled jobs)
+    from app.core.config import Settings
+    settings = Settings()
+    if settings.cron_secret and token == settings.cron_secret:
+        return {"email": "cron@tablerocktx.com", "uid": "cron", "cron": True}
+
     decoded = await verify_firebase_token(token)
 
     if decoded is None:
