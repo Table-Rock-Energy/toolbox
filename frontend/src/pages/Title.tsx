@@ -367,13 +367,16 @@ export default function Title() {
     }
   }, [activeJob, editedFields, featureFlags, operation?.status, startOperation])
 
-  // Auto-restore on mount (PERSIST-01)
+  // Auto-restore enriched entries on mount (PERSIST-01)
   useEffect(() => {
     const results = getResultsForTool(toolName)
-    if (results) {
+    if (results && activeJob) {
       setTimeout(() => {
-        preview.updateEntries(results as unknown as OwnerEntry[])
-        clearOperation() // Clear status bar after results applied (PERSIST-03)
+        setActiveJob({
+          ...activeJob,
+          result: { ...activeJob.result!, entries: results as unknown as OwnerEntry[] },
+        })
+        clearOperation()
       }, 0)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps

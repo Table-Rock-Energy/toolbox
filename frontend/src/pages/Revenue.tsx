@@ -350,14 +350,11 @@ export default function Revenue() {
     }
   }, [flatRows, updatePreviewEntries, editedFields, featureFlags, operation?.status, startOperation])
 
-  // Auto-restore on mount (PERSIST-01)
+  // Auto-restore: no-op for Revenue (flat rows don't map back to statements)
   useEffect(() => {
     const results = getResultsForTool(toolName)
     if (results) {
-      setTimeout(() => {
-        preview.updateEntries(results as unknown as FlatRow[])
-        clearOperation() // Clear status bar after results applied (PERSIST-03)
-      }, 0)
+      clearOperation()
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

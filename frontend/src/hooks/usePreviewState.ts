@@ -34,31 +34,26 @@ export function usePreviewState<T extends object>(
 ): PreviewState<T> {
   const { entries: sourceEntries, keyField, flagField = 'flagged' as keyof T } = options
 
-  const [overrideEntries, setOverrideEntries] = useState<T[] | null>(null)
   const [excludedKeys, setExcludedKeys] = useState<Set<string>>(new Set())
   const [editedFields, setEditedFields] = useState<Map<string, Partial<T>>>(new Map())
 
-  // Track sourceEntries identity to reset state when genuinely new data arrives (new upload).
-  // Use a fingerprint (length + first key) to avoid resetting on mere re-renders
-  // that produce a new array reference with the same data.
-  // Reset state when genuinely new data arrives (render-time state adjustment per React docs)
+  // Track sourceEntries identity to reset exclusions/edits when genuinely new data arrives (new upload).
   const fp = `${sourceEntries.length}:${sourceEntries.length > 0 ? String(sourceEntries[0][keyField]) : ''}`
   const [prevFingerprint, setPrevFingerprint] = useState(fp)
   if (prevFingerprint !== fp) {
     setPrevFingerprint(fp)
     if (prevFingerprint) {
-      setOverrideEntries(null)
       setExcludedKeys(new Set())
       setEditedFields(new Map())
     }
   }
 
-  const entries = overrideEntries ?? sourceEntries
+  // Always use sourceEntries (filtered from activeJob) — no override bypass
+  const entries = sourceEntries
 
-  // updateEntries: replace full entry array (for enrichment callbacks)
-  // Does NOT reset edits -- edits are keyed by stable key
-  const updateEntries = useCallback((newEntries: T[]) => {
-    setOverrideEntries(newEntries)
+  // updateEntries: no-op now, enrichment writes directly to activeJob
+  const updateEntries = useCallback((_newEntries: T[]) => {
+    // Enrichment updates flow through activeJob → filteredEntries → sourceEntries
   }, [])
 
   // Apply edits and sort flagged to top (stable sort)

@@ -520,13 +520,16 @@ export default function Extract() {
     }
   }, [activeJob, editedFields, featureFlags, operation?.status, startOperation, toolName, formatHint, originalCsvEntries])
 
-  // Auto-restore on mount (PERSIST-01)
+  // Auto-restore enriched entries on mount (PERSIST-01)
   useEffect(() => {
     const results = getResultsForTool(toolName)
-    if (results) {
+    if (results && activeJob) {
       setTimeout(() => {
-        preview.updateEntries(results as unknown as PartyEntry[])
-        clearOperation() // Clear status bar after results applied (PERSIST-03)
+        setActiveJob({
+          ...activeJob,
+          result: { ...activeJob.result!, entries: results as unknown as PartyEntry[] },
+        })
+        clearOperation()
       }, 0)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
