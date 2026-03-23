@@ -323,6 +323,17 @@ export default function Title() {
   const errorMessage = operation?.tool === toolName ? operation.errorMessage : null
   const enrichModalOpen = operation?.tool === toolName && (operation.status === 'running' || operation.status === 'completed' || operation.status === 'error')
 
+  // Map _uid → original (unfiltered) index for correct highlight lookup
+  const entryOriginalIndex = useMemo(() => {
+    const map = new Map<string, number>()
+    if (activeJob?.result?.entries) {
+      activeJob.result.entries.forEach((e, i) => {
+        map.set(e._uid ?? `title-${i}`, i)
+      })
+    }
+    return map
+  }, [activeJob?.result?.entries])
+
   const affectedEntryIndices = useMemo(() => {
     const indices = new Set<number>()
     enrichmentChanges.forEach(c => indices.add(c.entry_index))
@@ -987,16 +998,19 @@ export default function Title() {
                     <tbody className="divide-y divide-gray-100">
                       {(() => {
                         // Build display list with original indices, sort changed rows to top
-                        const indexed = preview.previewEntries.map((entry, idx) => ({ entry, origIdx: idx }))
+                        const indexed = preview.previewEntries.map((entry) => ({
+                          entry,
+                          globalIdx: entryOriginalIndex.get(entry._uid ?? '') ?? -1,
+                        }))
                         if (affectedEntryIndices.size > 0) {
                           indexed.sort((a, b) => {
-                            const aChanged = affectedEntryIndices.has(a.origIdx) ? 0 : 1
-                            const bChanged = affectedEntryIndices.has(b.origIdx) ? 0 : 1
+                            const aChanged = affectedEntryIndices.has(a.globalIdx) ? 0 : 1
+                            const bChanged = affectedEntryIndices.has(b.globalIdx) ? 0 : 1
                             return aChanged - bChanged
                           })
                         }
                         return indexed
-                      })().map(({ entry, origIdx: rowIdx }) => {
+                      })().map(({ entry, globalIdx: rowIdx }) => {
                         const entryKey = entry._uid ?? ''
                         const isExcluded = preview.isExcluded(entryKey)
                         const status = getEntryStatus(entry)
