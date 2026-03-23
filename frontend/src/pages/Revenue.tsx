@@ -332,11 +332,12 @@ export default function Revenue() {
     return indices
   }, [enrichmentChanges])
 
-  const { previewEntries, updateEntries: updatePreviewEntries, editedFields } = preview
+  const { updateEntries: updatePreviewEntries, editedFields } = preview
   const handleStartEnrichment = useCallback(() => {
+    // Use ALL flat rows (not filtered) so enrichment processes the full dataset
     const opts: StartOperationOpts = {
       tool: toolName,
-      entries: previewEntries.map(e => ({...e} as Record<string, unknown>)),
+      entries: flatRows.map(e => ({...e} as Record<string, unknown>)),
       updateEntries: (entries) => updatePreviewEntries(entries as unknown as FlatRow[]),
       editedFields: editedFields as Map<string, unknown>,
       keyField: '_id',
@@ -347,7 +348,7 @@ export default function Revenue() {
     } else {
       startOperation(opts)
     }
-  }, [previewEntries, updatePreviewEntries, editedFields, featureFlags, operation?.status, startOperation])
+  }, [flatRows, updatePreviewEntries, editedFields, featureFlags, operation?.status, startOperation])
 
   // Auto-restore on mount (PERSIST-01)
   useEffect(() => {

@@ -417,12 +417,22 @@ export default function Proration() {
     return indices
   }, [enrichmentChanges])
 
-  const { previewEntries, updateEntries: updatePreviewEntries, editedFields } = preview
+  const { editedFields } = preview
   const handleStartEnrichment = useCallback(() => {
+    const allRows = (activeJob?.result?.rows ?? []).map((row, i) => ({
+      ...row, _uid: row._uid ?? `pror-${i}`,
+    }))
     const opts: StartOperationOpts = {
       tool: toolName,
-      entries: previewEntries.map(e => ({...e} as Record<string, unknown>)),
-      updateEntries: (entries) => updatePreviewEntries(entries as unknown as MineralHolderRow[]),
+      entries: allRows.map(e => ({...e} as Record<string, unknown>)),
+      updateEntries: (entries) => {
+        if (activeJob) {
+          setActiveJob({
+            ...activeJob,
+            result: { ...activeJob.result!, rows: entries as unknown as MineralHolderRow[] },
+          })
+        }
+      },
       editedFields: editedFields as Map<string, unknown>,
       keyField: '_uid',
       featureFlags,
@@ -432,7 +442,7 @@ export default function Proration() {
     } else {
       startOperation(opts)
     }
-  }, [previewEntries, updatePreviewEntries, editedFields, featureFlags, operation?.status, startOperation])
+  }, [activeJob, editedFields, featureFlags, operation?.status, startOperation])
 
   // Auto-restore on mount (PERSIST-01)
   useEffect(() => {

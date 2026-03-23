@@ -437,7 +437,7 @@ export default function Extract() {
     return activeJob.result.entries.filter((entry) => {
       if (showIndividualsOnly && entry.entity_type !== 'Individual') return false
       if (hideFlagged && entry.flagged) return false
-      if (hideUnknownAddresses && entry.entry_number.startsWith('U')) return false
+      if (hideUnknownAddresses && (entry.entry_number.startsWith('U') || (!entry.mailing_address && !entry.city))) return false
       if (filterPropertyType && entry.property_type !== filterPropertyType) return false
       if (minVal !== null && (!entry.property_value || entry.property_value < minVal)) return false
       if (maxVal !== null && (!entry.property_value || entry.property_value > maxVal)) return false
@@ -492,12 +492,22 @@ export default function Extract() {
   }, [enrichmentChanges])
 
   // Start enrichment via OperationContext
-  const { previewEntries, updateEntries: updatePreviewEntries, editedFields } = preview
+  const { editedFields } = preview
   const handleStartEnrichment = useCallback(() => {
+    // Use ALL entries (not filtered) so enrichment processes the full dataset
+    const allEntries = activeJob?.result?.entries ?? []
     const opts: StartOperationOpts = {
       tool: toolName,
-      entries: previewEntries.map(e => ({...e} as Record<string, unknown>)),
-      updateEntries: (entries) => updatePreviewEntries(entries as unknown as PartyEntry[]),
+      entries: allEntries.map(e => ({...e} as Record<string, unknown>)),
+      updateEntries: (entries) => {
+        // Write enriched entries back to activeJob so filters re-apply
+        if (activeJob) {
+          setActiveJob({
+            ...activeJob,
+            result: { ...activeJob.result!, entries: entries as unknown as PartyEntry[] },
+          })
+        }
+      },
       editedFields: editedFields as Map<string, unknown>,
       keyField: 'entry_number',
       featureFlags,
@@ -508,7 +518,7 @@ export default function Extract() {
     } else {
       startOperation(opts)
     }
-  }, [previewEntries, updatePreviewEntries, editedFields, featureFlags, operation?.status, startOperation, toolName, formatHint, originalCsvEntries])
+  }, [activeJob, editedFields, featureFlags, operation?.status, startOperation, toolName, formatHint, originalCsvEntries])
 
   // Auto-restore on mount (PERSIST-01)
   useEffect(() => {

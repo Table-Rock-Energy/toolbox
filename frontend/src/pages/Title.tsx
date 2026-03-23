@@ -340,12 +340,22 @@ export default function Title() {
     return indices
   }, [enrichmentChanges])
 
-  const { previewEntries, updateEntries: updatePreviewEntries, editedFields } = preview
+  const { editedFields } = preview
   const handleStartEnrichment = useCallback(() => {
+    const allEntries = (activeJob?.result?.entries ?? []).map((e, i) => ({
+      ...e, _uid: e._uid ?? `title-${i}`,
+    }))
     const opts: StartOperationOpts = {
       tool: toolName,
-      entries: previewEntries.map(e => ({...e} as Record<string, unknown>)),
-      updateEntries: (entries) => updatePreviewEntries(entries as unknown as OwnerEntry[]),
+      entries: allEntries.map(e => ({...e} as Record<string, unknown>)),
+      updateEntries: (entries) => {
+        if (activeJob) {
+          setActiveJob({
+            ...activeJob,
+            result: { ...activeJob.result!, entries: entries as unknown as OwnerEntry[] },
+          })
+        }
+      },
       editedFields: editedFields as Map<string, unknown>,
       keyField: '_uid',
       featureFlags,
@@ -355,7 +365,7 @@ export default function Title() {
     } else {
       startOperation(opts)
     }
-  }, [previewEntries, updatePreviewEntries, editedFields, featureFlags, operation?.status, startOperation])
+  }, [activeJob, editedFields, featureFlags, operation?.status, startOperation])
 
   // Auto-restore on mount (PERSIST-01)
   useEffect(() => {
