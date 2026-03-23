@@ -156,7 +156,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Revenue() {
   const { user, userName, getIdToken } = useAuth()
-  const { panelCollapsed, togglePanel, activeStorageKey } = useToolLayout('revenue', user?.uid, STORAGE_KEY_PREFIX)
+  const { panelCollapsed, setPanelCollapsed, togglePanel, activeStorageKey } = useToolLayout('revenue', user?.uid, STORAGE_KEY_PREFIX)
 
   const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
     const token = await getIdToken()
@@ -359,6 +359,11 @@ export default function Revenue() {
       }, 0)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-collapse panel when preview data loads
+  useEffect(() => {
+    if (activeJob?.result?.statements?.length) setPanelCollapsed(true)
+  }, [activeJob?.result?.statements, setPanelCollapsed])
 
   // Unique product codes for filter dropdown
   const productCodes = useMemo(() => {

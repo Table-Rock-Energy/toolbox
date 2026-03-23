@@ -47,7 +47,7 @@ type ViewMode = 'normal' | 'flagged' | 'failed-contacts'
 
 export default function GhlPrep() {
   const { user, userName, getIdToken } = useAuth()
-  const { panelCollapsed, togglePanel } = useToolLayout('ghl-prep', user?.uid, STORAGE_KEY_PREFIX)
+  const { panelCollapsed, setPanelCollapsed, togglePanel } = useToolLayout('ghl-prep', user?.uid, STORAGE_KEY_PREFIX)
 
   const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
     const token = await getIdToken()
@@ -85,6 +85,11 @@ export default function GhlPrep() {
 
   // Convenience: derive result from activeJob
   const result = activeJob?.result ?? null
+
+  // Auto-collapse panel when preview data loads
+  useEffect(() => {
+    if (result) setPanelCollapsed(true)
+  }, [result, setPanelCollapsed])
 
   // Load recent jobs from Firestore on mount
   useEffect(() => {

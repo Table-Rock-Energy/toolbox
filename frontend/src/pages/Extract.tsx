@@ -115,7 +115,7 @@ export default function Extract() {
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
   }, [getIdToken])
-  const { panelCollapsed, togglePanel, activeStorageKey } = useToolLayout('extract', user?.uid, STORAGE_KEY_PREFIX)
+  const { panelCollapsed, setPanelCollapsed, togglePanel, activeStorageKey } = useToolLayout('extract', user?.uid, STORAGE_KEY_PREFIX)
   const [jobs, setJobs] = useState<ExtractJob[]>([])
   const [activeJob, setActiveJob] = useState<ExtractJob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -520,6 +520,11 @@ export default function Extract() {
       }, 0)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-collapse panel when preview data loads
+  useEffect(() => {
+    if (activeJob?.result?.entries?.length) setPanelCollapsed(true)
+  }, [activeJob?.result?.entries, setPanelCollapsed])
 
   const resetFilters = () => {
     setShowIndividualsOnly(false)

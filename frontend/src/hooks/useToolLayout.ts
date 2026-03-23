@@ -10,13 +10,9 @@ const PANEL_COLLAPSED_PREFIX = 'tool-panel-collapsed'
 export function useToolLayout(tool: string, userId: string | undefined, storageKeyPrefix: string) {
   const uid = userId || 'anon'
 
-  // Panel collapsed state (persisted per tool per user)
+  // Panel always starts visible, pages auto-collapse when preview data loads
   const panelKey = `${PANEL_COLLAPSED_PREFIX}-${tool}-${uid}`
-  const [panelCollapsed, setPanelCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem(panelKey) === 'true'
-    } catch { return false }
-  })
+  const [panelCollapsed, setPanelCollapsed] = useState(false)
 
   useEffect(() => {
     localStorage.setItem(panelKey, String(panelCollapsed))

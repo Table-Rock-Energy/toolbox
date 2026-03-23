@@ -165,7 +165,7 @@ export default function Proration() {
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
   }, [getIdToken])
-  const { panelCollapsed, togglePanel, activeStorageKey } = useToolLayout('proration', user?.uid, STORAGE_KEY_PREFIX)
+  const { panelCollapsed, setPanelCollapsed, togglePanel, activeStorageKey } = useToolLayout('proration', user?.uid, STORAGE_KEY_PREFIX)
   const [jobs, setJobs] = useState<ProrationJob[]>([])
   const [jobsLoading, setJobsLoading] = useState(true)
   const [activeJob, setActiveJob] = useState<ProrationJob | null>(null)
@@ -445,6 +445,10 @@ export default function Proration() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-collapse panel when preview data loads
+  useEffect(() => {
+    if (activeJob?.result?.rows?.length) setPanelCollapsed(true)
+  }, [activeJob?.result?.rows, setPanelCollapsed])
 
   const startPolling = (jobId: string) => {
     // Clear any existing poll interval
