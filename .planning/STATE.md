@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: Preview System Overhaul
-status: ready_to_plan
+status: complete
 stopped_at: null
 last_updated: "2026-03-24"
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  completed_phases: 4
+  total_plans: 4
+  completed_plans: 4
 ---
 
 # Project State
@@ -19,26 +19,27 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Phase 18 - Key-Based Highlight Tracking
+**Current focus:** Milestone v1.8 complete. No active milestone.
 
 ## Current Position
 
-Phase: 18 (1 of 4 in v1.8)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-03-24 — Roadmap created for v1.8 Preview System Overhaul
+Phase: All complete
+Plan: All complete
+Status: Milestone v1.8 shipped
+Last activity: 2026-03-24 — All 4 phases complete, pushed to main
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [##########] 100%
 
 ## Accumulated Context
 
 ### Decisions
 
-- v1.7: OperationContext at MainLayout level (survives navigation, keyed by tool name)
-- v1.7: useBatchPipeline hook as shared engine for all batch operations
-- v1.7: Cache uses atomic dict replacement on invalidate (new empty dict, not .clear())
-- v1.8: Key-based tracking (PREV-01) is the root cause fix; must land before filter or UX work
-- v1.8: Proration enhancements (PROR-01, PROR-02) are independent of preview pipeline fixes
+- v1.8: Key-based tracking (entry_key) replaces index-based tracking (entry_index) for enrichment highlights
+- v1.8: Enrichment scoped to visible/filtered rows — merge back by key into full dataset
+- v1.8: Case-insensitive entity type filtering (handles both PascalCase and UPPERCASE)
+- v1.8: RRC lease-only search first, district+lease fallback (user confirmed most cases don't need district)
+- v1.8: processedEntryKeys tracked in OperationState for no-change checkmark
+- v1.8: FetchRrcModal ETA uses heuristic (2s/item) since server doesn't provide elapsed time
 
 ### Pending Todos
 
@@ -51,5 +52,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-24
-Stopped at: Roadmap created, ready to plan Phase 18
+Stopped at: Milestone v1.8 complete
 Resume file: None

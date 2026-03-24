@@ -67,24 +67,21 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - ✓ Revenue multi-PDF streaming: NDJSON per-file progress with inline UI counter in both panel views — v1.7
 - ✓ Proration cache-first lookups: in-memory RRC cache with startup pre-warming, batch Firestore reads via asyncio.gather, cache invalidation after RRC sync — v1.7
 
+- ✓ Key-based enrichment highlight tracking (entry_key replaces entry_index) — v1.8
+- ✓ Filter-anytime correctness: filters work before/during/after enrichment without breaking highlights — v1.8
+- ✓ Enrichment scoped to visible/filtered rows only (saves API costs) — v1.8
+- ✓ Case-insensitive entity type filtering across all tool pages — v1.8
+- ✓ Export respects current filter state with enrichment changes applied — v1.8
+- ✓ Click-to-reveal original values in green enrichment cells — v1.8
+- ✓ No-change checkmark indicator for processed-but-unchanged rows — v1.8
+- ✓ RRC lease-only search first with district+lease fallback — v1.8
+- ✓ Fetch-missing stop button with AbortController and partial results — v1.8
+
 ### Active
 
-<!-- Current milestone: v1.8 Preview System Overhaul -->
+<!-- No active milestone -->
 
-## Current Milestone: v1.8 Preview System Overhaul
-
-**Goal:** Fix the preview data pipeline so filtering, enrichment highlights, and export all stay consistent regardless of when filters are applied.
-
-**Target features:**
-- Key-based highlight tracking (replace array indices with stable entry keys)
-- Filter-anytime correctness (before, during, after enrichment)
-- Enrichment scoped to visible/filtered rows only (saves API costs)
-- Click-to-reveal cell changes (green cells, click to see original value)
-- No-change row indicator (subtle checkmark for processed-but-unchanged rows)
-- Entity type filter fix (correct exclusion across all tools)
-- RRC lease-only search first, district+lease fallback
-- Fetch-missing stop button (same pattern as enrichment stop)
-- Export respects current filter state + enrichment changes
+(No active milestone)
 
 ### Out of Scope
 
@@ -110,7 +107,7 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - **Extract formats:** Standard OCC Exhibit A, ECF multiunit well filings (with optional Convey 640 CSV/Excel)
 - **Shipped:** v1.3 Security Hardening (2026-03-11), v1.4 ECF Extraction (2026-03-12), v1.5 Enrichment Pipeline (2026-03-17), v1.6 Pipeline Fixes & Unified Enrichment (2026-03-19)
 - **Shipped:** v1.7 Batch Processing & Resilience (2026-03-20)
-- **In progress:** v1.8 Preview System Overhaul (started 2026-03-24)
+- **Shipped:** v1.8 Preview System Overhaul (2026-03-24)
 
 ## Constraints
 
@@ -145,4 +142,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Local variable threading in runAllSteps (not React state) | Avoids stale closure between sequential async steps | ✓ Good — v1.6 |
 
 ---
-*Last updated: 2026-03-24 after v1.8 milestone started*
+*Last updated: 2026-03-24 after v1.8 milestone complete*

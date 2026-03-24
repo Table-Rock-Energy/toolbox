@@ -1,5 +1,25 @@
 # Milestones
 
+## v1.8 Preview System Overhaul (Shipped: 2026-03-24)
+
+**Phases completed:** 4 phases, 4 commits
+**Commits:** 4 (00fafd1..148265a)
+**Timeline:** 1 day (2026-03-24)
+
+**Key accomplishments:**
+
+- Root cause fix: enrichment highlights keyed by stable entry_key instead of array index
+- Enrichment scoped to visible/filtered rows only (saves Gemini API costs)
+- Case-insensitive entity type filtering across all tool pages
+- No-change checkmark indicator for processed-but-unchanged rows
+- RRC lease-only search first with district+lease fallback
+- Fetch-missing stop button with AbortController and partial results
+- Fixed pre-existing lint errors in FetchRrcModal and usePreviewState
+
+**Guardrail enforced:** Upload flows, backend parsers, panel layout, enrichment modal UX, OperationContext navigation, batch engine, API signatures, auth/admin, styling — all untouched per user requirement.
+
+---
+
 ## v1.7 Batch Processing & Resilience (Shipped: 2026-03-20)
 
 **Phases completed:** 5 phases, 9 plans, 0 tasks
