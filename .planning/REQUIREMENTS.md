@@ -53,22 +53,22 @@ None deferred from this milestone.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PREV-01 | — | Pending |
-| PREV-02 | — | Pending |
-| PREV-03 | — | Pending |
-| PREV-04 | — | Pending |
-| FILT-01 | — | Pending |
-| FILT-02 | — | Pending |
-| FILT-03 | — | Pending |
-| FILT-04 | — | Pending |
-| PROR-01 | — | Pending |
-| PROR-02 | — | Pending |
+| PREV-01 | Phase 18 | Pending |
+| PREV-02 | Phase 20 | Pending |
+| PREV-03 | Phase 20 | Pending |
+| PREV-04 | Phase 20 | Pending |
+| FILT-01 | Phase 19 | Pending |
+| FILT-02 | Phase 19 | Pending |
+| FILT-03 | Phase 19 | Pending |
+| FILT-04 | Phase 19 | Pending |
+| PROR-01 | Phase 21 | Pending |
+| PROR-02 | Phase 21 | Pending |
 
 **Coverage:**
 - v1.8 requirements: 10 total
-- Mapped to phases: 0
-- Unmapped: 10
+- Mapped to phases: 10
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-24*
-*Last updated: 2026-03-24 after initial definition*
+*Last updated: 2026-03-24 after roadmap creation*

@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: Preview System Overhaul
-status: defining_requirements
+status: ready_to_plan
 stopped_at: null
 last_updated: "2026-03-24"
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,29 +19,26 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Defining requirements for v1.8
+**Current focus:** Phase 18 - Key-Based Highlight Tracking
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-24 — Milestone v1.8 started
+Phase: 18 (1 of 4 in v1.8)
+Plan: 0 of TBD in current phase
+Status: Ready to plan
+Last activity: 2026-03-24 — Roadmap created for v1.8 Preview System Overhaul
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Accumulated Context
 
 ### Decisions
 
-- v1.6: Per-endpoint Depends() for admin auth, not router-level (avoids check_user deadlock)
-- v1.6: Enrichment modal uses sequential await, not SSE (steps are 2-15s each)
-- v1.6: runAllSteps() uses local variable threading, not React state (avoids stale closure)
-- v1.7: Client-side batch orchestration for AI cleanup, server-side SSE for Revenue (research recommendation)
 - v1.7: OperationContext at MainLayout level (survives navigation, keyed by tool name)
 - v1.7: useBatchPipeline hook as shared engine for all batch operations
-- [Phase 13]: Split context pattern (OperationStateContext + OperationActionsContext) to prevent re-render storms
-- [Phase 14]: asyncio.Semaphore for batch concurrency control (simpler than TaskGroup)
-- [Phase 14]: Sync disconnect_check callable with fire-and-forget async polling for disconnect detection
-- [Phase 17]: Cache uses atomic dict replacement on invalidate (new empty dict, not .clear())
+- v1.7: Cache uses atomic dict replacement on invalidate (new empty dict, not .clear())
+- v1.8: Key-based tracking (PREV-01) is the root cause fix; must land before filter or UX work
+- v1.8: Proration enhancements (PROR-01, PROR-02) are independent of preview pipeline fixes
 
 ### Pending Todos
 
@@ -54,5 +51,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-24
-Stopped at: Milestone v1.8 started, defining requirements
+Stopped at: Roadmap created, ready to plan Phase 18
 Resume file: None
