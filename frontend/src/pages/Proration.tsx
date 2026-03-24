@@ -409,17 +409,25 @@ export default function Proration() {
 
   const { editedFields } = preview
   const handleStartEnrichment = useCallback(() => {
-    const allRows = (activeJob?.result?.rows ?? []).map((row, i) => ({
-      ...row, _uid: row._uid ?? `pror-${i}`,
-    }))
+    const visibleRows = preview.previewEntries
     const opts: StartOperationOpts = {
       tool: toolName,
-      entries: allRows.map(e => ({...e} as Record<string, unknown>)),
-      updateEntries: (entries) => {
-        if (activeJob) {
+      entries: visibleRows.map(e => ({...e} as Record<string, unknown>)),
+      updateEntries: (enrichedEntries) => {
+        // Merge enriched entries back into full dataset by key
+        if (activeJob?.result?.rows) {
+          const enrichedMap = new Map<string, Record<string, unknown>>()
+          for (const e of enrichedEntries) {
+            enrichedMap.set(String((e as Record<string, unknown>)._uid), e as Record<string, unknown>)
+          }
+          const merged = activeJob.result.rows.map((r, i) => {
+            const uid = r._uid ?? `pror-${i}`
+            const enriched = enrichedMap.get(uid)
+            return enriched ? (enriched as unknown as MineralHolderRow) : r
+          })
           setActiveJob({
             ...activeJob,
-            result: { ...activeJob.result!, rows: entries as unknown as MineralHolderRow[] },
+            result: { ...activeJob.result, rows: merged },
           })
         }
       },
@@ -432,7 +440,7 @@ export default function Proration() {
     } else {
       startOperation(opts)
     }
-  }, [activeJob, editedFields, featureFlags, operation?.status, startOperation])
+  }, [activeJob, preview.previewEntries, editedFields, featureFlags, operation?.status, startOperation])
 
   // Auto-restore enriched entries on mount (PERSIST-01)
   useEffect(() => {

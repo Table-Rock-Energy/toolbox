@@ -273,7 +273,7 @@ export default function Title() {
     }
 
     if (showIndividualsOnly) {
-      filtered = filtered.filter(e => e.entity_type === 'INDIVIDUAL')
+      filtered = filtered.filter(e => e.entity_type?.toLowerCase() === 'individual')
     }
 
     if (selectedSection) {
@@ -332,17 +332,25 @@ export default function Title() {
 
   const { editedFields } = preview
   const handleStartEnrichment = useCallback(() => {
-    const allEntries = (activeJob?.result?.entries ?? []).map((e, i) => ({
-      ...e, _uid: e._uid ?? `title-${i}`,
-    }))
+    const visibleEntries = preview.previewEntries
     const opts: StartOperationOpts = {
       tool: toolName,
-      entries: allEntries.map(e => ({...e} as Record<string, unknown>)),
-      updateEntries: (entries) => {
-        if (activeJob) {
+      entries: visibleEntries.map(e => ({...e} as Record<string, unknown>)),
+      updateEntries: (enrichedEntries) => {
+        // Merge enriched entries back into full dataset by key
+        if (activeJob?.result?.entries) {
+          const enrichedMap = new Map<string, Record<string, unknown>>()
+          for (const e of enrichedEntries) {
+            enrichedMap.set(String((e as Record<string, unknown>)._uid), e as Record<string, unknown>)
+          }
+          const merged = activeJob.result.entries.map((e, i) => {
+            const uid = e._uid ?? `title-${i}`
+            const enriched = enrichedMap.get(uid)
+            return enriched ? (enriched as unknown as OwnerEntry) : e
+          })
           setActiveJob({
             ...activeJob,
-            result: { ...activeJob.result!, entries: entries as unknown as OwnerEntry[] },
+            result: { ...activeJob.result, entries: merged },
           })
         }
       },
@@ -355,7 +363,7 @@ export default function Title() {
     } else {
       startOperation(opts)
     }
-  }, [activeJob, editedFields, featureFlags, operation?.status, startOperation])
+  }, [activeJob, preview.previewEntries, editedFields, featureFlags, operation?.status, startOperation])
 
   // Auto-restore enriched entries on mount (PERSIST-01)
   useEffect(() => {

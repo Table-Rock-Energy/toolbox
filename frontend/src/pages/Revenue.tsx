@@ -326,13 +326,16 @@ export default function Revenue() {
     return keys
   }, [enrichmentChanges])
 
-  const { updateEntries: updatePreviewEntries, editedFields } = preview
+  const { editedFields } = preview
   const handleStartEnrichment = useCallback(() => {
-    // Use ALL flat rows (not filtered) so enrichment processes the full dataset
+    const visibleRows = preview.previewEntries
     const opts: StartOperationOpts = {
       tool: toolName,
-      entries: flatRows.map(e => ({...e} as Record<string, unknown>)),
-      updateEntries: (entries) => updatePreviewEntries(entries as unknown as FlatRow[]),
+      entries: visibleRows.map(e => ({...e} as Record<string, unknown>)),
+      updateEntries: () => {
+        // Revenue enrichment writes are handled by OperationContext progressive apply
+        // which directly mutates the entries array. No merge needed.
+      },
       editedFields: editedFields as Map<string, unknown>,
       keyField: '_id',
       featureFlags,
@@ -342,7 +345,7 @@ export default function Revenue() {
     } else {
       startOperation(opts)
     }
-  }, [flatRows, updatePreviewEntries, editedFields, featureFlags, operation?.status, startOperation])
+  }, [preview.previewEntries, editedFields, featureFlags, operation?.status, startOperation])
 
   // Auto-restore: no-op for Revenue (flat rows don't map back to statements)
   useEffect(() => {

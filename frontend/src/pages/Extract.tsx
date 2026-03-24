@@ -435,7 +435,7 @@ export default function Extract() {
     const maxVal = filterMaxValue ? parseFloat(filterMaxValue) : null
 
     return activeJob.result.entries.filter((entry) => {
-      if (showIndividualsOnly && entry.entity_type !== 'Individual') return false
+      if (showIndividualsOnly && entry.entity_type?.toLowerCase() !== 'individual') return false
       if (hideFlagged && entry.flagged) return false
       if (hideUnknownAddresses && (entry.entry_number.startsWith('U') || (!entry.mailing_address && !entry.city))) return false
       if (filterPropertyType && entry.property_type !== filterPropertyType) return false
@@ -482,20 +482,27 @@ export default function Extract() {
     return keys
   }, [enrichmentChanges])
 
-  // Start enrichment via OperationContext
+  // Start enrichment via OperationContext — only visible/filtered entries
   const { editedFields } = preview
   const handleStartEnrichment = useCallback(() => {
-    // Use ALL entries (not filtered) so enrichment processes the full dataset
-    const allEntries = activeJob?.result?.entries ?? []
+    const visibleEntries = preview.previewEntries
     const opts: StartOperationOpts = {
       tool: toolName,
-      entries: allEntries.map(e => ({...e} as Record<string, unknown>)),
-      updateEntries: (entries) => {
-        // Write enriched entries back to activeJob so filters re-apply
-        if (activeJob) {
+      entries: visibleEntries.map(e => ({...e} as Record<string, unknown>)),
+      updateEntries: (enrichedEntries) => {
+        // Merge enriched entries back into full dataset by key
+        if (activeJob?.result?.entries) {
+          const enrichedMap = new Map<string, Record<string, unknown>>()
+          for (const e of enrichedEntries) {
+            enrichedMap.set(String((e as Record<string, unknown>).entry_number), e as Record<string, unknown>)
+          }
+          const merged = activeJob.result.entries.map(e => {
+            const enriched = enrichedMap.get(e.entry_number)
+            return enriched ? (enriched as unknown as PartyEntry) : e
+          })
           setActiveJob({
             ...activeJob,
-            result: { ...activeJob.result!, entries: entries as unknown as PartyEntry[] },
+            result: { ...activeJob.result, entries: merged },
           })
         }
       },
@@ -509,7 +516,7 @@ export default function Extract() {
     } else {
       startOperation(opts)
     }
-  }, [activeJob, editedFields, featureFlags, operation?.status, startOperation, toolName, formatHint, originalCsvEntries])
+  }, [activeJob, preview.previewEntries, editedFields, featureFlags, operation?.status, startOperation, toolName, formatHint, originalCsvEntries])
 
   // Auto-restore enriched entries on mount (PERSIST-01)
   useEffect(() => {
