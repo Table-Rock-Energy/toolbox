@@ -16,7 +16,7 @@ from app.services.title.address_parser import (
     split_address_lines,
 )
 from app.services.title.entity_detector import detect_entity_type
-from app.services.title.name_parser import clean_name, parse_name
+from app.services.title.name_parser import clean_name, extract_legal_annotations, parse_name
 
 
 def _merge_notes(*note_sources: str | list | None) -> str | None:
@@ -246,6 +246,8 @@ def _process_row(
 
     # Extract annotations from name
     cleaned_name, name_notes = extract_address_annotations(raw_name)
+    cleaned_name, legal_notes = extract_legal_annotations(cleaned_name)
+    name_notes = name_notes + legal_notes
     full_name = clean_name(cleaned_name)
 
     # Read entity type from file if present, otherwise auto-detect

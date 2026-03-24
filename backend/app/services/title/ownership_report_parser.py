@@ -25,7 +25,7 @@ from app.services.title.address_parser import (
     split_address_lines,
 )
 from app.services.title.entity_detector import detect_entity_type
-from app.services.title.name_parser import clean_name, is_valid_name, parse_name
+from app.services.title.name_parser import clean_name, extract_legal_annotations, is_valid_name, parse_name
 
 logger = logging.getLogger(__name__)
 
@@ -330,6 +330,8 @@ def _build_owner_entry(
     """Build an OwnerEntry from parsed components."""
     # Clean and validate name
     cleaned_name, name_notes = extract_address_annotations(raw_name)
+    cleaned_name, legal_notes = extract_legal_annotations(cleaned_name)
+    name_notes = name_notes + legal_notes
     full_name = clean_name(cleaned_name)
     if not full_name or not is_valid_name(full_name):
         return None

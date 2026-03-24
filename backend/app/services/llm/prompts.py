@@ -31,6 +31,7 @@ Apply these corrections:
 - Name casing: Convert ALL CAPS names to proper Title Case. Keep entity abbreviations uppercase (LLC, LP, INC, CO, LTD).
 - Name abbreviations: Expand common abbreviations (Jno -> John, Wm -> William, Chas -> Charles).
 - Suffix standardization: Normalize suffixes to standard forms: Jr./Junior/junior -> Jr, Sr./Senior/senior -> Sr, The Third/3rd -> III, The Second/2nd -> II. Standard suffixes are: Jr, Sr, I, II, III, IV.
+- Legal annotations in names: If full_name contains legal suffixes like HWJT, JTRS, JTWROS, LKA:, "apparently deceased", "both deceased", move them to the notes field and clean the name.
 - First/last split: If full_name is present, verify first_name and last_name are correctly split. Fix if wrong.
 - Entity type inference: If name contains "Trust", "Estate", "LLC", etc. but entity_type doesn't match, suggest the correct entity_type.
 - Duplicate detection: Flag entries with very similar names that may be duplicates (same person, different formatting). Use "medium" confidence for duplicate flags.

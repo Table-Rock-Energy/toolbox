@@ -188,6 +188,22 @@ def clean_name(name: str) -> str:
     # Remove JTWROS (joint tenants with right of survivorship) marker
     cleaned = re.sub(r"\s+JTWROS\b", "", cleaned, flags=re.IGNORECASE)
 
+    # Remove HWJT (husband wife joint tenants) and variants
+    cleaned = re.sub(r",?\s+HWJT\b", "", cleaned, flags=re.IGNORECASE)
+
+    # Remove JTRS (joint tenants with rights of survivorship)
+    cleaned = re.sub(r",?\s+JTRS\b", "", cleaned, flags=re.IGNORECASE)
+
+    # Remove "both apparently deceased" and similar death annotations
+    cleaned = re.sub(r",?\s+both\s+(?:apparently\s+)?deceased\b.*$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r",?\s+(?:apparently\s+)?deceased\b", "", cleaned, flags=re.IGNORECASE)
+
+    # Remove LKA: (Last Known Address) and everything after
+    cleaned = re.sub(r",?\s+LKA\s*:.*$", "", cleaned, flags=re.IGNORECASE)
+
+    # Remove "n/k/a" (now known as) and everything after
+    cleaned = re.sub(r"\s+n/?k/?a\s+.*$", "", cleaned, flags=re.IGNORECASE)
+
     # Clean up trailing dashes (often leftover from relationship markers)
     cleaned = re.sub(r"\s*-\s*$", "", cleaned)
     cleaned = re.sub(r"^-\s*", "", cleaned)
@@ -197,6 +213,39 @@ def clean_name(name: str) -> str:
     cleaned = cleaned.rstrip(",-").strip()
 
     return cleaned
+
+
+# Patterns that should be extracted from names into notes
+_LEGAL_ANNOTATION_PATTERNS = [
+    (re.compile(r",?\s+(HWJT)\b", re.IGNORECASE), "HWJT"),
+    (re.compile(r",?\s+(JTRS)\b", re.IGNORECASE), "JTRS"),
+    (re.compile(r",?\s+(JTWROS)\b", re.IGNORECASE), "JTWROS"),
+    (re.compile(r",?\s+(both\s+(?:apparently\s+)?deceased\b.*?)(?:,|$)", re.IGNORECASE), None),
+    (re.compile(r",?\s+((?:apparently\s+)?deceased)\b", re.IGNORECASE), None),
+    (re.compile(r",?\s+(LKA\s*:.*)$", re.IGNORECASE), None),
+]
+
+
+def extract_legal_annotations(name: str) -> tuple[str, list[str]]:
+    """Extract legal annotations from name, returning (cleaned_name, annotations).
+
+    Annotations like HWJT, JTRS, LKA:, deceased are stripped from the name
+    and returned as a list for merging into the notes field.
+    """
+    if not name:
+        return name, []
+
+    annotations: list[str] = []
+    cleaned = name
+
+    for pattern, label in _LEGAL_ANNOTATION_PATTERNS:
+        match = pattern.search(cleaned)
+        if match:
+            annotations.append(label or match.group(1).strip())
+            cleaned = pattern.sub("", cleaned)
+
+    cleaned = re.sub(r"\s+", " ", cleaned).strip().rstrip(",-").strip()
+    return cleaned, annotations
 
 
 def is_valid_name(name: str) -> bool:

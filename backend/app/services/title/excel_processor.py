@@ -21,7 +21,7 @@ from app.services.title.address_parser import (
     split_address_lines,
 )
 from app.services.title.entity_detector import detect_entity_type
-from app.services.title.name_parser import clean_name, parse_name, is_valid_name
+from app.services.title.name_parser import clean_name, extract_legal_annotations, parse_name, is_valid_name
 from app.services.title.text_parser import parse_text_entry, split_cell_entries
 
 
@@ -297,6 +297,8 @@ def _process_multi_column(
 
         # Extract annotations from name
         cleaned_name, name_notes = extract_address_annotations(str(raw_name).strip())
+        cleaned_name, legal_notes = extract_legal_annotations(cleaned_name)
+        name_notes = name_notes + legal_notes
         full_name = clean_name(cleaned_name)
 
         # Skip if not a valid name (e.g., legal descriptions, junk data)
@@ -414,6 +416,8 @@ def _process_two_column(
 
         # Extract annotations from name
         cleaned_name, name_notes = extract_address_annotations(str(raw_name).strip())
+        cleaned_name, legal_notes = extract_legal_annotations(cleaned_name)
+        name_notes = name_notes + legal_notes
         full_name = clean_name(cleaned_name)
 
         # Skip if not a valid name (e.g., legal descriptions, junk data)
@@ -617,6 +621,8 @@ def _create_entry_from_text(raw_text: str, legal_description: str) -> Optional[O
 
     # Extract annotations from the name too (c/o, trust dates, etc.)
     cleaned_name, name_notes = extract_address_annotations(parsed.name)
+    cleaned_name, legal_notes = extract_legal_annotations(cleaned_name)
+    name_notes = name_notes + legal_notes
     full_name = clean_name(cleaned_name)
     if not full_name:
         return None
