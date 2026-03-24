@@ -319,17 +319,11 @@ export default function Revenue() {
   const errorMessage = operation?.tool === toolName ? operation.errorMessage : null
   const enrichModalOpen = operation?.tool === toolName && (operation.status === 'running' || operation.status === 'completed' || operation.status === 'error')
 
-  // Map _id → original (unfiltered) index for correct highlight lookup
-  const entryOriginalIndex = useMemo(() => {
-    const map = new Map<string, number>()
-    flatRows.forEach((row, i) => map.set(row._id, i))
-    return map
-  }, [flatRows])
-
-  const affectedEntryIndices = useMemo(() => {
-    const indices = new Set<number>()
-    enrichmentChanges.forEach(c => indices.add(c.entry_index))
-    return indices
+  // Derive set of entry keys that have enrichment changes
+  const affectedEntryKeys = useMemo(() => {
+    const keys = new Set<string>()
+    enrichmentChanges.forEach(c => keys.add(c.entry_key))
+    return keys
   }, [enrichmentChanges])
 
   const { updateEntries: updatePreviewEntries, editedFields } = preview
@@ -609,8 +603,8 @@ export default function Revenue() {
   const isColVisible = (key: string) => visibleColumns.has(key)
 
   const STEP_SOURCE_LABELS: Record<string, string> = { cleanup: 'AI Cleanup', validate: 'Google Maps', enrich: 'Enrichment' }
-  const getCellHighlight = (entryIndex: number, field: string) => {
-    return enrichmentChanges.get(`${entryIndex}:${field}`) || null
+  const getCellHighlight = (entryKey: string, field: string) => {
+    return enrichmentChanges.get(`${entryKey}:${field}`) || null
   }
   const formatHighlightTitle = (hl: EnrichmentCellChange) => {
     const source = STEP_SOURCE_LABELS[hl.step] || hl.step
@@ -986,22 +980,22 @@ export default function Revenue() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {(() => {
-                        // Build display list with original indices, sort changed rows to top
-                        const indexed = preview.previewEntries.map((entry) => ({
+                        // Build display list, sort enriched rows to top
+                        const rows = preview.previewEntries.map((entry) => ({
                           entry,
-                          globalIdx: entryOriginalIndex.get(entry._id) ?? -1,
+                          entryKey: entry._id,
                         }))
-                        if (affectedEntryIndices.size > 0) {
-                          indexed.sort((a, b) => {
-                            const aChanged = affectedEntryIndices.has(a.globalIdx) ? 0 : 1
-                            const bChanged = affectedEntryIndices.has(b.globalIdx) ? 0 : 1
+                        if (affectedEntryKeys.size > 0) {
+                          rows.sort((a, b) => {
+                            const aChanged = affectedEntryKeys.has(a.entryKey) ? 0 : 1
+                            const bChanged = affectedEntryKeys.has(b.entryKey) ? 0 : 1
                             return aChanged - bChanged
                           })
                         }
-                        return indexed
-                      })().map(({ entry: row, globalIdx: rowIdx }) => {
+                        return rows
+                      })().map(({ entry: row, entryKey }) => {
                         const isExcluded = preview.isExcluded(row._id)
-                        const hasChanges = affectedEntryIndices.has(rowIdx)
+                        const hasChanges = affectedEntryKeys.has(entryKey)
                         return (
                           <tr
                             key={row._id}
@@ -1020,7 +1014,7 @@ export default function Revenue() {
                             {isColVisible('check_amount') && <td className="py-2 px-2 text-gray-600 text-right text-xs">{formatCurrency(row.check_amount)}</td>}
                             {isColVisible('check_date') && <td className="py-2 px-2 text-gray-600 text-xs">{row.check_date || '\u2014'}</td>}
                             {isColVisible('property_name') && (() => {
-                              const hl = getCellHighlight(rowIdx, 'property_name')
+                              const hl = getCellHighlight(entryKey, 'property_name')
                               return (
                               <td className={`py-2 px-2 text-gray-900 text-xs whitespace-nowrap ${hl ? 'bg-green-50' : ''}`} title={hl ? formatHighlightTitle(hl) : undefined}>
                                 <EditableCell
@@ -1031,7 +1025,7 @@ export default function Revenue() {
                               )
                             })()}
                             {isColVisible('property_number') && (() => {
-                              const hl = getCellHighlight(rowIdx, 'property_number')
+                              const hl = getCellHighlight(entryKey, 'property_number')
                               return (
                               <td className={`py-2 px-2 text-gray-600 text-xs ${hl ? 'bg-green-50' : ''}`} title={hl ? formatHighlightTitle(hl) : undefined}>
                                 <EditableCell
@@ -1043,7 +1037,7 @@ export default function Revenue() {
                             })()}
                             {isColVisible('operator_name') && <td className="py-2 px-2 text-gray-600 text-xs whitespace-nowrap">{row.operator_name || '\u2014'}</td>}
                             {isColVisible('owner_name') && (() => {
-                              const hl = getCellHighlight(rowIdx, 'owner_name')
+                              const hl = getCellHighlight(entryKey, 'owner_name')
                               return (
                               <td className={`py-2 px-2 text-gray-600 text-xs whitespace-nowrap ${hl ? 'bg-green-50' : ''}`} title={hl ? formatHighlightTitle(hl) : undefined}>
                                 <EditableCell

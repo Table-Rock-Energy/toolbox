@@ -400,21 +400,11 @@ export default function Proration() {
   const errorMessage = operation?.tool === toolName ? operation.errorMessage : null
   const enrichModalOpen = operation?.tool === toolName && (operation.status === 'running' || operation.status === 'completed' || operation.status === 'error')
 
-  // Map _uid → original (unfiltered) index for correct highlight lookup
-  const entryOriginalIndex = useMemo(() => {
-    const map = new Map<string, number>()
-    if (activeJob?.result?.rows) {
-      activeJob.result.rows.forEach((row, i) => {
-        map.set(row._uid ?? `pror-${i}`, i)
-      })
-    }
-    return map
-  }, [activeJob?.result?.rows])
-
-  const affectedEntryIndices = useMemo(() => {
-    const indices = new Set<number>()
-    enrichmentChanges.forEach(c => indices.add(c.entry_index))
-    return indices
+  // Derive set of entry keys that have enrichment changes
+  const affectedEntryKeys = useMemo(() => {
+    const keys = new Set<string>()
+    enrichmentChanges.forEach(c => keys.add(c.entry_key))
+    return keys
   }, [enrichmentChanges])
 
   const { editedFields } = preview
@@ -849,8 +839,8 @@ export default function Proration() {
   }
 
   const STEP_SOURCE_LABELS: Record<string, string> = { cleanup: 'AI Cleanup', validate: 'Google Maps', enrich: 'Enrichment' }
-  const getCellHighlight = (entryIndex: number, field: string) => {
-    return enrichmentChanges.get(`${entryIndex}:${field}`) || null
+  const getCellHighlight = (entryKey: string, field: string) => {
+    return enrichmentChanges.get(`${entryKey}:${field}`) || null
   }
   const formatHighlightTitle = (hl: EnrichmentCellChange) => {
     const source = STEP_SOURCE_LABELS[hl.step] || hl.step
@@ -1518,23 +1508,23 @@ export default function Proration() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {(() => {
-                        // Build display list with original indices, sort changed rows to top
-                        const indexed = preview.previewEntries.map((entry) => ({
+                        // Build display list, sort enriched rows to top
+                        const rows = preview.previewEntries.map((entry) => ({
                           entry,
-                          globalIdx: entryOriginalIndex.get(entry._uid ?? '') ?? -1,
+                          entryKey: entry._uid ?? '',
                         }))
-                        if (affectedEntryIndices.size > 0) {
-                          indexed.sort((a, b) => {
-                            const aChanged = affectedEntryIndices.has(a.globalIdx) ? 0 : 1
-                            const bChanged = affectedEntryIndices.has(b.globalIdx) ? 0 : 1
+                        if (affectedEntryKeys.size > 0) {
+                          rows.sort((a, b) => {
+                            const aChanged = affectedEntryKeys.has(a.entryKey) ? 0 : 1
+                            const bChanged = affectedEntryKeys.has(b.entryKey) ? 0 : 1
                             return aChanged - bChanged
                           })
                         }
-                        return indexed
-                      })().map(({ entry: row, globalIdx: rowIdx }) => {
+                        return rows
+                      })().map(({ entry: row, entryKey }) => {
                         const rowKey = row._uid ?? ''
                         const isExcluded = preview.isExcluded(rowKey)
-                        const hasChanges = affectedEntryIndices.has(rowIdx)
+                        const hasChanges = affectedEntryKeys.has(entryKey)
                         const rowUnfetchable = isUnfetchable(row)
                         const rowFetchable = isFetchable(row)
                         return (
@@ -1548,7 +1538,7 @@ export default function Proration() {
                             />
                           </td>
                           {isColumnVisible('owner') && (() => {
-                            const hl = getCellHighlight(rowIdx, 'owner')
+                            const hl = getCellHighlight(entryKey, 'owner')
                             return (
                             <td className={`py-2 px-3 text-gray-900 whitespace-nowrap ${hl ? 'bg-green-50' : ''}`} title={hl ? formatHighlightTitle(hl) : undefined}>
                               {row.owner}

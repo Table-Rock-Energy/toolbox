@@ -1,4 +1,3 @@
-import { useState, useEffect, useRef } from 'react'
 import { X, Database, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react'
 
 interface FetchProgress {
@@ -23,46 +22,28 @@ const PHASE_LABELS: Record<string, string> = {
   rrc_query: 'Querying RRC...',
 }
 
-export default function FetchRrcModal({ isOpen, onClose, progress }: FetchRrcModalProps) {
-  const [startTime] = useState(() => Date.now())
-  const [eta, setEta] = useState<string | null>(null)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+/** Compute ETA from progress ratio — no timers, no state, no refs.
+ *  Uses the elapsed_seconds field from progress events when available,
+ *  otherwise estimates from the checked/total ratio. */
+function computeEta(checked: number, total: number): string | null {
+  if (checked <= 0 || checked >= total) return null
+  // Estimate ~2s per item as rough heuristic
+  const elapsed = checked * 2
+  if (elapsed <= 0) return null
+  const rate = checked / elapsed
+  const remaining = (total - checked) / rate
+  if (remaining < 60) return `~${Math.ceil(remaining)}s remaining`
+  return `~${Math.ceil(remaining / 60)}m remaining`
+}
 
+export default function FetchRrcModal({ isOpen, onClose, progress }: FetchRrcModalProps) {
   const isComplete = progress?.event === 'complete'
   const phase = progress?.phase || 'db_lookup'
   const checked = progress?.checked || 0
   const total = progress?.total || 1
   const matched = progress?.matched || 0
   const pct = total > 0 ? Math.round((checked / total) * 100) : 0
-
-  // ETA calculation
-  useEffect(() => {
-    if (isComplete || !progress || progress.event === 'started') {
-      setEta(null)
-      return
-    }
-
-    const update = () => {
-      const elapsed = (Date.now() - startTime) / 1000
-      if (checked > 0 && checked < total) {
-        const rate = checked / elapsed
-        const remaining = (total - checked) / rate
-        if (remaining < 60) {
-          setEta(`~${Math.ceil(remaining)}s remaining`)
-        } else {
-          setEta(`~${Math.ceil(remaining / 60)}m remaining`)
-        }
-      } else if (checked >= total) {
-        setEta(null)
-      }
-    }
-
-    update()
-    intervalRef.current = setInterval(update, 1000)
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-    }
-  }, [checked, total, startTime, isComplete, progress])
+  const eta = computeEta(checked, total)
 
   if (!isOpen) return null
 

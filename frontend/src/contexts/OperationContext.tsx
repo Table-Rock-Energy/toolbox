@@ -182,10 +182,10 @@ export function OperationProvider({ children }: { children: ReactNode }) {
               currentEntries[globalIndex][change.field] = change.proposed_value
               stepChangesApplied++
 
-              const changeKey = `${globalIndex}:${change.field}`
+              const changeKey = `${entryKey}:${change.field}`
               if (!allChanges.has(changeKey)) {
                 allChanges.set(changeKey, {
-                  entry_index: globalIndex,
+                  entry_key: entryKey,
                   field: change.field,
                   original_value: originalValue,
                   new_value: change.proposed_value,
@@ -271,10 +271,10 @@ export function OperationProvider({ children }: { children: ReactNode }) {
                   const originalValue = String(currentEntries[globalIndex][change.field] ?? '')
                   currentEntries[globalIndex][change.field] = change.proposed_value
                   stepChangesApplied++
-                  const changeKey = `${globalIndex}:${change.field}`
+                  const changeKey = `${entryKey}:${change.field}`
                   if (!allChanges.has(changeKey)) {
                     allChanges.set(changeKey, {
-                      entry_index: globalIndex,
+                      entry_key: entryKey,
                       field: change.field,
                       original_value: originalValue,
                       new_value: change.proposed_value,

@@ -116,8 +116,8 @@ export default function EnrichmentModal({
   }, [enrichmentChanges])
 
   const uniqueEntries = useMemo(() => {
-    const entries = new Set<number>()
-    enrichmentChanges.forEach(c => entries.add(c.entry_index))
+    const entries = new Set<string>()
+    enrichmentChanges.forEach(c => entries.add(c.entry_key))
     return entries.size
   }, [enrichmentChanges])
 

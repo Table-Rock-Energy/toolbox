@@ -323,21 +323,11 @@ export default function Title() {
   const errorMessage = operation?.tool === toolName ? operation.errorMessage : null
   const enrichModalOpen = operation?.tool === toolName && (operation.status === 'running' || operation.status === 'completed' || operation.status === 'error')
 
-  // Map _uid → original (unfiltered) index for correct highlight lookup
-  const entryOriginalIndex = useMemo(() => {
-    const map = new Map<string, number>()
-    if (activeJob?.result?.entries) {
-      activeJob.result.entries.forEach((e, i) => {
-        map.set(e._uid ?? `title-${i}`, i)
-      })
-    }
-    return map
-  }, [activeJob?.result?.entries])
-
-  const affectedEntryIndices = useMemo(() => {
-    const indices = new Set<number>()
-    enrichmentChanges.forEach(c => indices.add(c.entry_index))
-    return indices
+  // Derive set of entry keys that have enrichment changes
+  const affectedEntryKeys = useMemo(() => {
+    const keys = new Set<string>()
+    enrichmentChanges.forEach(c => keys.add(c.entry_key))
+    return keys
   }, [enrichmentChanges])
 
   const { editedFields } = preview
@@ -386,8 +376,8 @@ export default function Title() {
     if (activeJob?.result?.entries?.length) setPanelCollapsed(true)
   }, [activeJob?.result?.entries, setPanelCollapsed])
 
-  const getCellHighlight = (entryIndex: number, field: string) => {
-    return enrichmentChanges.get(`${entryIndex}:${field}`) || null
+  const getCellHighlight = (entryKey: string, field: string) => {
+    return enrichmentChanges.get(`${entryKey}:${field}`) || null
   }
 
   const getEntryStatus = (entry: OwnerEntry): { label: string; color: string } => {
@@ -1015,24 +1005,23 @@ export default function Title() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {(() => {
-                        // Build display list with original indices, sort changed rows to top
-                        const indexed = preview.previewEntries.map((entry) => ({
+                        // Build display list, sort enriched rows to top
+                        const rows = preview.previewEntries.map((entry) => ({
                           entry,
-                          globalIdx: entryOriginalIndex.get(entry._uid ?? '') ?? -1,
+                          entryKey: entry._uid ?? '',
                         }))
-                        if (affectedEntryIndices.size > 0) {
-                          indexed.sort((a, b) => {
-                            const aChanged = affectedEntryIndices.has(a.globalIdx) ? 0 : 1
-                            const bChanged = affectedEntryIndices.has(b.globalIdx) ? 0 : 1
+                        if (affectedEntryKeys.size > 0) {
+                          rows.sort((a, b) => {
+                            const aChanged = affectedEntryKeys.has(a.entryKey) ? 0 : 1
+                            const bChanged = affectedEntryKeys.has(b.entryKey) ? 0 : 1
                             return aChanged - bChanged
                           })
                         }
-                        return indexed
-                      })().map(({ entry, globalIdx: rowIdx }) => {
-                        const entryKey = entry._uid ?? ''
+                        return rows
+                      })().map(({ entry, entryKey }) => {
                         const isExcluded = preview.isExcluded(entryKey)
                         const status = getEntryStatus(entry)
-                        const hasChanges = affectedEntryIndices.has(rowIdx)
+                        const hasChanges = affectedEntryKeys.has(entryKey)
                         return (
                           <tr
                             key={entryKey}
@@ -1056,7 +1045,7 @@ export default function Title() {
                               </td>
                             )}
                             {isColumnVisible('full_name') && (() => {
-                              const hl = getCellHighlight(rowIdx, 'full_name')
+                              const hl = getCellHighlight(entryKey, 'full_name')
                               return (
                               <HighlightedCell highlight={hl} value={entry.full_name} className={`py-2 px-3 text-gray-900 ${isExcluded ? 'line-through' : ''}`}>
                                 <EditableCell
@@ -1095,7 +1084,7 @@ export default function Title() {
                               </td>
                             )}
                             {isColumnVisible('address') && (() => {
-                              const hl = getCellHighlight(rowIdx, 'address')
+                              const hl = getCellHighlight(entryKey, 'address')
                               return (
                               <HighlightedCell highlight={hl} value={entry.address} className="py-2 px-3 text-gray-600 text-xs">
                                 <EditableCell
@@ -1106,7 +1095,7 @@ export default function Title() {
                               )
                             })()}
                             {isColumnVisible('address_line_2') && (() => {
-                              const hl = getCellHighlight(rowIdx, 'address_line_2')
+                              const hl = getCellHighlight(entryKey, 'address_line_2')
                               return (
                               <HighlightedCell highlight={hl} value={entry.address_line_2} className="py-2 px-3 text-gray-600 text-xs">
                                 <EditableCell
@@ -1117,7 +1106,7 @@ export default function Title() {
                               )
                             })()}
                             {isColumnVisible('city') && (() => {
-                              const hl = getCellHighlight(rowIdx, 'city')
+                              const hl = getCellHighlight(entryKey, 'city')
                               return (
                               <HighlightedCell highlight={hl} value={entry.city} className="py-2 px-3 text-gray-600 text-xs">
                                 <EditableCell
@@ -1128,7 +1117,7 @@ export default function Title() {
                               )
                             })()}
                             {isColumnVisible('state') && (() => {
-                              const hl = getCellHighlight(rowIdx, 'state')
+                              const hl = getCellHighlight(entryKey, 'state')
                               return (
                               <HighlightedCell highlight={hl} value={entry.state} className="py-2 px-3 text-gray-600 text-xs">
                                 <EditableCell
@@ -1139,7 +1128,7 @@ export default function Title() {
                               )
                             })()}
                             {isColumnVisible('zip_code') && (() => {
-                              const hl = getCellHighlight(rowIdx, 'zip_code')
+                              const hl = getCellHighlight(entryKey, 'zip_code')
                               return (
                               <HighlightedCell highlight={hl} value={entry.zip_code} className="py-2 px-3 text-gray-600 text-xs">
                                 <EditableCell

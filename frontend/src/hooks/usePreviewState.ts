@@ -52,7 +52,8 @@ export function usePreviewState<T extends object>(
   const entries = sourceEntries
 
   // updateEntries: no-op now, enrichment writes directly to activeJob
-  const updateEntries = useCallback((_newEntries: T[]) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const updateEntries = useCallback((_: T[]) => {
     // Enrichment updates flow through activeJob → filteredEntries → sourceEntries
   }, [])
 

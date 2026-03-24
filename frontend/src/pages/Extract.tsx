@@ -475,20 +475,11 @@ export default function Extract() {
   // Derive modal isOpen from context
   const enrichModalOpen = operation?.tool === toolName && (operation.status === 'running' || operation.status === 'completed' || operation.status === 'error')
 
-  // Map entry_number → original (unfiltered) index for correct highlight lookup
-  const entryOriginalIndex = useMemo(() => {
-    const map = new Map<string, number>()
-    if (activeJob?.result?.entries) {
-      activeJob.result.entries.forEach((e, i) => map.set(e.entry_number, i))
-    }
-    return map
-  }, [activeJob?.result?.entries])
-
-  // Derive affectedEntryIndices from enrichmentChanges
-  const affectedEntryIndices = useMemo(() => {
-    const indices = new Set<number>()
-    enrichmentChanges.forEach(c => indices.add(c.entry_index))
-    return indices
+  // Derive set of entry keys that have enrichment changes
+  const affectedEntryKeys = useMemo(() => {
+    const keys = new Set<string>()
+    enrichmentChanges.forEach(c => keys.add(c.entry_key))
+    return keys
   }, [enrichmentChanges])
 
   // Start enrichment via OperationContext
@@ -578,8 +569,8 @@ export default function Extract() {
 
   const isColVisible = (key: string) => visibleColumns.has(key)
 
-  const getCellHighlight = (entryIndex: number, field: string) => {
-    return enrichmentChanges.get(`${entryIndex}:${field}`) || null
+  const getCellHighlight = (entryKey: string, field: string) => {
+    return enrichmentChanges.get(`${entryKey}:${field}`) || null
   }
 
   return (
@@ -1084,22 +1075,22 @@ export default function Extract() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {(() => {
-                        // Build display list, map to original unfiltered indices for correct highlight lookup
-                        const indexed = preview.previewEntries.map((entry) => ({
+                        // Build display list, sort enriched rows to top
+                        const rows = preview.previewEntries.map((entry) => ({
                           entry,
-                          globalIdx: entryOriginalIndex.get(entry.entry_number) ?? -1,
+                          entryKey: entry.entry_number,
                         }))
-                        if (affectedEntryIndices.size > 0) {
-                          indexed.sort((a, b) => {
-                            const aChanged = affectedEntryIndices.has(a.globalIdx) ? 0 : 1
-                            const bChanged = affectedEntryIndices.has(b.globalIdx) ? 0 : 1
+                        if (affectedEntryKeys.size > 0) {
+                          rows.sort((a, b) => {
+                            const aChanged = affectedEntryKeys.has(a.entryKey) ? 0 : 1
+                            const bChanged = affectedEntryKeys.has(b.entryKey) ? 0 : 1
                             return aChanged - bChanged
                           })
                         }
-                        return indexed
-                      })().map(({ entry, globalIdx: rowIdx }) => {
+                        return rows
+                      })().map(({ entry, entryKey }) => {
                         const isExcluded = preview.isExcluded(entry.entry_number)
-                        const hasChanges = affectedEntryIndices.has(rowIdx)
+                        const hasChanges = affectedEntryKeys.has(entryKey)
                         return (
                           <tr
                             key={entry.entry_number}
@@ -1123,7 +1114,7 @@ export default function Extract() {
                               </td>
                             )}
                             {isColVisible('primary_name') && (() => {
-                              const hl = getCellHighlight(rowIdx, 'primary_name')
+                              const hl = getCellHighlight(entryKey, 'primary_name')
                               return (
                               <HighlightedCell highlight={hl} value={entry.primary_name} className={`py-2 px-3 text-gray-900 ${isExcluded ? 'line-through' : ''}`}>
                                 <EditableCell
@@ -1164,7 +1155,7 @@ export default function Extract() {
                               </td>
                             )}
                             {isColVisible('mailing_address') && (() => {
-                              const hl = getCellHighlight(rowIdx, 'mailing_address')
+                              const hl = getCellHighlight(entryKey, 'mailing_address')
                               return (
                               <HighlightedCell highlight={hl} value={entry.mailing_address} className="py-2 px-3 text-gray-600 text-xs">
                                 <EditableCell
@@ -1175,7 +1166,7 @@ export default function Extract() {
                               )
                             })()}
                             {isColVisible('mailing_address_2') && (() => {
-                              const hl = getCellHighlight(rowIdx, 'mailing_address_2')
+                              const hl = getCellHighlight(entryKey, 'mailing_address_2')
                               return (
                               <HighlightedCell highlight={hl} value={entry.mailing_address_2} className="py-2 px-3 text-gray-600 text-xs">
                                 <EditableCell
@@ -1186,7 +1177,7 @@ export default function Extract() {
                               )
                             })()}
                             {isColVisible('city') && (() => {
-                              const hl = getCellHighlight(rowIdx, 'city')
+                              const hl = getCellHighlight(entryKey, 'city')
                               return (
                               <HighlightedCell highlight={hl} value={entry.city} className="py-2 px-3 text-gray-600 text-xs">
                                 <EditableCell
@@ -1197,7 +1188,7 @@ export default function Extract() {
                               )
                             })()}
                             {isColVisible('state') && (() => {
-                              const hl = getCellHighlight(rowIdx, 'state')
+                              const hl = getCellHighlight(entryKey, 'state')
                               return (
                               <HighlightedCell highlight={hl} value={entry.state} className="py-2 px-3 text-gray-600 text-xs">
                                 <EditableCell
@@ -1208,7 +1199,7 @@ export default function Extract() {
                               )
                             })()}
                             {isColVisible('zip_code') && (() => {
-                              const hl = getCellHighlight(rowIdx, 'zip_code')
+                              const hl = getCellHighlight(entryKey, 'zip_code')
                               return (
                               <HighlightedCell highlight={hl} value={entry.zip_code} className="py-2 px-3 text-gray-600 text-xs">
                                 <EditableCell

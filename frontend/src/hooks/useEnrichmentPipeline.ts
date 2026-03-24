@@ -24,7 +24,7 @@ export interface AutoAppliedChange {
 }
 
 export interface EnrichmentCellChange {
-  entry_index: number
+  entry_key: string
   field: string
   original_value: string
   new_value: string
@@ -42,14 +42,14 @@ export interface StepStatus {
   completedAt?: number
 }
 
-/** Lookup: entry_index → field → ProposedChange */
-export type ChangesByEntry = Map<number, Map<string, ProposedChange>>
+/** Lookup: entry_key → field → ProposedChange */
+export type ChangesByEntry = Map<string, Map<string, ProposedChange>>
 
 export interface UseEnrichmentPipelineReturn {
   activeAction: PipelineStep | null
   proposedChanges: ProposedChange[] | null
   changesByEntry: ChangesByEntry
-  affectedEntryIndices: Set<number>
+  affectedEntryKeys: Set<string>
   checkedIndices: Set<number>
   completedSteps: Set<PipelineStep>
   recentlyAppliedKeys: Set<string>
@@ -363,11 +363,11 @@ export function useEnrichmentPipeline<T extends object>(
             entry[change.field] = change.proposed_value
             appliedCount++
 
-            const changeKey = `${change.entry_index}:${change.field}`
+            const changeKey = `${entryKey}:${change.field}`
             // Only record the FIRST original value
             if (!allChanges.has(changeKey)) {
               allChanges.set(changeKey, {
-                entry_index: change.entry_index,
+                entry_key: entryKey,
                 field: change.field,
                 original_value: originalValue,
                 new_value: change.proposed_value,
@@ -435,22 +435,24 @@ export function useEnrichmentPipeline<T extends object>(
     setEnrichmentChanges(new Map())
   }, [])
 
-  // Build lookup maps for inline rendering: entry_index → field → change
+  // Build lookup maps for inline rendering: entry_key → field → change
   const changesByEntry = useMemo<ChangesByEntry>(() => {
     const map: ChangesByEntry = new Map()
     if (!proposedChanges) return map
     for (const change of proposedChanges) {
-      let fieldMap = map.get(change.entry_index)
+      const entry = previewEntries[change.entry_index]
+      const key = entry ? String(entry[keyField]) : String(change.entry_index)
+      let fieldMap = map.get(key)
       if (!fieldMap) {
         fieldMap = new Map()
-        map.set(change.entry_index, fieldMap)
+        map.set(key, fieldMap)
       }
       fieldMap.set(change.field, change)
     }
     return map
-  }, [proposedChanges])
+  }, [proposedChanges, previewEntries, keyField])
 
-  const affectedEntryIndices = useMemo(
+  const affectedEntryKeys = useMemo(
     () => new Set(changesByEntry.keys()),
     [changesByEntry],
   )
@@ -459,7 +461,7 @@ export function useEnrichmentPipeline<T extends object>(
     activeAction,
     proposedChanges,
     changesByEntry,
-    affectedEntryIndices,
+    affectedEntryKeys,
     checkedIndices,
     completedSteps,
     recentlyAppliedKeys,
