@@ -482,6 +482,9 @@ export default function Extract() {
     return keys
   }, [enrichmentChanges])
 
+  // Entry keys that were processed by enrichment (for no-change checkmark)
+  const processedEntryKeys = operation?.tool === toolName ? operation.processedEntryKeys : new Set<string>()
+
   // Start enrichment via OperationContext — only visible/filtered entries
   const { editedFields } = preview
   const handleStartEnrichment = useCallback(() => {
@@ -1098,6 +1101,7 @@ export default function Extract() {
                       })().map(({ entry, entryKey }) => {
                         const isExcluded = preview.isExcluded(entry.entry_number)
                         const hasChanges = affectedEntryKeys.has(entryKey)
+                        const processedNoChange = !hasChanges && processedEntryKeys.has(entryKey)
                         return (
                           <tr
                             key={entry.entry_number}
@@ -1108,12 +1112,17 @@ export default function Extract() {
                             `}
                           >
                             <td className="py-2 px-3">
-                              <input
-                                type="checkbox"
-                                checked={!isExcluded}
-                                onChange={() => preview.toggleExclude(entry.entry_number)}
-                                className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
-                              />
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="checkbox"
+                                  checked={!isExcluded}
+                                  onChange={() => preview.toggleExclude(entry.entry_number)}
+                                  className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                                />
+                                {processedNoChange && (
+                                  <span title="Processed — no changes needed"><CheckCircle className="w-3 h-3 text-green-400" /></span>
+                                )}
+                              </div>
                             </td>
                             {isColVisible('entry_number') && (
                               <td className={`py-2 px-3 text-gray-500 ${isExcluded ? 'line-through' : ''}`}>

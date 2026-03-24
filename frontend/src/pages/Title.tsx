@@ -324,6 +324,7 @@ export default function Title() {
   const enrichModalOpen = operation?.tool === toolName && (operation.status === 'running' || operation.status === 'completed' || operation.status === 'error')
 
   // Derive set of entry keys that have enrichment changes
+  const processedEntryKeys = operation?.tool === toolName ? operation.processedEntryKeys : new Set<string>()
   const affectedEntryKeys = useMemo(() => {
     const keys = new Set<string>()
     enrichmentChanges.forEach(c => keys.add(c.entry_key))
@@ -1030,6 +1031,7 @@ export default function Title() {
                         const isExcluded = preview.isExcluded(entryKey)
                         const status = getEntryStatus(entry)
                         const hasChanges = affectedEntryKeys.has(entryKey)
+                        const processedNoChange = !hasChanges && processedEntryKeys.has(entryKey)
                         return (
                           <tr
                             key={entryKey}
@@ -1044,12 +1046,17 @@ export default function Title() {
                           >
                             {isColumnVisible('checkbox') && (
                               <td className="py-2 px-3">
-                                <input
-                                  type="checkbox"
-                                  checked={!isExcluded}
-                                  onChange={() => preview.toggleExclude(entryKey)}
-                                  className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
-                                />
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={!isExcluded}
+                                    onChange={() => preview.toggleExclude(entryKey)}
+                                    className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                                  />
+                                  {processedNoChange && (
+                                    <span title="Processed — no changes needed"><CheckCircle className="w-3 h-3 text-green-400" /></span>
+                                  )}
+                                </div>
                               </td>
                             )}
                             {isColumnVisible('full_name') && (() => {

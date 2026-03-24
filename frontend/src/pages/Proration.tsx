@@ -401,6 +401,7 @@ export default function Proration() {
   const enrichModalOpen = operation?.tool === toolName && (operation.status === 'running' || operation.status === 'completed' || operation.status === 'error')
 
   // Derive set of entry keys that have enrichment changes
+  const processedEntryKeys = operation?.tool === toolName ? operation.processedEntryKeys : new Set<string>()
   const affectedEntryKeys = useMemo(() => {
     const keys = new Set<string>()
     enrichmentChanges.forEach(c => keys.add(c.entry_key))
@@ -1533,17 +1534,23 @@ export default function Proration() {
                         const rowKey = row._uid ?? ''
                         const isExcluded = preview.isExcluded(rowKey)
                         const hasChanges = affectedEntryKeys.has(entryKey)
+                        const processedNoChange = !hasChanges && processedEntryKeys.has(entryKey)
                         const rowUnfetchable = isUnfetchable(row)
                         const rowFetchable = isFetchable(row)
                         return (
                         <tr key={rowKey} className={`${hasChanges ? 'bg-blue-50' : rowUnfetchable ? 'bg-gray-100' : rowFetchable ? 'bg-orange-50' : row.fetch_status === 'multiple_matches' ? 'bg-yellow-50' : ''} ${isExcluded ? 'opacity-50 bg-gray-100' : ''} transition-colors duration-[2000ms]`}>
                           <td className="py-2 px-3">
-                            <input
-                              type="checkbox"
-                              checked={!isExcluded}
-                              onChange={() => preview.toggleExclude(rowKey)}
-                              className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
-                            />
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="checkbox"
+                                checked={!isExcluded}
+                                onChange={() => preview.toggleExclude(rowKey)}
+                                className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                              />
+                              {processedNoChange && (
+                                <span title="Processed — no changes needed"><CheckCircle className="w-3 h-3 text-green-400" /></span>
+                              )}
+                            </div>
                           </td>
                           {isColumnVisible('owner') && (() => {
                             const hl = getCellHighlight(entryKey, 'owner')

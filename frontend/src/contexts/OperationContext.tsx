@@ -30,6 +30,7 @@ interface OperationState {
   stepBatchResults: Map<PipelineStep, StepBatchResult>
   batchProgress: BatchProgress | null
   enrichmentChanges: Map<string, EnrichmentCellChange>
+  processedEntryKeys: Set<string>
   completedSteps: Set<PipelineStep>
   entriesSnapshot: Record<string, unknown>[] | null
   resultEntries: Record<string, unknown>[] | null
@@ -353,6 +354,12 @@ export function OperationProvider({ children }: { children: ReactNode }) {
     // Snapshot entries for undo
     const entriesSnapshot = opts.entries.map(e => ({ ...e }))
 
+    // Build set of all entry keys being sent to enrichment
+    const processedKeys = new Set<string>()
+    for (const e of opts.entries) {
+      processedKeys.add(String(e[opts.keyField]))
+    }
+
     // Initialize operation state
     setOperation({
       tool: opts.tool,
@@ -361,6 +368,7 @@ export function OperationProvider({ children }: { children: ReactNode }) {
       stepBatchResults: new Map(),
       batchProgress: null,
       enrichmentChanges: new Map(),
+      processedEntryKeys: processedKeys,
       completedSteps: new Set(),
       entriesSnapshot,
       resultEntries: null,

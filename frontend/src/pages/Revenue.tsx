@@ -320,6 +320,7 @@ export default function Revenue() {
   const enrichModalOpen = operation?.tool === toolName && (operation.status === 'running' || operation.status === 'completed' || operation.status === 'error')
 
   // Derive set of entry keys that have enrichment changes
+  const processedEntryKeys = operation?.tool === toolName ? operation.processedEntryKeys : new Set<string>()
   const affectedEntryKeys = useMemo(() => {
     const keys = new Set<string>()
     enrichmentChanges.forEach(c => keys.add(c.entry_key))
@@ -999,18 +1000,24 @@ export default function Revenue() {
                       })().map(({ entry: row, entryKey }) => {
                         const isExcluded = preview.isExcluded(row._id)
                         const hasChanges = affectedEntryKeys.has(entryKey)
+                        const processedNoChange = !hasChanges && processedEntryKeys.has(entryKey)
                         return (
                           <tr
                             key={row._id}
                             className={`${hasChanges ? 'bg-blue-50' : ''} ${isExcluded ? 'opacity-50 bg-gray-100' : ''} transition-colors duration-[2000ms]`}
                           >
                             <td className="py-2 px-2">
-                              <input
-                                type="checkbox"
-                                checked={!isExcluded}
-                                onChange={() => preview.toggleExclude(row._id)}
-                                className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
-                              />
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="checkbox"
+                                  checked={!isExcluded}
+                                  onChange={() => preview.toggleExclude(row._id)}
+                                  className="rounded border-gray-300 text-tre-teal focus:ring-tre-teal"
+                                />
+                                {processedNoChange && (
+                                  <span title="Processed — no changes needed"><CheckCircle className="w-3 h-3 text-green-400" /></span>
+                                )}
+                              </div>
                             </td>
                             {isColVisible('payor') && <td className="py-2 px-2 text-gray-600 text-xs whitespace-nowrap">{row.payor || '\u2014'}</td>}
                             {isColVisible('check_number') && <td className="py-2 px-2 text-gray-600 text-xs">{row.check_number || '\u2014'}</td>}
