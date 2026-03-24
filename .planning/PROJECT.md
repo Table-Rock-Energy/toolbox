@@ -69,22 +69,22 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 
 ### Active
 
-<!-- Current milestone: v1.7 Batch Processing & Resilience -->
+<!-- Current milestone: v1.8 Preview System Overhaul -->
 
-## Current Milestone: v1.7 Batch Processing & Resilience
+## Current Milestone: v1.8 Preview System Overhaul
 
-**Goal:** Eliminate timeouts and lost work by batching long operations, adding progress feedback, and making operations survive navigation.
+**Goal:** Fix the preview data pipeline so filtering, enrichment highlights, and export all stay consistent regardless of when filters are applied.
 
 **Target features:**
-- Client-side batch orchestration for AI cleanup (25-entry batches with ETA)
-- Streaming batch responses for all Gemini-touching endpoints
-- Abort/cancel propagation (client → backend)
-- Partial results on failure (return successful batches)
-- Proration cache-first lookup with startup pre-warming
-- Proration batch Firestore reads (asyncio.gather)
-- Revenue per-PDF progress streaming
-- Operation persistence across navigation (background job pattern)
-- Global operation state (results survive page changes)
+- Key-based highlight tracking (replace array indices with stable entry keys)
+- Filter-anytime correctness (before, during, after enrichment)
+- Enrichment scoped to visible/filtered rows only (saves API costs)
+- Click-to-reveal cell changes (green cells, click to see original value)
+- No-change row indicator (subtle checkmark for processed-but-unchanged rows)
+- Entity type filter fix (correct exclusion across all tools)
+- RRC lease-only search first, district+lease fallback
+- Fetch-missing stop button (same pattern as enrichment stop)
+- Export respects current filter state + enrichment changes
 
 ### Out of Scope
 
@@ -110,6 +110,7 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - **Extract formats:** Standard OCC Exhibit A, ECF multiunit well filings (with optional Convey 640 CSV/Excel)
 - **Shipped:** v1.3 Security Hardening (2026-03-11), v1.4 ECF Extraction (2026-03-12), v1.5 Enrichment Pipeline (2026-03-17), v1.6 Pipeline Fixes & Unified Enrichment (2026-03-19)
 - **Shipped:** v1.7 Batch Processing & Resilience (2026-03-20)
+- **In progress:** v1.8 Preview System Overhaul (started 2026-03-24)
 
 ## Constraints
 
@@ -144,4 +145,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Local variable threading in runAllSteps (not React state) | Avoids stale closure between sequential async steps | ✓ Good — v1.6 |
 
 ---
-*Last updated: 2026-03-20 after v1.7 milestone complete*
+*Last updated: 2026-03-24 after v1.8 milestone started*
