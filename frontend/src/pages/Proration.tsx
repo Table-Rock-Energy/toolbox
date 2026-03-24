@@ -1737,6 +1737,7 @@ export default function Proration() {
         onClose={() => setShowFetchModal(false)}
         onStop={isFetchingMissing ? handleStopFetch : undefined}
         progress={fetchProgress}
+        isStopped={!isFetchingMissing && showFetchModal && fetchProgress?.event !== 'complete'}
       />
 
       {/* Cancel Confirm Dialog */}

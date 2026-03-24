@@ -16,6 +16,7 @@ interface FetchRrcModalProps {
   onClose: () => void
   onStop?: () => void
   progress: FetchProgress | null
+  isStopped?: boolean
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -37,8 +38,8 @@ function computeEta(checked: number, total: number): string | null {
   return `~${Math.ceil(remaining / 60)}m remaining`
 }
 
-export default function FetchRrcModal({ isOpen, onClose, onStop, progress }: FetchRrcModalProps) {
-  const isComplete = progress?.event === 'complete'
+export default function FetchRrcModal({ isOpen, onClose, onStop, progress, isStopped }: FetchRrcModalProps) {
+  const isComplete = progress?.event === 'complete' || isStopped === true
   const phase = progress?.phase || 'db_lookup'
   const checked = progress?.checked || 0
   const total = progress?.total || 1

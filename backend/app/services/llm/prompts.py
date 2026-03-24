@@ -14,6 +14,7 @@ Apply these corrections:
 - Name abbreviations: Expand common abbreviations (Jno -> John, Wm -> William, Chas -> Charles, Jas -> James, Robt -> Robert, Thos -> Thomas, Geo -> George).
 - Suffix standardization: Normalize suffixes to standard forms: Jr./Junior/junior -> Jr, Sr./Senior/senior -> Sr, The Third/3rd -> III, The Second/2nd -> II. Standard suffixes are: Jr, Sr, I, II, III, IV.
 - Entity type inference: If the name contains "Trust", "Estate", "LLC", "Corp", "Inc", "Foundation", "Partnership", "LP", "LLP" but entity_type doesn't match, suggest the correct entity_type.
+- Legal annotations in names: If primary_name contains "as joint tenants", "HWJT", "JTRS", "JTWROS", or a second person's name after "and", clean the name to just the first person and move the annotation to notes.
 - Address cleanup: Strip "c/o" prefixes from mailing_address and suggest moving them to a notes field. Keep the remaining address.
 - State abbreviation: Correct state to a valid 2-letter US state code (e.g., "Oklahoma" -> "OK").
 - ZIP format: Normalize to 5 digits or 5+4 format (XXXXX or XXXXX-XXXX).

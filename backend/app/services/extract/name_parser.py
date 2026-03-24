@@ -404,6 +404,15 @@ def clean_name_for_export(name: str) -> str:
     cleaned = re.sub(r',?\s+Deceased\s*$', '', cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r',?\s+Deceased,', ',', cleaned, flags=re.IGNORECASE)
 
+    # Remove ", and [Name(s)], as joint tenants" and similar relational suffixes
+    cleaned = re.sub(r',?\s+and\s+[\w\s.]+,?\s+as\s+joint\s+tenants?\b.*$', '', cleaned, flags=re.IGNORECASE)
+
+    # Remove trailing "as joint tenants" / "as tenants in common" without second name
+    cleaned = re.sub(r',?\s+as\s+(?:joint\s+)?tenants?\s*(?:in\s+common)?\s*$', '', cleaned, flags=re.IGNORECASE)
+
+    # Remove HWJT, JTRS, JTWROS markers
+    cleaned = re.sub(r',?\s+(?:HWJT|JTRS|JTWROS)\b', '', cleaned, flags=re.IGNORECASE)
+
     # Clean up extra whitespace and trailing punctuation
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
     cleaned = cleaned.rstrip(',').strip()

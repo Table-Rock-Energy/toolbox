@@ -153,8 +153,9 @@ def _parse_single_entry(raw_text: str) -> Optional[PartyEntry]:
         text_cleaned, is_address_unknown
     )
 
-    # Clean up the name
-    primary_name = _clean_name(name_text)
+    # Clean up the name (basic cleanup + export-level annotation stripping)
+    from app.services.extract.name_parser import clean_name_for_export
+    primary_name = clean_name_for_export(_clean_name(name_text))
 
     # Detect entity type
     entity_type = _detect_entity_type(text_without_number)
