@@ -452,10 +452,11 @@ async def fetch_missing_rrc_data(request: FetchMissingRequest, background_tasks:
                 continue
 
             rrc_info = None
-            if district and lease_number:
-                rrc_info = await lookup_rrc_acres(district, lease_number)
-            if rrc_info is None and lease_number:
+            # Try lease-only first (covers most cases), then district+lease fallback
+            if lease_number:
                 rrc_info = await lookup_rrc_by_lease_number(lease_number)
+            if rrc_info is None and district and lease_number:
+                rrc_info = await lookup_rrc_acres(district, lease_number)
 
             if rrc_info:
                 _apply_rrc_info(row, rrc_info, WellType)

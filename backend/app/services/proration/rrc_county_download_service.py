@@ -458,15 +458,15 @@ async def fetch_individual_leases(
                 _warm_rrc_session(session)
                 _human_delay(1.0, 2.0)
 
+                # Try lease-only first (no district), then district+lease fallback
                 search_data = {
                     "methodToCall": "search",
-                    "searchArgs.districtCodeArg": district,
                     "searchArgs.leaseNumberArg": lease_number,
                 }
                 if county_code:
                     search_data["searchArgs.countyCodeArg"] = county_code
 
-                _trace("Individual search: district=%s lease=%s county=%s", district, lease_number, county_code or "none")
+                _trace("Individual search (lease-only): lease=%s county=%s", lease_number, county_code or "none")
                 loop = asyncio.get_event_loop()
                 resp = await loop.run_in_executor(
                     None,
@@ -474,7 +474,21 @@ async def fetch_individual_leases(
                 )
                 resp.raise_for_status()
 
-                if "No records found" in resp.text or "No results found" in resp.text or "0 records" in resp.text.lower():
+                no_results = "No records found" in resp.text or "No results found" in resp.text or "0 records" in resp.text.lower()
+
+                # Fallback: retry with district if lease-only found nothing
+                if no_results and district:
+                    _human_delay(0.5, 1.0)
+                    search_data["searchArgs.districtCodeArg"] = district
+                    _trace("Retry with district: district=%s lease=%s", district, lease_number)
+                    resp = await loop.run_in_executor(
+                        None,
+                        lambda: session.post(OIL_SEARCH_URL, data=search_data, timeout=individual_timeout),
+                    )
+                    resp.raise_for_status()
+                    no_results = "No records found" in resp.text or "No results found" in resp.text or "0 records" in resp.text.lower()
+
+                if no_results:
                     _trace("No RRC data for %s-%s", district, lease_number)
                     return
 

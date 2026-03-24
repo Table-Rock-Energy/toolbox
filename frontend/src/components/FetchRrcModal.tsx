@@ -14,6 +14,7 @@ interface FetchProgress {
 interface FetchRrcModalProps {
   isOpen: boolean
   onClose: () => void
+  onStop?: () => void
   progress: FetchProgress | null
 }
 
@@ -36,7 +37,7 @@ function computeEta(checked: number, total: number): string | null {
   return `~${Math.ceil(remaining / 60)}m remaining`
 }
 
-export default function FetchRrcModal({ isOpen, onClose, progress }: FetchRrcModalProps) {
+export default function FetchRrcModal({ isOpen, onClose, onStop, progress }: FetchRrcModalProps) {
   const isComplete = progress?.event === 'complete'
   const phase = progress?.phase || 'db_lookup'
   const checked = progress?.checked || 0
@@ -95,11 +96,21 @@ export default function FetchRrcModal({ isOpen, onClose, progress }: FetchRrcMod
             </div>
           </div>
 
-          {/* Live match counter */}
+          {/* Live match counter + stop button */}
           {!isComplete && (
-            <p className="text-sm text-gray-600">
-              <span className="font-medium text-green-600">{matched}</span> matched so far
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-600">
+                <span className="font-medium text-green-600">{matched}</span> matched so far
+              </p>
+              {onStop && (
+                <button
+                  onClick={onStop}
+                  className="px-3 py-1 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+                >
+                  Stop
+                </button>
+              )}
+            </div>
           )}
 
           {/* Completion summary */}

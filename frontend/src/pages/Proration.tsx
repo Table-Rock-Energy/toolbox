@@ -208,6 +208,7 @@ export default function Proration() {
   const [cancelConfirmPending, setCancelConfirmPending] = useState<StartOperationOpts | null>(null)
 
   // Fetch missing RRC data state
+  const fetchAbortRef = useRef<AbortController | null>(null)
   const [isFetchingMissing, setIsFetchingMissing] = useState(false)
   const [fetchMissingMessage, setFetchMissingMessage] = useState<string | null>(null)
   const [filterMode, setFilterMode] = useState<'all' | 'matched' | 'fetchable' | 'not_found'>('all')
@@ -752,6 +753,8 @@ export default function Proration() {
     const unmatchedRows = activeJob.result.rows.filter(r => !r.rrc_acres)
     if (unmatchedRows.length === 0) return
 
+    const controller = new AbortController()
+    fetchAbortRef.current = controller
     setIsFetchingMissing(true)
     setFetchMissingMessage(null)
     setError(null)
@@ -764,6 +767,7 @@ export default function Proration() {
         method: 'POST',
         headers: { ...hdrs, 'Content-Type': 'application/json' },
         body: JSON.stringify({ rows: unmatchedRows }),
+        signal: controller.signal,
       })
 
       if (!response.ok) {
@@ -840,11 +844,20 @@ export default function Proration() {
         setFetchMissingMessage(parts.length > 0 ? parts.join(', ') : 'No additional RRC data found')
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch missing data')
-      setShowFetchModal(false)
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setFetchMissingMessage('Stopped — partial results applied')
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to fetch missing data')
+        setShowFetchModal(false)
+      }
     } finally {
       setIsFetchingMissing(false)
+      fetchAbortRef.current = null
     }
+  }
+
+  const handleStopFetch = () => {
+    fetchAbortRef.current?.abort()
   }
 
   const STEP_SOURCE_LABELS: Record<string, string> = { cleanup: 'AI Cleanup', validate: 'Google Maps', enrich: 'Enrichment' }
@@ -1722,6 +1735,7 @@ export default function Proration() {
       <FetchRrcModal
         isOpen={showFetchModal}
         onClose={() => setShowFetchModal(false)}
+        onStop={isFetchingMissing ? handleStopFetch : undefined}
         progress={fetchProgress}
       />
 
