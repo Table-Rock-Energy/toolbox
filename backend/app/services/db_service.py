@@ -685,7 +685,7 @@ async def lookup_rrc_acres(
     Look up RRC lease data from PostgreSQL.
 
     Returns dict with: acres, type, operator, lease_name, field_name, county, row_count
-    or None if not found. Matches firestore_service.lookup_rrc_acres return shape.
+    or None if not found.
     """
     oil_data = None
     gas_data = None

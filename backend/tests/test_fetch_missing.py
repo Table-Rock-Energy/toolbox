@@ -100,8 +100,8 @@ async def test_split_lookup_status():
 
     with patch.object(proration_mod, "fetch_individual_leases", side_effect=mock_fetch_individual_leases), \
          patch.object(proration_mod, "ensure_counties_fresh", side_effect=mock_ensure_counties_fresh), \
-         patch("app.services.firestore_service.lookup_rrc_acres", side_effect=mock_lookup_rrc_acres, create=True), \
-         patch("app.services.firestore_service.lookup_rrc_by_lease_number", side_effect=mock_lookup_rrc_by_lease_number, create=True), \
+         patch("app.services.db_service.lookup_rrc_acres", side_effect=mock_lookup_rrc_acres), \
+         patch("app.services.db_service.lookup_rrc_by_lease_number", side_effect=mock_lookup_rrc_by_lease_number), \
          patch("app.services.proration.rrc_county_codes.lookup_county", side_effect=mock_lookup_county):
 
         from app.api.proration import fetch_missing_rrc_data
@@ -264,8 +264,8 @@ async def test_individual_results_used_directly(monkeypatch):
 
     with patch.object(proration_mod, "fetch_individual_leases", side_effect=mock_fetch_individual_leases), \
          patch.object(proration_mod, "ensure_counties_fresh", side_effect=mock_ensure_counties_fresh), \
-         patch("app.services.firestore_service.lookup_rrc_acres", side_effect=mock_lookup_rrc_acres, create=True), \
-         patch("app.services.firestore_service.lookup_rrc_by_lease_number", side_effect=mock_lookup_rrc_by_lease_number, create=True), \
+         patch("app.services.db_service.lookup_rrc_acres", side_effect=mock_lookup_rrc_acres), \
+         patch("app.services.db_service.lookup_rrc_by_lease_number", side_effect=mock_lookup_rrc_by_lease_number), \
          patch("app.services.proration.rrc_county_codes.lookup_county", side_effect=mock_lookup_county):
 
         from app.api.proration import fetch_missing_rrc_data
@@ -331,8 +331,8 @@ async def test_fetch_status_set_on_returned_rows(monkeypatch):
 
     with patch.object(proration_mod, "fetch_individual_leases", side_effect=mock_fetch_individual_leases), \
          patch.object(proration_mod, "ensure_counties_fresh", side_effect=mock_ensure_counties_fresh), \
-         patch("app.services.firestore_service.lookup_rrc_acres", side_effect=mock_lookup_rrc_acres, create=True), \
-         patch("app.services.firestore_service.lookup_rrc_by_lease_number", side_effect=mock_lookup_rrc_by_lease_number, create=True), \
+         patch("app.services.db_service.lookup_rrc_acres", side_effect=mock_lookup_rrc_acres), \
+         patch("app.services.db_service.lookup_rrc_by_lease_number", side_effect=mock_lookup_rrc_by_lease_number), \
          patch("app.services.proration.rrc_county_codes.lookup_county", side_effect=mock_lookup_county):
 
         from app.api.proration import fetch_missing_rrc_data

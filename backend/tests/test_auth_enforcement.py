@@ -276,7 +276,8 @@ async def test_authenticated_proration_succeeds(authenticated_client: AsyncClien
 @pytest.mark.asyncio
 async def test_authenticated_history_succeeds(authenticated_client: AsyncClient):
     """Authenticated request to history router passes auth gate."""
-    with patch("app.services.firestore_service.get_user_jobs", return_value=[]):
+    with patch("app.api.history.db_service") as mock_db:
+        mock_db.get_user_jobs = AsyncMock(return_value=[])
         response = await authenticated_client.get("/api/history/jobs")
     assert response.status_code != 401
 
