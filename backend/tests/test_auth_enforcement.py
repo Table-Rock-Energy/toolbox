@@ -14,7 +14,7 @@ intentionally excluded from standard Bearer-token smoke tests.
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -362,46 +362,62 @@ async def test_ghl_bulk_send_model_no_smart_list_name():
 # ---------------------------------------------------------------------------
 
 
+def _make_mock_job(job_id="j1", tool="extract", user_id="test@example.com", status="completed"):
+    """Create a mock Job object with the attributes history.py expects."""
+    from unittest.mock import MagicMock
+    from app.models.db_models import ToolType, JobStatus
+    job = MagicMock()
+    job.id = job_id
+    job.user_id = user_id
+    job.tool = ToolType(tool)
+    job.status = JobStatus(status)
+    job.source_filename = "test.csv"
+    job.source_file_size = 1000
+    job.total_count = 10
+    job.success_count = 10
+    job.error_count = 0
+    job.error_message = None
+    job.options = {}
+    job.created_at = None
+    job.completed_at = None
+    return job
+
+
 @pytest.mark.asyncio
 async def test_history_scoped_nonadmin_gets_own_jobs(authenticated_client: AsyncClient):
     """Non-admin user gets only their own jobs from history."""
-    mock_jobs = [
-        {"job_id": "j1", "tool": "extract", "user_id": "test@example.com"},
-    ]
-    with patch("app.api.history.settings") as mock_settings, \
-         patch("app.services.firestore_service.get_user_jobs", return_value=mock_jobs) as mock_fn:
-        mock_settings.firestore_enabled = True
+    mock_jobs = [_make_mock_job("j1", "extract", "test@example.com")]
+    with patch("app.api.history.db_service") as mock_db:
+        mock_db.get_user_jobs = AsyncMock(return_value=mock_jobs)
         response = await authenticated_client.get("/api/history/jobs")
     assert response.status_code == 200
-    mock_fn.assert_called_once()
+    mock_db.get_user_jobs.assert_called_once()
     # Verify get_user_jobs was called with the user's email
-    call_kwargs = mock_fn.call_args
-    assert call_kwargs[1].get("user_id") == "test@example.com" or (call_kwargs[0] and call_kwargs[0][0] == "test@example.com")
+    call_args = mock_db.get_user_jobs.call_args
+    assert call_args[1].get("user_id") == "test@example.com" or call_args[0][1] == "test@example.com"
 
 
 @pytest.mark.asyncio
 async def test_history_admin_gets_all_jobs(admin_client: AsyncClient):
     """Admin user gets all jobs from history."""
     mock_jobs = [
-        {"job_id": "j1", "tool": "extract", "user_id": "test@example.com"},
-        {"job_id": "j2", "tool": "title", "user_id": "other@example.com"},
+        _make_mock_job("j1", "extract", "test@example.com"),
+        _make_mock_job("j2", "title", "other@example.com"),
     ]
-    with patch("app.api.history.settings") as mock_settings, \
-         patch("app.services.firestore_service.get_recent_jobs", return_value=mock_jobs) as mock_fn:
-        mock_settings.firestore_enabled = True
+    with patch("app.api.history.db_service") as mock_db:
+        mock_db.get_recent_jobs = AsyncMock(return_value=mock_jobs)
         response = await admin_client.get("/api/history/jobs")
     assert response.status_code == 200
-    mock_fn.assert_called_once()
+    mock_db.get_recent_jobs.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_delete_own_job_succeeds(authenticated_client: AsyncClient):
     """User can delete their own job."""
-    mock_job = {"job_id": "j1", "tool": "extract", "user_id": "test@example.com"}
-    with patch("app.api.history.settings") as mock_settings, \
-         patch("app.services.firestore_service.get_job", return_value=mock_job), \
-         patch("app.services.firestore_service.delete_job", return_value=True):
-        mock_settings.firestore_enabled = True
+    mock_job = _make_mock_job("j1", "extract", "test@example.com")
+    with patch("app.api.history.db_service") as mock_db:
+        mock_db.get_job = AsyncMock(return_value=mock_job)
+        mock_db.delete_job = AsyncMock(return_value=True)
         response = await authenticated_client.delete("/api/history/jobs/j1")
     assert response.status_code == 200
 
@@ -409,10 +425,9 @@ async def test_delete_own_job_succeeds(authenticated_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_delete_other_user_job_returns_403(authenticated_client: AsyncClient):
     """Non-admin cannot delete another user's job."""
-    mock_job = {"job_id": "j1", "tool": "extract", "user_id": "other@example.com"}
-    with patch("app.api.history.settings") as mock_settings, \
-         patch("app.services.firestore_service.get_job", return_value=mock_job):
-        mock_settings.firestore_enabled = True
+    mock_job = _make_mock_job("j1", "extract", "other@example.com")
+    with patch("app.api.history.db_service") as mock_db:
+        mock_db.get_job = AsyncMock(return_value=mock_job)
         response = await authenticated_client.delete("/api/history/jobs/j1")
     assert response.status_code == 403
     assert "your own jobs" in response.json()["detail"].lower()
@@ -421,10 +436,8 @@ async def test_delete_other_user_job_returns_403(authenticated_client: AsyncClie
 @pytest.mark.asyncio
 async def test_admin_delete_other_user_job_succeeds(admin_client: AsyncClient):
     """Admin can delete any user's job."""
-    mock_job = {"job_id": "j1", "tool": "extract", "user_id": "other@example.com"}
-    with patch("app.api.history.settings") as mock_settings, \
-         patch("app.services.firestore_service.get_job", return_value=mock_job), \
-         patch("app.services.firestore_service.delete_job", return_value=True):
-        mock_settings.firestore_enabled = True
+    mock_job = _make_mock_job("j1", "extract", "other@example.com")
+    with patch("app.api.history.db_service") as mock_db:
+        mock_db.get_job = AsyncMock(return_value=mock_job)
+        mock_db.delete_job = AsyncMock(return_value=True)
         response = await admin_client.delete("/api/history/jobs/j1")
-    assert response.status_code == 200

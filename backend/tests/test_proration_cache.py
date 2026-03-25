@@ -106,7 +106,7 @@ async def test_batch_firestore_reads():
     import asyncio
 
     from app.services.proration.csv_processor import (
-        _lookup_from_firestore,
+        _lookup_from_database,
         update_cache,
     )
 
@@ -129,7 +129,7 @@ async def test_batch_firestore_reads():
         return fake_results.get((d, ln))
 
     with patch(
-        "app.services.proration.csv_processor._lookup_from_firestore",
+        "app.services.proration.csv_processor._lookup_from_database",
         side_effect=mock_lookup,
     ):
         sem = asyncio.Semaphore(25)
