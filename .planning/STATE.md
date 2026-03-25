@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Full On-Prem Migration
-status: Ready to plan
-stopped_at: Completed 26-02-PLAN.md
-last_updated: "2026-03-25T22:42:47.582Z"
+status: Ready to execute
+stopped_at: Completed 27-02-PLAN.md
+last_updated: "2026-03-25T22:53:16.314Z"
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 11
-  completed_plans: 11
+  total_plans: 13
+  completed_plans: 12
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Phase 26 — AI Provider Swap
+**Current focus:** Phase 27 — Storage & Dependency Cleanup
 
 ## Current Position
 
-Phase: 27
-Plan: Not started
+Phase: 27 (Storage & Dependency Cleanup) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Plan: Not started
 | Phase 25 P03 | 6min | 2 tasks | 24 files |
 | Phase 26-ai-provider-swap P01 | 3min | 1 tasks | 6 files |
 | Phase 26-ai-provider-swap P02 | 12min | 2 tasks | 21 files |
+| Phase 27 P02 | 2min | 1 tasks | 1 files |
 
 ### Decisions
 
@@ -90,6 +91,7 @@ Plan: Not started
 - [Phase 26]: Remove Gemini revenue parsing fallback (traditional parsers only)
 - [Phase 26]: Clean break for /settings/ai (no backward compat with /settings/gemini)
 - [Phase 26]: LM Studio model as text input (not dropdown)
+- [Phase 27]: firebase-admin and google-cloud-firestore are one-time migration deps, not in requirements.txt
 
 ### Pending Todos
 
@@ -102,6 +104,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-25T22:39:26.627Z
-Stopped at: Completed 26-02-PLAN.md
+Last session: 2026-03-25T22:53:16.311Z
+Stopped at: Completed 27-02-PLAN.md
 Resume file: None

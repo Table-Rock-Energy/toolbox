@@ -183,7 +183,7 @@ Plans:
 **Plans**: 2 plans
 Plans:
 - [ ] 27-01-PLAN.md -- Strip GCS code, update config defaults, remove dependency, disable CI/CD
-- [ ] 27-02-PLAN.md -- Firestore-to-PostgreSQL migration script
+- [x] 27-02-PLAN.md -- Firestore-to-PostgreSQL migration script
 
 ## Progress
 
@@ -198,4 +198,4 @@ Phases 22 -> 23 -> 24 -> 25 -> 26 -> 27
 | 24. Auth Frontend & Firebase Removal | v2.0 | 2/2 | Complete    | 2026-03-25 |
 | 25. Database Service Port | v2.0 | 3/3 | Complete    | 2026-03-25 |
 | 26. AI Provider Swap | v2.0 | 2/2 | Complete    | 2026-03-25 |
-| 27. Storage & Dependency Cleanup | v2.0 | 0/2 | In progress | - |
+| 27. Storage & Dependency Cleanup | v2.0 | 1/2 | In Progress|  |
