@@ -12,11 +12,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.db_models import (
+    AppConfig,
     AuditLog,
     ExtractEntry,
+    GHLConnection,
     Job,
     JobStatus,
     ProrationRow,
+    RRCCountyStatus,
+    RRCMetadata,
     RevenueRow,
     RevenueStatement,
     RRCDataSync,
@@ -25,6 +29,7 @@ from app.models.db_models import (
     TitleEntry,
     ToolType,
     User,
+    UserPreference,
 )
 
 logger = logging.getLogger(__name__)
@@ -675,46 +680,64 @@ async def lookup_rrc_acres(
     db: AsyncSession,
     district: str,
     lease_number: str,
-) -> tuple[Optional[float], Optional[str]]:
+) -> Optional[dict]:
     """
-    Look up acres for a lease from RRC data.
+    Look up RRC lease data from PostgreSQL.
 
-    Returns: (acres, well_type) where well_type is 'oil', 'gas', or 'both'
+    Returns dict with: acres, type, operator, lease_name, field_name, county, row_count
+    or None if not found. Matches firestore_service.lookup_rrc_acres return shape.
     """
-    oil_acres = None
-    gas_acres = None
+    oil_data = None
+    gas_data = None
 
     # Check oil table
     result = await db.execute(
-        select(RRCOilProration.unit_acres).where(
+        select(RRCOilProration).where(
             RRCOilProration.district == district,
             RRCOilProration.lease_number == lease_number,
         )
     )
     oil_record = result.scalar_one_or_none()
     if oil_record is not None:
-        oil_acres = oil_record
+        oil_data = oil_record
 
     # Check gas table
     result = await db.execute(
-        select(RRCGasProration.unit_acres).where(
+        select(RRCGasProration).where(
             RRCGasProration.district == district,
             RRCGasProration.lease_number == lease_number,
         )
     )
     gas_record = result.scalar_one_or_none()
     if gas_record is not None:
-        gas_acres = gas_record
+        gas_data = gas_record
 
-    # Determine well type and return acres
-    if oil_acres is not None and gas_acres is not None:
-        return max(oil_acres, gas_acres), "both"
-    elif oil_acres is not None:
-        return oil_acres, "oil"
-    elif gas_acres is not None:
-        return gas_acres, "gas"
+    if oil_data is None and gas_data is None:
+        return None
+
+    # Determine well type and pick best data source
+    if oil_data and gas_data:
+        well_type = "both"
+        acres = max(oil_data.unit_acres or 0, gas_data.unit_acres or 0)
+        primary = oil_data if (oil_data.unit_acres or 0) >= (gas_data.unit_acres or 0) else gas_data
+    elif oil_data:
+        well_type = "oil"
+        acres = oil_data.unit_acres
+        primary = oil_data
     else:
-        return None, None
+        well_type = "gas"
+        acres = gas_data.unit_acres
+        primary = gas_data
+
+    return {
+        "acres": acres,
+        "type": well_type,
+        "operator": primary.operator_name,
+        "lease_name": primary.lease_name,
+        "field_name": primary.field_name,
+        "county": primary.county,
+        "row_count": 1,
+    }
 
 
 async def get_rrc_data_status(db: AsyncSession) -> dict:
@@ -761,3 +784,397 @@ async def get_rrc_data_status(db: AsyncSession) -> dict:
             "updated_records": last_sync_record.updated_records if last_sync_record else 0,
         } if last_sync_record else None,
     }
+
+
+# =============================================================================
+# Job Deletion
+# =============================================================================
+
+
+async def delete_job(db: AsyncSession, job_id: str) -> bool:
+    """Delete a job and all associated entries (cascade handles children)."""
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        return False
+
+    await db.delete(job)
+    await db.flush()
+    logger.info(f"Deleted job {job_id} ({job.tool.value})")
+    return True
+
+
+# =============================================================================
+# RRC Lease Lookup (cross-district)
+# =============================================================================
+
+
+async def lookup_rrc_by_lease_number(
+    db: AsyncSession,
+    lease_number: str,
+) -> list[dict]:
+    """
+    Search across ALL districts in both oil and gas tables by lease_number.
+
+    Returns list of dicts with district, lease_name, operator, acres, type, field_name.
+    """
+    results = []
+
+    # Query oil table
+    oil_result = await db.execute(
+        select(RRCOilProration).where(
+            RRCOilProration.lease_number == lease_number
+        )
+    )
+    for record in oil_result.scalars().all():
+        results.append({
+            "district": record.district,
+            "lease_name": record.lease_name,
+            "operator": record.operator_name,
+            "acres": record.unit_acres,
+            "type": "oil",
+            "field_name": record.field_name,
+        })
+
+    # Query gas table
+    gas_result = await db.execute(
+        select(RRCGasProration).where(
+            RRCGasProration.lease_number == lease_number
+        )
+    )
+    for record in gas_result.scalars().all():
+        results.append({
+            "district": record.district,
+            "lease_name": record.lease_name,
+            "operator": record.operator_name,
+            "acres": record.unit_acres,
+            "type": "gas",
+            "field_name": record.field_name,
+        })
+
+    return results
+
+
+# =============================================================================
+# RRC Metadata / Cached Status
+# =============================================================================
+
+
+async def get_rrc_cached_status(db: AsyncSession) -> Optional[dict]:
+    """Read cached RRC status from rrc_metadata 'counts' row (O(1) read)."""
+    result = await db.execute(
+        select(RRCMetadata).where(RRCMetadata.key == "counts")
+    )
+    meta = result.scalar_one_or_none()
+    if not meta:
+        return None
+
+    return {
+        "oil_available": (meta.oil_rows or 0) > 0,
+        "gas_available": (meta.gas_rows or 0) > 0,
+        "oil_rows": meta.oil_rows or 0,
+        "gas_rows": meta.gas_rows or 0,
+        "oil_modified": meta.last_sync_at.isoformat() if meta.last_sync_at else None,
+        "gas_modified": meta.last_sync_at.isoformat() if meta.last_sync_at else None,
+        "last_sync": {
+            "completed_at": meta.last_sync_at.isoformat() if meta.last_sync_at else None,
+            "new_records": meta.new_records or 0,
+            "updated_records": meta.updated_records or 0,
+        } if meta.last_sync_at else None,
+    }
+
+
+async def update_rrc_metadata_counts(
+    db: AsyncSession,
+    oil_rows: int,
+    gas_rows: int,
+    last_sync_at: Optional[datetime] = None,
+    new_records: int = 0,
+    updated_records: int = 0,
+) -> None:
+    """Write/merge RRC counts to rrc_metadata 'counts' row."""
+    result = await db.execute(
+        select(RRCMetadata).where(RRCMetadata.key == "counts")
+    )
+    meta = result.scalar_one_or_none()
+
+    if meta:
+        meta.oil_rows = oil_rows
+        meta.gas_rows = gas_rows
+        if last_sync_at:
+            meta.last_sync_at = last_sync_at
+            meta.new_records = new_records
+            meta.updated_records = updated_records
+    else:
+        meta = RRCMetadata(
+            key="counts",
+            oil_rows=oil_rows,
+            gas_rows=gas_rows,
+            last_sync_at=last_sync_at,
+            new_records=new_records,
+            updated_records=updated_records,
+        )
+        db.add(meta)
+
+    await db.flush()
+
+
+# =============================================================================
+# RRC County Status Operations
+# =============================================================================
+
+
+async def get_counties_status(
+    db: AsyncSession,
+    keys: list[str],
+) -> dict[str, RRCCountyStatus]:
+    """Batch read county freshness status by key list.
+
+    Returns dict mapping key -> RRCCountyStatus model instance.
+    """
+    if not keys:
+        return {}
+
+    result = await db.execute(
+        select(RRCCountyStatus).where(RRCCountyStatus.key.in_(keys))
+    )
+    rows = result.scalars().all()
+    return {row.key: row for row in rows}
+
+
+async def update_county_status(
+    db: AsyncSession,
+    key: str,
+    data: dict,
+) -> None:
+    """Upsert county download status by key (e.g. '08-003').
+
+    data dict may contain: status, oil_record_count, error_message, last_downloaded_at.
+    """
+    result = await db.execute(
+        select(RRCCountyStatus).where(RRCCountyStatus.key == key)
+    )
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        for field, value in data.items():
+            if hasattr(existing, field):
+                setattr(existing, field, value)
+    else:
+        county = RRCCountyStatus(key=key, **{
+            k: v for k, v in data.items() if hasattr(RRCCountyStatus, k)
+        })
+        db.add(county)
+
+    await db.flush()
+
+
+async def get_all_tracked_county_keys(db: AsyncSession) -> list[str]:
+    """Return all distinct county keys that have ever been downloaded."""
+    result = await db.execute(select(RRCCountyStatus.key))
+    return [row[0] for row in result.all()]
+
+
+async def get_stale_counties(
+    db: AsyncSession,
+    keys: list[str],
+) -> list[str]:
+    """Return county keys that need a fresh download.
+
+    A county is stale if:
+    - No status row exists (never downloaded)
+    - last_downloaded_at is before the 1st of the current month
+    - status is 'failed'
+    - oil_record_count is 0 with status 'success'
+    """
+    from datetime import timezone
+
+    statuses = await get_counties_status(db, keys)
+
+    first_of_month = datetime.now(timezone.utc).replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0
+    )
+
+    stale = []
+    for key in keys:
+        status = statuses.get(key)
+        if not status:
+            stale.append(key)
+            continue
+        if status.status == "failed":
+            stale.append(key)
+            continue
+        if (status.oil_record_count or 0) == 0 and status.status == "success":
+            stale.append(key)
+            continue
+        last_dl = status.last_downloaded_at
+        if not last_dl:
+            stale.append(key)
+            continue
+        if last_dl.tzinfo is None:
+            last_dl = last_dl.replace(tzinfo=timezone.utc)
+        if last_dl < first_of_month:
+            stale.append(key)
+
+    return stale
+
+
+# =============================================================================
+# App Config Operations
+# =============================================================================
+
+
+async def get_config_doc(db: AsyncSession, doc_id: str) -> Optional[dict]:
+    """Get a config document by key (e.g. 'enrichment_settings')."""
+    result = await db.execute(
+        select(AppConfig).where(AppConfig.key == doc_id)
+    )
+    config = result.scalar_one_or_none()
+    return config.data if config else None
+
+
+async def set_config_doc(db: AsyncSession, doc_id: str, data: dict) -> None:
+    """Upsert a config document by key."""
+    result = await db.execute(
+        select(AppConfig).where(AppConfig.key == doc_id)
+    )
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        existing.data = data
+    else:
+        config = AppConfig(key=doc_id, data=data)
+        db.add(config)
+
+    await db.flush()
+
+
+# =============================================================================
+# User Preferences Operations
+# =============================================================================
+
+
+async def get_user_preferences(
+    db: AsyncSession,
+    user_email: str,
+) -> Optional[dict]:
+    """Get a user's preferences by looking up their user_id from email."""
+    user_result = await db.execute(
+        select(User).where(User.email == user_email)
+    )
+    user = user_result.scalar_one_or_none()
+    if not user:
+        return None
+
+    result = await db.execute(
+        select(UserPreference).where(UserPreference.user_id == user.id)
+    )
+    pref = result.scalar_one_or_none()
+    return pref.data if pref else None
+
+
+async def set_user_preferences(
+    db: AsyncSession,
+    user_email: str,
+    preferences: dict,
+) -> None:
+    """Upsert a user's preferences by email."""
+    user_result = await db.execute(
+        select(User).where(User.email == user_email)
+    )
+    user = user_result.scalar_one_or_none()
+    if not user:
+        logger.warning(f"Cannot set preferences for unknown user: {user_email}")
+        return
+
+    result = await db.execute(
+        select(UserPreference).where(UserPreference.user_id == user.id)
+    )
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        existing.data = preferences
+    else:
+        pref = UserPreference(user_id=user.id, data=preferences)
+        db.add(pref)
+
+    await db.flush()
+
+
+# =============================================================================
+# GHL Connection Operations
+# =============================================================================
+
+
+async def save_ghl_connection(
+    db: AsyncSession,
+    connection_data: dict,
+) -> GHLConnection:
+    """Create or update a GHL connection.
+
+    connection_data should contain: name, encrypted_token, token_last4, location_id,
+    and optionally: id (for update), notes, validation_status.
+    """
+    conn_id = connection_data.get("id")
+
+    if conn_id:
+        result = await db.execute(
+            select(GHLConnection).where(GHLConnection.id == conn_id)
+        )
+        existing = result.scalar_one_or_none()
+        if existing:
+            for field in ("name", "encrypted_token", "token_last4", "location_id",
+                          "notes", "validation_status"):
+                if field in connection_data:
+                    setattr(existing, field, connection_data[field])
+            await db.flush()
+            return existing
+
+    conn = GHLConnection(
+        name=connection_data.get("name", ""),
+        encrypted_token=connection_data.get("encrypted_token", ""),
+        token_last4=connection_data.get("token_last4", ""),
+        location_id=connection_data.get("location_id", ""),
+        notes=connection_data.get("notes"),
+        validation_status=connection_data.get("validation_status", "pending"),
+    )
+    db.add(conn)
+    await db.flush()
+    return conn
+
+
+async def get_ghl_connections(db: AsyncSession) -> Sequence[GHLConnection]:
+    """Get all GHL connections."""
+    result = await db.execute(
+        select(GHLConnection).order_by(GHLConnection.created_at.desc())
+    )
+    return result.scalars().all()
+
+
+async def get_ghl_connection(
+    db: AsyncSession,
+    connection_id: str,
+) -> Optional[GHLConnection]:
+    """Get a single GHL connection by id."""
+    result = await db.execute(
+        select(GHLConnection).where(GHLConnection.id == connection_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def delete_ghl_connection(
+    db: AsyncSession,
+    connection_id: str,
+) -> bool:
+    """Delete a GHL connection by id."""
+    result = await db.execute(
+        select(GHLConnection).where(GHLConnection.id == connection_id)
+    )
+    conn = result.scalar_one_or_none()
+    if not conn:
+        return False
+
+    await db.delete(conn)
+    await db.flush()
+    logger.info(f"Deleted GHL connection {connection_id}")
+    return True
