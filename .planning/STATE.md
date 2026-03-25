@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Full On-Prem Migration
-status: Ready to plan
-stopped_at: Completed 24-02-PLAN.md
-last_updated: "2026-03-25T21:14:02.360Z"
+status: Ready to execute
+stopped_at: Completed 25-01-PLAN.md
+last_updated: "2026-03-25T21:38:26.225Z"
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 9
+  completed_plans: 7
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Phase 24 — Auth Frontend & Firebase Removal
+**Current focus:** Phase 25 — Database Service Port
 
 ## Current Position
 
-Phase: 25
-Plan: Not started
+Phase: 25 (Database Service Port) — EXECUTING
+Plan: 2 of 3
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Plan: Not started
 | Phase 23 P02 | 13min | 2 tasks | 6 files |
 | Phase 24 P01 | 3min | 2 tasks | 4 files |
 | Phase 24 P02 | 4min | 2 tasks | 12 files |
+| Phase 25 P01 | 13min | 2 tasks | 2 files |
 
 ### Decisions
 
@@ -72,6 +73,8 @@ Plan: Not started
 - [Phase 24]: LocalUser keeps photoURL/displayName for Sidebar compatibility
 - [Phase 24]: authHeaders is synchronous in all files (localStorage read)
 - [Phase 24]: Password minimum raised from 6 to 8 chars in Settings UI to match backend
+- [Phase 25]: lookup_rrc_acres returns dict (not tuple) matching Firestore shape for drop-in replacement
+- [Phase 25]: Sync engine pool_size=2 for conservative background thread usage
 
 ### Pending Todos
 
@@ -84,6 +87,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-25T21:08:21.629Z
-Stopped at: Completed 24-02-PLAN.md
+Last session: 2026-03-25T21:38:26.222Z
+Stopped at: Completed 25-01-PLAN.md
 Resume file: None

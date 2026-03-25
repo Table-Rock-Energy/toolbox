@@ -150,7 +150,7 @@ Plans:
   5. Existing test suite passes with PostgreSQL as sole database
 **Plans**: 3 plans
 Plans:
-- [ ] 25-01-PLAN.md -- Complete db_service.py with missing functions + sync session factory
+- [x] 25-01-PLAN.md -- Complete db_service.py with missing functions + sync session factory
 - [ ] 25-02-PLAN.md -- Swap all Firestore imports to db_service across 14 files
 - [ ] 25-03-PLAN.md -- Update test mocks, delete firestore_service.py, remove firebase-admin
 
@@ -188,6 +188,6 @@ Phases 22 -> 23 -> 24 -> 25 -> 26 -> 27
 | 22. Database Models & Schema | v2.0 | 2/2 | Complete    | 2026-03-25 |
 | 23. Auth Backend | v2.0 | 2/2 | Complete    | 2026-03-25 |
 | 24. Auth Frontend & Firebase Removal | v2.0 | 2/2 | Complete    | 2026-03-25 |
-| 25. Database Service Port | v2.0 | 0/3 | Planning complete | - |
+| 25. Database Service Port | v2.0 | 1/3 | In Progress|  |
 | 26. AI Provider Swap | v2.0 | 0/0 | Not started | - |
 | 27. Storage & Dependency Cleanup | v2.0 | 0/0 | Not started | - |
