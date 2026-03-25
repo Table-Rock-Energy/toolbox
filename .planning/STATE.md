@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Full On-Prem Migration
-status: Ready to plan
-stopped_at: Completed 25-03-PLAN.md
-last_updated: "2026-03-25T22:08:15.437Z"
+status: Ready to execute
+stopped_at: Completed 26-01-PLAN.md
+last_updated: "2026-03-25T22:24:28.210Z"
 progress:
   total_phases: 6
   completed_phases: 4
-  total_plans: 9
-  completed_plans: 9
+  total_plans: 11
+  completed_plans: 10
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Phase 25 — Database Service Port
+**Current focus:** Phase 26 — AI Provider Swap
 
 ## Current Position
 
-Phase: 26
-Plan: Not started
+Phase: 26 (AI Provider Swap) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -51,6 +51,7 @@ Plan: Not started
 | Phase 25 P01 | 13min | 2 tasks | 2 files |
 | Phase 25 P02 | 16 | 2 tasks | 18 files |
 | Phase 25 P03 | 6min | 2 tasks | 24 files |
+| Phase 26-ai-provider-swap P01 | 3min | 1 tasks | 6 files |
 
 ### Decisions
 
@@ -82,6 +83,9 @@ Plan: Not started
 - [Phase 25]: database_enabled defaults to True, FIRESTORE_ENABLED removed from config
 - [Phase 25]: Mock db_service.lookup_rrc_acres with session parameter to match PostgreSQL signature
 - [Phase 25]: Purge all Firestore references from comments and docstrings (not just imports)
+- [Phase 26]: openai SDK for LM Studio (OpenAI-compatible API, same SDK)
+- [Phase 26]: Gemini legacy fallback in factory until Plan 02 removes it
+- [Phase 26]: No rate limiting for local LM Studio inference
 
 ### Pending Todos
 
@@ -94,6 +98,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-25T22:04:55.181Z
-Stopped at: Completed 25-03-PLAN.md
+Last session: 2026-03-25T22:24:28.208Z
+Stopped at: Completed 26-01-PLAN.md
 Resume file: None

@@ -28,8 +28,8 @@ Requirements for on-prem migration. Each maps to roadmap phases.
 
 ### AI Provider
 
-- [ ] **AI-01**: OpenAI-compatible provider calls LM Studio at configurable base URL implementing LLMProvider protocol
-- [ ] **AI-02**: Provider factory routes AI calls based on AI_PROVIDER config (lmstudio or none)
+- [x] **AI-01**: OpenAI-compatible provider calls LM Studio at configurable base URL implementing LLMProvider protocol
+- [x] **AI-02**: Provider factory routes AI calls based on AI_PROVIDER config (lmstudio or none)
 - [ ] **AI-03**: Gemini provider and google-genai dependency removed entirely -- LM Studio is the only AI backend
 
 ### Storage
@@ -84,8 +84,8 @@ Deferred to a later milestone. Tracked but not in current roadmap.
 | DB-04 | Phase 27 | Pending |
 | DB-05 | Phase 25 | Complete |
 | DB-06 | Phase 25 | Complete |
-| AI-01 | Phase 26 | Pending |
-| AI-02 | Phase 26 | Pending |
+| AI-01 | Phase 26 | Complete |
+| AI-02 | Phase 26 | Complete |
 | AI-03 | Phase 26 | Pending |
 | STOR-01 | Phase 27 | Pending |
 | STOR-02 | Phase 27 | Pending |
