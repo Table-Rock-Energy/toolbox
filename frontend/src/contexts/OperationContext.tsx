@@ -80,7 +80,7 @@ export function OperationProvider({ children }: { children: ReactNode }) {
   // Fetch batch config from admin settings (falls back to defaults if non-admin or error)
   const fetchBatchConfig = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/settings/google-cloud')
+      const res = await fetch('/api/admin/settings/api-config')
       if (res.ok) {
         const data = await res.json()
         batchConfigRef.current = {

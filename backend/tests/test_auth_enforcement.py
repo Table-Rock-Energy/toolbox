@@ -198,9 +198,9 @@ async def test_unauthenticated_admin_settings_gemini_returns_401(unauthenticated
 
 
 @pytest.mark.asyncio
-async def test_unauthenticated_admin_settings_google_cloud_returns_401(unauthenticated_client: AsyncClient):
-    """Admin google cloud settings GET requires auth."""
-    response = await unauthenticated_client.get("/api/admin/settings/google-cloud")
+async def test_unauthenticated_admin_settings_api_config_returns_401(unauthenticated_client: AsyncClient):
+    """Admin api-config settings GET requires auth."""
+    response = await unauthenticated_client.get("/api/admin/settings/api-config")
     assert response.status_code == 401
 
 

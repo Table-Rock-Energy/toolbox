@@ -42,7 +42,7 @@ interface AdminOptions {
   tools: string[]
 }
 
-interface GoogleCloudSettings {
+interface ApiSettings {
   has_key: boolean
   gemini_enabled: boolean
   gemini_model: string
@@ -85,13 +85,13 @@ export default function AdminSettings() {
   const [passwordCopied, setPasswordCopied] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
 
-  // Google Cloud API state
-  const [googleCloud, setGoogleCloud] = useState<GoogleCloudSettings>({
+  // API settings state
+  const [apiSettings, setApiSettings] = useState<ApiSettings>({
     has_key: false, gemini_enabled: false, gemini_model: 'gemini-2.5-flash',
     gemini_monthly_budget: 15.0, maps_enabled: false, places_enabled: false,
     batch_size: 25, batch_max_concurrency: 2, batch_max_retries: 1,
   })
-  const [googleCloudApiKey, setGoogleCloudApiKey] = useState('')
+  const [apiSettingsApiKey, setApiSettingsApiKey] = useState('')
   const [geminiEnabled, setGeminiEnabled] = useState(false)
   const [geminiModel, setGeminiModel] = useState('gemini-2.5-flash')
   const [geminiBudget, setGeminiBudget] = useState(15.0)
@@ -100,9 +100,9 @@ export default function AdminSettings() {
   const [batchSize, setBatchSize] = useState(25)
   const [batchMaxConcurrency, setBatchMaxConcurrency] = useState(2)
   const [batchMaxRetries, setBatchMaxRetries] = useState(1)
-  const [isSavingGoogleCloud, setIsSavingGoogleCloud] = useState(false)
-  const [googleCloudSuccess, setGoogleCloudSuccess] = useState('')
-  const [googleCloudError, setGoogleCloudError] = useState('')
+  const [isSavingApiSettings, setIsSavingApiSettings] = useState(false)
+  const [apiSettingsSuccess, setApiSettingsSuccess] = useState('')
+  const [apiSettingsError, setApiSettingsError] = useState('')
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
@@ -215,12 +215,12 @@ export default function AdminSettings() {
     }
   }, [authHeaders])
 
-  const fetchGoogleCloudSettings = useCallback(async () => {
+  const fetchApiSettings = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/settings/google-cloud`, { headers: await authHeaders() })
+      const res = await fetch(`${API_BASE}/admin/settings/api-config`, { headers: await authHeaders() })
       if (res.ok) {
         const data = await res.json()
-        setGoogleCloud(data)
+        setApiSettings(data)
         setGeminiEnabled(data.gemini_enabled)
         setGeminiModel(data.gemini_model)
         setGeminiBudget(data.gemini_monthly_budget)
@@ -231,22 +231,22 @@ export default function AdminSettings() {
         setBatchMaxRetries(data.batch_max_retries ?? 1)
       }
     } catch (err) {
-      console.error('Error fetching Google Cloud settings:', err)
+      console.error('Error fetching API settings:', err)
     }
   }, [authHeaders])
 
   useEffect(() => {
     fetchUsers()
     fetchOptions()
-    fetchGoogleCloudSettings()
+    fetchApiSettings()
     loadEnrichmentConfig()
     fetchConnections()
-  }, [fetchUsers, fetchOptions, fetchGoogleCloudSettings])
+  }, [fetchUsers, fetchOptions, fetchApiSettings])
 
-  const handleSaveGoogleCloud = async () => {
-    setIsSavingGoogleCloud(true)
-    setGoogleCloudError('')
-    setGoogleCloudSuccess('')
+  const handleSaveApiSettings = async () => {
+    setIsSavingApiSettings(true)
+    setApiSettingsError('')
+    setApiSettingsSuccess('')
     try {
       const body: Record<string, unknown> = {
         gemini_enabled: geminiEnabled,
@@ -258,23 +258,23 @@ export default function AdminSettings() {
         batch_max_concurrency: batchMaxConcurrency,
         batch_max_retries: batchMaxRetries,
       }
-      if (googleCloudApiKey) {
-        body.api_key = googleCloudApiKey
+      if (apiSettingsApiKey) {
+        body.api_key = apiSettingsApiKey
       }
-      const res = await fetch(`${API_BASE}/admin/settings/google-cloud`, {
+      const res = await fetch(`${API_BASE}/admin/settings/api-config`, {
         method: 'PUT',
         headers: await authHeaders(),
         body: JSON.stringify(body),
       })
-      if (!res.ok) throw new Error('Failed to update Google Cloud settings')
+      if (!res.ok) throw new Error('Failed to update API settings')
       const data = await res.json()
-      setGoogleCloud(data)
-      setGoogleCloudApiKey('')
-      setGoogleCloudSuccess('Google Cloud API settings saved successfully')
+      setApiSettings(data)
+      setApiSettingsApiKey('')
+      setApiSettingsSuccess('API settings saved successfully')
     } catch (err) {
-      setGoogleCloudError(err instanceof Error ? err.message : 'An error occurred')
+      setApiSettingsError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
-      setIsSavingGoogleCloud(false)
+      setIsSavingApiSettings(false)
     }
   }
 
@@ -635,14 +635,14 @@ export default function AdminSettings() {
         <div className="space-y-4">
           {/* Status indicator */}
           <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-            <div className={`w-3 h-3 rounded-full ${googleCloud.has_key ? 'bg-green-500' : 'bg-gray-400'}`} />
+            <div className={`w-3 h-3 rounded-full ${apiSettings.has_key ? 'bg-green-500' : 'bg-gray-400'}`} />
             <span className="text-sm text-gray-700">
-              {googleCloud.has_key
+              {apiSettings.has_key
                 ? (() => {
                     const active = [
-                      googleCloud.gemini_enabled && 'Gemini AI',
-                      googleCloud.maps_enabled && 'Address Validation',
-                      googleCloud.places_enabled && 'Places',
+                      apiSettings.gemini_enabled && 'Gemini AI',
+                      apiSettings.maps_enabled && 'Address Validation',
+                      apiSettings.places_enabled && 'Places',
                     ].filter(Boolean)
                     return active.length > 0
                       ? `Key configured — ${active.join(', ')} active`
@@ -660,9 +660,9 @@ export default function AdminSettings() {
             </label>
             <input
               type="password"
-              value={googleCloudApiKey}
-              onChange={(e) => setGoogleCloudApiKey(e.target.value)}
-              placeholder={googleCloud.has_key ? 'Key is set (enter new key to replace)' : 'Enter your Google Cloud API key'}
+              value={apiSettingsApiKey}
+              onChange={(e) => setApiSettingsApiKey(e.target.value)}
+              placeholder={apiSettings.has_key ? 'Key is set (enter new key to replace)' : 'Enter your Google Cloud API key'}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
             />
             <p className="text-xs text-gray-500 mt-1">
@@ -819,27 +819,27 @@ export default function AdminSettings() {
           </div>
 
           {/* Alerts */}
-          {googleCloudError && (
+          {apiSettingsError && (
             <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
               <AlertCircle className="w-4 h-4" />
-              {googleCloudError}
+              {apiSettingsError}
             </div>
           )}
-          {googleCloudSuccess && (
+          {apiSettingsSuccess && (
             <div className="flex items-center gap-2 text-green-600 text-sm p-3 bg-green-50 rounded-lg">
               <Check className="w-4 h-4" />
-              {googleCloudSuccess}
+              {apiSettingsSuccess}
             </div>
           )}
 
           <div className="flex justify-end pt-2">
             <button
-              onClick={handleSaveGoogleCloud}
-              disabled={isSavingGoogleCloud}
+              onClick={handleSaveApiSettings}
+              disabled={isSavingApiSettings}
               className="flex items-center gap-2 px-6 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
-              {isSavingGoogleCloud ? 'Saving...' : 'Save Google Cloud Settings'}
+              {isSavingApiSettings ? 'Saving...' : 'Save API Settings'}
             </button>
           </div>
         </div>

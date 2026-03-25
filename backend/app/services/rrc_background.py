@@ -33,7 +33,7 @@ def _get_sync_firestore_client() -> firestore.Client:
     global _sync_firestore_client
     if _sync_firestore_client is None:
         _sync_firestore_client = firestore.Client(
-            project=settings.gcs_project_id,
+            project=settings.gcp_project_id,
             database="tablerocktools",
         )
     return _sync_firestore_client
