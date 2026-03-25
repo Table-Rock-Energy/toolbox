@@ -91,13 +91,15 @@ async def get_rrc_status() -> dict:
     status = rrc_data_service.get_data_status()
 
     try:
-        from app.services.firestore_service import get_rrc_cached_status, get_rrc_data_status
+        from app.core.database import async_session_maker
+        from app.services import db_service
 
-        # Try O(1) cached read first
-        db_status = await get_rrc_cached_status()
-        if db_status is None:
-            # Cache miss — fall back to expensive queries, which will populate the cache
-            db_status = await get_rrc_data_status()
+        async with async_session_maker() as session:
+            # Try O(1) cached read first
+            db_status = await db_service.get_rrc_cached_status(session)
+            if db_status is None:
+                # Cache miss — fall back to expensive queries
+                db_status = await db_service.get_rrc_data_status(session)
 
         status["db_oil_rows"] = db_status.get("oil_rows", 0)
         status["db_gas_rows"] = db_status.get("gas_rows", 0)
@@ -123,8 +125,10 @@ async def download_rrc_data(force: bool = False) -> Union[RRCBackgroundDownloadR
     # Guard: only download once per month
     if not force:
         try:
-            from app.services.firestore_service import get_rrc_data_status
-            db_status = await get_rrc_data_status()
+            from app.core.database import async_session_maker
+            from app.services import db_service
+            async with async_session_maker() as session:
+                db_status = await db_service.get_rrc_data_status(session)
             last_sync = db_status.get("last_sync", {})
             completed_at = last_sync.get("completed_at") if last_sync else None
             if completed_at:
@@ -222,14 +226,16 @@ async def refresh_tracked_counties() -> dict:
     Only downloads counties that are stale (not refreshed this month).
     """
     try:
-        from app.services.firestore_service import get_all_tracked_county_keys, get_stale_counties
+        from app.core.database import async_session_maker
+        from app.services import db_service
         from app.services.proration.rrc_county_codes import TEXAS_COUNTY_CODES
 
-        all_keys = await get_all_tracked_county_keys()
-        if not all_keys:
-            return {"message": "No tracked counties", "refreshed": 0, "total": 0}
+        async with async_session_maker() as session:
+            all_keys = await db_service.get_all_tracked_county_keys(session)
+            if not all_keys:
+                return {"message": "No tracked counties", "refreshed": 0, "total": 0}
 
-        stale_keys = await get_stale_counties(all_keys)
+            stale_keys = await db_service.get_stale_counties(session, all_keys)
         if not stale_keys:
             return {"message": "All counties are fresh", "refreshed": 0, "total": len(all_keys)}
 
@@ -394,18 +400,16 @@ async def fetch_missing_rrc_data(request: FetchMissingRequest, background_tasks:
     if not request.rows:
         raise HTTPException(status_code=400, detail="No rows provided")
 
-    try:
-        from app.services.firestore_service import (
-            lookup_rrc_acres,
-            lookup_rrc_by_lease_number,
-        )
-    except ImportError:
-        # No Firestore — return immediate JSON (non-streaming fallback)
-        return FetchMissingResult(
-            updated_rows=list(request.rows),
-            matched_count=0,
-            still_missing_count=len(request.rows),
-        )
+    from app.core.database import async_session_maker
+    from app.services import db_service
+
+    async def lookup_rrc_acres(district: str, lease_number: str):
+        async with async_session_maker() as session:
+            return await db_service.lookup_rrc_acres(session, district, lease_number)
+
+    async def lookup_rrc_by_lease_number(lease_number: str):
+        async with async_session_maker() as session:
+            return await db_service.lookup_rrc_by_lease_number(session, lease_number)
 
     async def _stream():
         total = len(request.rows)
@@ -565,27 +569,31 @@ async def fetch_missing_rrc_data(request: FetchMissingRequest, background_tasks:
 
 
 async def _background_persist_individual(results: dict[tuple[str, str], dict]) -> None:
-    """Persist individually-fetched RRC data to Firestore for cache."""
+    """Persist individually-fetched RRC data to database for cache."""
     try:
-        from app.services.firestore_service import upsert_rrc_oil_record
+        from app.core.database import async_session_maker
+        from app.services import db_service
 
-        for (district, lease_number), info in results.items():
-            await upsert_rrc_oil_record(
-                district=district,
-                lease_number=lease_number,
-                operator_name=info.get("operator"),
-                lease_name=info.get("lease_name"),
-                field_name=None,
-                county=None,
-                unit_acres=info.get("acres"),
-            )
-        logger.info("Background persist: saved %d individual RRC results to Firestore", len(results))
+        async with async_session_maker() as session:
+            for (district, lease_number), info in results.items():
+                await db_service.upsert_rrc_oil_record(
+                    session,
+                    district=district,
+                    lease_number=lease_number,
+                    operator_name=info.get("operator"),
+                    lease_name=info.get("lease_name"),
+                    field_name=None,
+                    county=None,
+                    unit_acres=info.get("acres"),
+                )
+            await session.commit()
+        logger.info("Background persist: saved %d individual RRC results to database", len(results))
     except Exception as e:
         logger.warning("Background persist failed: %s", e)
 
 
 async def _background_county_download(counties: list[dict]) -> None:
-    """Download full county RRC data in the background to backfill Firestore."""
+    """Download full county RRC data in the background to backfill database."""
     logger.info("Background county download starting for %d counties: %s",
                 len(counties), [c["county_name"] for c in counties])
     try:

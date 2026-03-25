@@ -33,7 +33,7 @@ from app.services.storage_service import profile_storage, storage_service
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# App settings file (local cache, source of truth is Firestore)
+# App settings file (local cache, source of truth is PostgreSQL)
 APP_SETTINGS_FILE = Path(__file__).parent.parent.parent / "data" / "app_settings.json"
 
 # Fields to encrypt before persistence. Each tuple is (top-level-key, field-name).
@@ -82,56 +82,62 @@ def load_app_settings() -> dict:
 
 
 def save_app_settings(settings_data: dict) -> None:
-    """Save app settings to local file and schedule Firestore persist."""
+    """Save app settings to local file and schedule database persist."""
     encrypted = _encrypt_settings(settings_data)
     APP_SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(APP_SETTINGS_FILE, "w") as f:
         json.dump(encrypted, f, indent=2)
 
-    # Fire-and-forget Firestore persist
+    # Fire-and-forget database persist
     try:
         loop = asyncio.get_running_loop()
-        loop.create_task(_persist_app_settings_to_firestore(encrypted))
+        loop.create_task(_persist_app_settings_to_db(encrypted))
     except RuntimeError:
         pass  # No event loop running
 
 
-async def _persist_app_settings_to_firestore(settings_data: dict) -> None:
-    """Async: save app settings to Firestore."""
+async def _persist_app_settings_to_db(settings_data: dict) -> None:
+    """Async: save app settings to PostgreSQL."""
     try:
-        from app.services.firestore_service import set_config_doc
-        await set_config_doc("app_settings", settings_data)
-        logger.info("Persisted app settings to Firestore")
+        from app.core.database import async_session_maker
+        from app.services import db_service
+        async with async_session_maker() as session:
+            await db_service.set_config_doc(session, "app_settings", settings_data)
+            await session.commit()
+        logger.info("Persisted app settings to database")
     except Exception as e:
-        logger.warning(f"Failed to persist app settings to Firestore: {e}")
+        logger.warning(f"Failed to persist app settings to database: {e}")
 
 
-async def init_app_settings_from_firestore() -> None:
-    """Load app settings from Firestore on startup. Seeds Firestore if empty."""
+async def init_app_settings_from_db() -> None:
+    """Load app settings from database on startup. Seeds database if empty."""
     try:
-        from app.services.firestore_service import get_config_doc, set_config_doc
-        data = await get_config_doc("app_settings")
-        if data:
-            # Remove internal Firestore fields before saving locally
-            clean = {k: v for k, v in data.items() if not k.startswith("_")}
-            # Write encrypted data to local cache (preserve ciphertext on disk)
-            APP_SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-            with open(APP_SETTINGS_FILE, "w") as f:
-                json.dump(clean, f, indent=2)
+        from app.core.database import async_session_maker
+        from app.services import db_service
+        async with async_session_maker() as session:
+            data = await db_service.get_config_doc(session, "app_settings")
+            if data:
+                # Remove internal fields before saving locally
+                clean = {k: v for k, v in data.items() if not k.startswith("_")}
+                # Write encrypted data to local cache (preserve ciphertext on disk)
+                APP_SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+                with open(APP_SETTINGS_FILE, "w") as f:
+                    json.dump(clean, f, indent=2)
 
-            # Decrypt before applying to runtime
-            decrypted = _decrypt_settings(clean)
-            _apply_settings_to_runtime(decrypted)
-            logger.info("Loaded app settings from Firestore")
-        else:
-            # Seed Firestore from local file
-            local = load_app_settings()
-            if local:
-                encrypted_local = _encrypt_settings(local)
-                await set_config_doc("app_settings", encrypted_local)
-                logger.info("Seeded Firestore with local app settings")
+                # Decrypt before applying to runtime
+                decrypted = _decrypt_settings(clean)
+                _apply_settings_to_runtime(decrypted)
+                logger.info("Loaded app settings from database")
+            else:
+                # Seed database from local file
+                local = load_app_settings()
+                if local:
+                    encrypted_local = _encrypt_settings(local)
+                    await db_service.set_config_doc(session, "app_settings", encrypted_local)
+                    await session.commit()
+                    logger.info("Seeded database with local app settings")
     except Exception as e:
-        logger.warning(f"Could not load app settings from Firestore: {e}")
+        logger.warning(f"Could not load app settings from database: {e}")
 
 
 def _apply_settings_to_runtime(settings_data: dict) -> None:
@@ -734,8 +740,10 @@ class UserPreferencesResponse(BaseModel):
 async def get_preferences(email: str, user: dict = Depends(require_auth)):
     """Get notification preferences for a user."""
     try:
-        from app.services.firestore_service import get_user_preferences
-        prefs = await get_user_preferences(email)
+        from app.core.database import async_session_maker
+        from app.services import db_service
+        async with async_session_maker() as session:
+            prefs = await db_service.get_user_preferences(session, email)
         if prefs:
             return UserPreferencesResponse(
                 email_notifications=prefs.get("email_notifications", True),
@@ -754,14 +762,17 @@ async def get_preferences(email: str, user: dict = Depends(require_auth)):
 async def update_preferences(email: str, request: UserPreferencesRequest, user: dict = Depends(require_auth)):
     """Update notification preferences for a user."""
     try:
-        from app.services.firestore_service import set_user_preferences
+        from app.core.database import async_session_maker
+        from app.services import db_service
         prefs = {
             "email_notifications": request.email_notifications,
             "browser_notifications": request.browser_notifications,
             "job_complete_alerts": request.job_complete_alerts,
             "weekly_report": request.weekly_report,
         }
-        await set_user_preferences(email, prefs)
+        async with async_session_maker() as session:
+            await db_service.set_user_preferences(session, email, prefs)
+            await session.commit()
         logger.info(f"Updated preferences for {email}")
         return UserPreferencesResponse(**prefs)
     except Exception as e:

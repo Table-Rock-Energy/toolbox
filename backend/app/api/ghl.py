@@ -362,13 +362,12 @@ async def bulk_send_endpoint(
             )
         else:
             # No valid contacts - mark job as completed immediately
-            from app.services.firestore_service import get_firestore_client
-            db = get_firestore_client()
-            doc_ref = db.collection("jobs").document(job_id)
-            await doc_ref.update({
-                "status": "completed",
-                "completed_at": asyncio.get_event_loop().time(),
-            })
+            from app.core.database import async_session_maker
+            from app.models.db_models import JobStatus
+            from app.services import db_service as db_svc
+            async with async_session_maker() as db_session:
+                await db_svc.update_job_status(db_session, job_id, status=JobStatus.COMPLETED)
+                await db_session.commit()
 
         # Step 6: Return response immediately
         return BulkSendStartResponse(

@@ -110,7 +110,7 @@ async def validate_upload(
 
 
 # ---------------------------------------------------------------------------
-# Firestore job persistence (fire-and-forget)
+# Database job persistence (fire-and-forget)
 # ---------------------------------------------------------------------------
 
 async def persist_job_result(
@@ -127,73 +127,69 @@ async def persist_job_result(
     user_name: Optional[str] = None,
     job_id: Optional[str] = None,
 ) -> Optional[str]:
-    """Persist processing results to Firestore.
+    """Persist processing results to PostgreSQL.
 
-    Returns the job ID on success, ``None`` if Firestore is unavailable.
-    This is intentionally fire-and-forget -- a Firestore failure never
+    Returns the job ID on success, ``None`` if database is unavailable.
+    This is intentionally fire-and-forget -- a database failure never
     causes the upload to fail for the user.
     """
     try:
-        from app.services.firestore_service import (
-            create_job,
-            update_job_status,
-        )
+        from app.core.database import async_session_maker
+        from app.models.db_models import JobStatus, ToolType
+        from app.services import db_service
 
-        job = await create_job(
-            tool=tool,
-            source_filename=filename,
-            source_file_size=file_size,
-            user_id=user_id,
-            user_name=user_name,
-            job_id=job_id,
-        )
-        job_id = job["id"]
+        async with async_session_maker() as session:
+            job = await db_service.create_job(
+                session,
+                tool=ToolType(tool),
+                source_filename=filename,
+                source_file_size=file_size,
+                user_id=user_id,
+                options={},
+            )
+            job_id = job.id
 
-        # Save entries to the tool-specific collection
-        if entries:
-            await _save_entries(tool, job_id, entries, collection)
+            # Save entries to the tool-specific table
+            if entries:
+                await _save_entries(session, tool, job_id, entries, collection)
 
-        await update_job_status(
-            job_id,
-            status="completed",
-            total_count=total,
-            success_count=success,
-            error_count=errors,
-        )
+            await db_service.update_job_status(
+                session,
+                job_id,
+                status=JobStatus.COMPLETED,
+                total_count=total,
+                success_count=success,
+                error_count=errors,
+            )
+
+            await session.commit()
 
         return job_id
     except Exception as exc:
-        logger.warning("Firestore persistence failed (non-critical): %s", exc)
+        logger.warning("Database persistence failed (non-critical): %s", exc)
         return None
 
 
 async def _save_entries(
+    session,
     tool: str,
     job_id: str,
     entries: list[dict],
     collection: Optional[str] = None,
 ) -> None:
-    """Route to the correct Firestore save function for a tool."""
-    from app.services.firestore_service import (
-        save_extract_entries,
-        save_title_entries,
-        save_proration_rows,
-        save_revenue_statement,
-    )
+    """Route to the correct db_service save function for a tool."""
+    from app.services import db_service
 
-    save_map = {
-        "extract": save_extract_entries,
-        "title": save_title_entries,
-        "proration": save_proration_rows,
-    }
-
-    saver = save_map.get(tool)
-    if saver:
-        await saver(job_id, entries)
+    if tool == "extract":
+        await db_service.save_extract_entries(session, job_id, entries)
+    elif tool == "title":
+        await db_service.save_title_entries(session, job_id, entries)
+    elif tool == "proration":
+        await db_service.save_proration_rows(session, job_id, entries)
     elif tool == "revenue":
         # Revenue saves each statement individually
         for entry in entries:
-            await save_revenue_statement(job_id, entry)
+            await db_service.save_revenue_statement(session, job_id, entry)
     elif tool == "ghl_prep":
         # GHL Prep entries are transformations, not persistent entities
         # Job metadata is sufficient - skip entry saving

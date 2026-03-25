@@ -28,29 +28,33 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Whether to use Firestore master database for RRC lookups
-_use_firestore = True
+# Whether to use database for RRC lookups
+_use_database = True
 
 
-async def _lookup_from_firestore(
+async def _lookup_from_database(
     district: str, lease_number: str
 ) -> Optional[dict]:
-    """Look up RRC data from Firestore master database."""
+    """Look up RRC data from PostgreSQL database."""
     try:
-        from app.services.firestore_service import lookup_rrc_acres
-        return await lookup_rrc_acres(district, lease_number)
+        from app.core.database import async_session_maker
+        from app.services import db_service
+        async with async_session_maker() as session:
+            return await db_service.lookup_rrc_acres(session, district, lease_number)
     except Exception as e:
-        logger.debug(f"Firestore lookup failed: {e}")
+        logger.debug(f"Database lookup failed: {e}")
         return None
 
 
-async def _lookup_by_lease_from_firestore(lease_number: str) -> Optional[dict]:
-    """Look up RRC data by lease number only from Firestore."""
+async def _lookup_by_lease_from_database(lease_number: str) -> Optional[dict]:
+    """Look up RRC data by lease number only from PostgreSQL."""
     try:
-        from app.services.firestore_service import lookup_rrc_by_lease_number
-        return await lookup_rrc_by_lease_number(lease_number)
+        from app.core.database import async_session_maker
+        from app.services import db_service
+        async with async_session_maker() as session:
+            return await db_service.lookup_rrc_by_lease_number(session, lease_number)
     except Exception as e:
-        logger.debug(f"Firestore lease lookup failed: {e}")
+        logger.debug(f"Database lease lookup failed: {e}")
         return None
 
 
@@ -148,7 +152,7 @@ async def process_csv(
 
                 if district and lease_number:
                     cached = get_from_cache(district, lease_number)
-                    if cached is None and _use_firestore:
+                    if cached is None and _use_database:
                         cache_misses.add((district, lease_number))
                     lookup_type = "district"
                 elif lease_number or rrc_lease_str:
@@ -160,7 +164,7 @@ async def process_csv(
                     if lease_only:
                         # For lease-only, cache key uses empty district
                         cached = get_from_cache("", lease_only)
-                        if cached is None and _use_firestore:
+                        if cached is None and _use_database:
                             lease_only_misses.add(lease_only)
                         lookup_type = "lease_only"
 
@@ -182,12 +186,12 @@ async def process_csv(
                 failed_count += 1
 
         # Phase 2: Batch Firestore reads for all cache misses (PERF-03)
-        if cache_misses and _use_firestore:
+        if cache_misses and _use_database:
             sem = asyncio.Semaphore(25)
 
             async def bounded_lookup(d: str, ln: str) -> tuple[tuple[str, str], dict | None]:
                 async with sem:
-                    return (d, ln), await _lookup_from_firestore(d, ln)
+                    return (d, ln), await _lookup_from_database(d, ln)
 
             results = await asyncio.gather(
                 *[bounded_lookup(d, ln) for d, ln in cache_misses],
@@ -199,12 +203,12 @@ async def process_csv(
                     key, info = result
                     update_cache(key, info)
 
-        if lease_only_misses and _use_firestore:
+        if lease_only_misses and _use_database:
             sem = asyncio.Semaphore(25)
 
             async def bounded_lease_lookup(ln: str) -> tuple[str, dict | None]:
                 async with sem:
-                    return ln, await _lookup_by_lease_from_firestore(ln)
+                    return ln, await _lookup_by_lease_from_database(ln)
 
             lease_results = await asyncio.gather(
                 *[bounded_lease_lookup(ln) for ln in lease_only_misses],

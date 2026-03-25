@@ -559,9 +559,9 @@ class RRCDataService:
 
     async def sync_to_database(self, data_type: str = "both") -> dict:
         """
-        Sync downloaded CSV data to Firestore database.
+        Sync downloaded CSV data to PostgreSQL database.
 
-        Parses the stored CSV files and upserts records into Firestore,
+        Parses the stored CSV files and upserts records into the database,
         tracking new/updated/unchanged counts.
 
         Args:
@@ -570,16 +570,8 @@ class RRCDataService:
         Returns:
             Dict with sync statistics
         """
-        try:
-            from app.services.firestore_service import (
-                upsert_rrc_oil_record,
-                upsert_rrc_gas_record,
-                start_rrc_sync,
-                complete_rrc_sync,
-            )
-        except ImportError:
-            logger.warning("Firestore not available, skipping database sync")
-            return {"success": False, "message": "Firestore not available"}
+        from app.core.database import async_session_maker
+        from app.services import db_service
 
         results = {
             "oil": {"new": 0, "updated": 0, "unchanged": 0, "total": 0, "errors": 0},
@@ -596,125 +588,153 @@ class RRCDataService:
         if data_type in ("oil", "both"):
             oil_df = self._get_oil_df()
             if oil_df is not None:
-                sync_id = await start_rrc_sync("oil")
+                async with async_session_maker() as session:
+                    sync = await db_service.start_rrc_sync(session, "oil")
+                    sync_id = sync.id
+                    await session.commit()
+
                 try:
-                    for _, row in oil_df.iterrows():
-                        try:
-                            district = clean_district(row.get("District", ""))
-                            lease_number = str(row.get("Lease No.", "")).strip()
-                            if not district or not lease_number:
-                                continue
+                    async with async_session_maker() as session:
+                        for _, row in oil_df.iterrows():
+                            try:
+                                district = clean_district(row.get("District", ""))
+                                lease_number = str(row.get("Lease No.", "")).strip()
+                                if not district or not lease_number:
+                                    continue
 
-                            acres = float(row["Acres"]) if pd.notna(row.get("Acres")) else None
+                                acres = float(row["Acres"]) if pd.notna(row.get("Acres")) else None
 
-                            _, is_new, is_updated = await upsert_rrc_oil_record(
-                                district=district,
-                                lease_number=lease_number,
-                                operator_name=str(row.get("Operator Name", "")) if pd.notna(row.get("Operator Name")) else None,
-                                lease_name=str(row.get("Lease Name", "")) if pd.notna(row.get("Lease Name")) else None,
-                                field_name=str(row.get("Field Name", "")) if pd.notna(row.get("Field Name")) else None,
-                                county=str(row.get("County", "")) if pd.notna(row.get("County")) else None,
-                                unit_acres=acres,
-                            )
+                                _, is_new, is_updated = await db_service.upsert_rrc_oil_record(
+                                    session,
+                                    district=district,
+                                    lease_number=lease_number,
+                                    operator_name=str(row.get("Operator Name", "")) if pd.notna(row.get("Operator Name")) else None,
+                                    lease_name=str(row.get("Lease Name", "")) if pd.notna(row.get("Lease Name")) else None,
+                                    field_name=str(row.get("Field Name", "")) if pd.notna(row.get("Field Name")) else None,
+                                    county=str(row.get("County", "")) if pd.notna(row.get("County")) else None,
+                                    unit_acres=acres,
+                                )
 
-                            results["oil"]["total"] += 1
-                            if is_new:
-                                results["oil"]["new"] += 1
-                            elif is_updated:
-                                results["oil"]["updated"] += 1
-                            else:
-                                results["oil"]["unchanged"] += 1
+                                results["oil"]["total"] += 1
+                                if is_new:
+                                    results["oil"]["new"] += 1
+                                elif is_updated:
+                                    results["oil"]["updated"] += 1
+                                else:
+                                    results["oil"]["unchanged"] += 1
 
-                        except Exception as e:
-                            results["oil"]["errors"] += 1
-                            if results["oil"]["errors"] <= 5:
-                                logger.warning(f"Error syncing oil record: {e}")
+                            except Exception as e:
+                                results["oil"]["errors"] += 1
+                                if results["oil"]["errors"] <= 5:
+                                    logger.warning(f"Error syncing oil record: {e}")
 
-                    await complete_rrc_sync(
-                        sync_id=sync_id,
-                        total_records=results["oil"]["total"],
-                        new_records=results["oil"]["new"],
-                        updated_records=results["oil"]["updated"],
-                        unchanged_records=results["oil"]["unchanged"],
-                        success=True,
-                    )
+                        await session.commit()
+
+                    async with async_session_maker() as session:
+                        await db_service.complete_rrc_sync(
+                            session,
+                            sync_id=sync_id,
+                            total_records=results["oil"]["total"],
+                            new_records=results["oil"]["new"],
+                            updated_records=results["oil"]["updated"],
+                            unchanged_records=results["oil"]["unchanged"],
+                            success=True,
+                        )
+                        await session.commit()
                     logger.info(
                         f"Oil sync complete: {results['oil']['total']} total, "
                         f"{results['oil']['new']} new, {results['oil']['updated']} updated"
                     )
                 except Exception as e:
                     logger.exception(f"Oil sync failed: {e}")
-                    await complete_rrc_sync(
-                        sync_id=sync_id,
-                        total_records=results["oil"]["total"],
-                        new_records=results["oil"]["new"],
-                        updated_records=results["oil"]["updated"],
-                        unchanged_records=results["oil"]["unchanged"],
-                        success=False,
-                        error_message=str(e),
-                    )
+                    async with async_session_maker() as session:
+                        await db_service.complete_rrc_sync(
+                            session,
+                            sync_id=sync_id,
+                            total_records=results["oil"]["total"],
+                            new_records=results["oil"]["new"],
+                            updated_records=results["oil"]["updated"],
+                            unchanged_records=results["oil"]["unchanged"],
+                            success=False,
+                            error_message=str(e),
+                        )
+                        await session.commit()
 
         # Sync gas data
         if data_type in ("gas", "both"):
             gas_df = self._get_gas_df()
             if gas_df is not None:
-                sync_id = await start_rrc_sync("gas")
+                async with async_session_maker() as session:
+                    sync = await db_service.start_rrc_sync(session, "gas")
+                    sync_id = sync.id
+                    await session.commit()
+
                 try:
-                    for _, row in gas_df.iterrows():
-                        try:
-                            district = clean_district(row.get("District", ""))
-                            lease_number = str(row.get("Lease No.", "")).strip()
-                            if not district or not lease_number:
-                                continue
+                    async with async_session_maker() as session:
+                        for _, row in gas_df.iterrows():
+                            try:
+                                district = clean_district(row.get("District", ""))
+                                lease_number = str(row.get("Lease No.", "")).strip()
+                                if not district or not lease_number:
+                                    continue
 
-                            acres = float(row["Acres"]) if pd.notna(row.get("Acres")) else None
+                                acres = float(row["Acres"]) if pd.notna(row.get("Acres")) else None
 
-                            _, is_new, is_updated = await upsert_rrc_gas_record(
-                                district=district,
-                                lease_number=lease_number,
-                                operator_name=str(row.get("Operator Name", "")) if pd.notna(row.get("Operator Name")) else None,
-                                lease_name=str(row.get("Lease Name", "")) if pd.notna(row.get("Lease Name")) else None,
-                                field_name=str(row.get("Field Name", "")) if pd.notna(row.get("Field Name")) else None,
-                                county=str(row.get("County", "")) if pd.notna(row.get("County")) else None,
-                                unit_acres=acres,
-                            )
+                                _, is_new, is_updated = await db_service.upsert_rrc_gas_record(
+                                    session,
+                                    district=district,
+                                    lease_number=lease_number,
+                                    operator_name=str(row.get("Operator Name", "")) if pd.notna(row.get("Operator Name")) else None,
+                                    lease_name=str(row.get("Lease Name", "")) if pd.notna(row.get("Lease Name")) else None,
+                                    field_name=str(row.get("Field Name", "")) if pd.notna(row.get("Field Name")) else None,
+                                    county=str(row.get("County", "")) if pd.notna(row.get("County")) else None,
+                                    unit_acres=acres,
+                                )
 
-                            results["gas"]["total"] += 1
-                            if is_new:
-                                results["gas"]["new"] += 1
-                            elif is_updated:
-                                results["gas"]["updated"] += 1
-                            else:
-                                results["gas"]["unchanged"] += 1
+                                results["gas"]["total"] += 1
+                                if is_new:
+                                    results["gas"]["new"] += 1
+                                elif is_updated:
+                                    results["gas"]["updated"] += 1
+                                else:
+                                    results["gas"]["unchanged"] += 1
 
-                        except Exception as e:
-                            results["gas"]["errors"] += 1
-                            if results["gas"]["errors"] <= 5:
-                                logger.warning(f"Error syncing gas record: {e}")
+                            except Exception as e:
+                                results["gas"]["errors"] += 1
+                                if results["gas"]["errors"] <= 5:
+                                    logger.warning(f"Error syncing gas record: {e}")
 
-                    await complete_rrc_sync(
-                        sync_id=sync_id,
-                        total_records=results["gas"]["total"],
-                        new_records=results["gas"]["new"],
-                        updated_records=results["gas"]["updated"],
-                        unchanged_records=results["gas"]["unchanged"],
-                        success=True,
-                    )
+                        await session.commit()
+
+                    async with async_session_maker() as session:
+                        await db_service.complete_rrc_sync(
+                            session,
+                            sync_id=sync_id,
+                            total_records=results["gas"]["total"],
+                            new_records=results["gas"]["new"],
+                            updated_records=results["gas"]["updated"],
+                            unchanged_records=results["gas"]["unchanged"],
+                            success=True,
+                        )
+                        await session.commit()
                     logger.info(
                         f"Gas sync complete: {results['gas']['total']} total, "
                         f"{results['gas']['new']} new, {results['gas']['updated']} updated"
                     )
                 except Exception as e:
                     logger.exception(f"Gas sync failed: {e}")
-                    await complete_rrc_sync(
-                        sync_id=sync_id,
-                        total_records=results["gas"]["total"],
-                        new_records=results["gas"]["new"],
-                        updated_records=results["gas"]["updated"],
-                        unchanged_records=results["gas"]["unchanged"],
-                        success=False,
-                        error_message=str(e),
-                    )
+                    async with async_session_maker() as session:
+                        await db_service.complete_rrc_sync(
+                            session,
+                            sync_id=sync_id,
+                            total_records=results["gas"]["total"],
+                            new_records=results["gas"]["new"],
+                            updated_records=results["gas"]["updated"],
+                            unchanged_records=results["gas"]["unchanged"],
+                            success=False,
+                            error_message=str(e),
+                        )
+                        await session.commit()
 
         total_new = results["oil"]["new"] + results["gas"]["new"]
         total_updated = results["oil"]["updated"] + results["gas"]["updated"]

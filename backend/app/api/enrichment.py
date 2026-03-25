@@ -33,7 +33,7 @@ async def update_enrichment_config(request: EnrichmentConfigUpdateRequest, user:
     """
     Update enrichment API keys and enabled state.
 
-    Keys are stored in Firestore so they persist across restarts.
+    Keys are stored in PostgreSQL so they persist across restarts.
     """
     from app.services.enrichment.enrichment_service import (
         get_enrichment_status,
@@ -109,18 +109,10 @@ def _mask_key(key: str) -> str:
 
 
 async def _save_enrichment_config(request: EnrichmentConfigUpdateRequest) -> None:
-    """Persist enrichment config to Firestore."""
-    from app.core.config import settings
-
-    if not settings.firestore_enabled:
-        return
-
+    """Persist enrichment config to database."""
     try:
-        from app.services.firestore_service import get_firestore_client
-
-        db = get_firestore_client()
-        doc_ref = db.collection("app_config").document("enrichment")
-
+        from app.core.database import async_session_maker
+        from app.services import db_service
         from app.services.shared.encryption import encrypt_value
 
         update_data: dict = {}
@@ -133,31 +125,34 @@ async def _save_enrichment_config(request: EnrichmentConfigUpdateRequest) -> Non
 
         if update_data:
             from datetime import datetime, timezone
-            update_data["updated_at"] = datetime.now(timezone.utc)
-            await doc_ref.set(update_data, merge=True)
-            logger.info("Enrichment config persisted to Firestore")
+            update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+            async with async_session_maker() as session:
+                # Merge with existing config
+                existing = await db_service.get_config_doc(session, "enrichment")
+                if existing:
+                    existing.update(update_data)
+                    await db_service.set_config_doc(session, "enrichment", existing)
+                else:
+                    await db_service.set_config_doc(session, "enrichment", update_data)
+                await session.commit()
+            logger.info("Enrichment config persisted to database")
     except Exception as e:
         logger.warning(f"Could not persist enrichment config: {e}")
 
 
-async def load_enrichment_config_from_firestore() -> None:
-    """Load enrichment config from Firestore on startup."""
-    from app.core.config import settings
-
-    if not settings.firestore_enabled:
-        return
-
+async def load_enrichment_config_from_db() -> None:
+    """Load enrichment config from database on startup."""
     try:
+        from app.core.database import async_session_maker
+        from app.services import db_service
         from app.services.enrichment.enrichment_service import set_runtime_config
-        from app.services.firestore_service import get_firestore_client
 
-        db = get_firestore_client()
-        doc = await db.collection("app_config").document("enrichment").get()
+        async with async_session_maker() as session:
+            data = await db_service.get_config_doc(session, "enrichment")
 
-        if doc.exists:
+        if data:
             from app.services.shared.encryption import decrypt_value
 
-            data = doc.to_dict()
             pdl_key = data.get("pdl_api_key")
             sb_key = data.get("searchbug_api_key")
             set_runtime_config(
@@ -165,6 +160,6 @@ async def load_enrichment_config_from_firestore() -> None:
                 searchbug_api_key=decrypt_value(sb_key) if sb_key else None,
                 enabled=data.get("enabled"),
             )
-            logger.info("Loaded enrichment config from Firestore")
+            logger.info("Loaded enrichment config from database")
     except Exception as e:
-        logger.warning(f"Could not load enrichment config from Firestore: {e}")
+        logger.warning(f"Could not load enrichment config from database: {e}")

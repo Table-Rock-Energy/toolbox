@@ -45,14 +45,8 @@ async def ensure_counties_fresh(
     if not counties:
         return []
 
-    try:
-        from app.services.firestore_service import get_stale_counties
-    except ImportError:
-        logger.warning("Firestore not available, skipping county freshness check")
-        return [
-            {"county_name": c["county_name"], "status": "skipped", "records_downloaded": 0}
-            for c in counties
-        ]
+    from app.core.database import async_session_maker
+    from app.services import db_service
 
     # Build keys and check staleness
     county_map = {}
@@ -62,7 +56,8 @@ async def ensure_counties_fresh(
         keys.append(key)
         county_map[key] = c
 
-    stale_keys = await get_stale_counties(keys)
+    async with async_session_maker() as session:
+        stale_keys = await db_service.get_stale_counties(session, keys)
     stale_set = set(stale_keys)
 
     results = []
@@ -113,16 +108,17 @@ async def ensure_counties_fresh(
 
         # Update freshness tracking
         try:
-            from app.services.firestore_service import update_county_status
-            await update_county_status(key, {
-                "county_code": county["county_code"],
-                "county_name": county["county_name"],
-                "district": county["district"],
-                "last_downloaded_at": datetime.now(timezone.utc) if success else None,
-                "oil_record_count": record_count,
-                "status": "success" if success else "failed",
-                "error": None if success else message,
-            })
+            async with async_session_maker() as status_session:
+                await db_service.update_county_status(status_session, key, {
+                    "county_code": county["county_code"],
+                    "county_name": county["county_name"],
+                    "district": county["district"],
+                    "last_downloaded_at": datetime.now(timezone.utc) if success else None,
+                    "oil_record_count": record_count,
+                    "status": "success" if success else "failed",
+                    "error": None if success else message,
+                })
+                await status_session.commit()
         except Exception as e:
             logger.warning("Failed to update county status for %s: %s", key, e)
 
@@ -441,11 +437,8 @@ async def fetch_individual_leases(
     if not leases:
         return {}
 
-    try:
-        from app.services.firestore_service import upsert_rrc_oil_record
-    except ImportError:
-        logger.warning("Firestore not available for individual lease fetch")
-        return {}
+    from app.core.database import async_session_maker
+    from app.services import db_service
 
     sem = asyncio.Semaphore(MAX_CONCURRENT_RRC)
     results: dict[tuple[str, str], dict] = {}
@@ -496,22 +489,25 @@ async def fetch_individual_leases(
                 if not parsed:
                     return
 
-                for rec in parsed:
-                    d = rec["district"]
-                    ln = rec["lease_number"]
-                    acres = rec["acres"]
-                    await upsert_rrc_oil_record(
-                        district=d, lease_number=ln,
-                        operator_name=rec.get("operator_name"),
-                        lease_name=rec.get("lease_name"),
-                        field_name=rec.get("field_name"),
-                        county=None, unit_acres=acres,
-                    )
-                    results[(d, ln)] = {
-                        "acres": acres, "type": "oil",
-                        "operator": rec.get("operator_name"),
-                        "lease_name": rec.get("lease_name"),
-                    }
+                async with async_session_maker() as db_session:
+                    for rec in parsed:
+                        d = rec["district"]
+                        ln = rec["lease_number"]
+                        acres = rec["acres"]
+                        await db_service.upsert_rrc_oil_record(
+                            db_session,
+                            district=d, lease_number=ln,
+                            operator_name=rec.get("operator_name"),
+                            lease_name=rec.get("lease_name"),
+                            field_name=rec.get("field_name"),
+                            county=None, unit_acres=acres,
+                        )
+                        results[(d, ln)] = {
+                            "acres": acres, "type": "oil",
+                            "operator": rec.get("operator_name"),
+                            "lease_name": rec.get("lease_name"),
+                        }
+                    await db_session.commit()
             except Exception as e:
                 logger.warning("Individual RRC fetch failed for %s-%s: %s", district, lease_number, e)
 
@@ -522,38 +518,39 @@ async def fetch_individual_leases(
 
 
 async def _upsert_county_records(df: pd.DataFrame) -> int:
-    """Upsert county oil records to Firestore."""
-    try:
-        from app.services.firestore_service import upsert_rrc_oil_record
-    except ImportError:
-        logger.warning("Firestore not available, skipping upsert")
-        return 0
+    """Upsert county oil records to database."""
+    from app.core.database import async_session_maker
+    from app.services import db_service
 
     count = 0
-    for _, row in df.iterrows():
-        try:
-            district = str(row.get("District", "")).strip()
-            if district and district[0].isdigit():
-                district = district.zfill(2) if len(district) == 1 else district
+    async with async_session_maker() as session:
+        for _, row in df.iterrows():
+            try:
+                district = str(row.get("District", "")).strip()
+                if district and district[0].isdigit():
+                    district = district.zfill(2) if len(district) == 1 else district
 
-            lease_number = str(row.get("Lease No.", "")).strip()
-            if not district or not lease_number:
-                continue
+                lease_number = str(row.get("Lease No.", "")).strip()
+                if not district or not lease_number:
+                    continue
 
-            acres = float(row["Acres"]) if pd.notna(row.get("Acres")) else None
+                acres = float(row["Acres"]) if pd.notna(row.get("Acres")) else None
 
-            await upsert_rrc_oil_record(
-                district=district,
-                lease_number=lease_number,
-                operator_name=str(row.get("Operator Name", "")) if pd.notna(row.get("Operator Name")) else None,
-                lease_name=str(row.get("Lease Name", "")) if pd.notna(row.get("Lease Name")) else None,
-                field_name=str(row.get("Field Name", "")) if pd.notna(row.get("Field Name")) else None,
-                county=str(row.get("County", "")) if pd.notna(row.get("County")) else None,
-                unit_acres=acres,
-            )
-            count += 1
-        except Exception as e:
-            if count < 5:
-                logger.warning("Error upserting record: %s", e)
+                await db_service.upsert_rrc_oil_record(
+                    session,
+                    district=district,
+                    lease_number=lease_number,
+                    operator_name=str(row.get("Operator Name", "")) if pd.notna(row.get("Operator Name")) else None,
+                    lease_name=str(row.get("Lease Name", "")) if pd.notna(row.get("Lease Name")) else None,
+                    field_name=str(row.get("Field Name", "")) if pd.notna(row.get("Field Name")) else None,
+                    county=str(row.get("County", "")) if pd.notna(row.get("County")) else None,
+                    unit_acres=acres,
+                )
+                count += 1
+            except Exception as e:
+                if count < 5:
+                    logger.warning("Error upserting record: %s", e)
+
+        await session.commit()
 
     return count
