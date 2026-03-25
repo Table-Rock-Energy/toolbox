@@ -118,7 +118,10 @@ Plans:
   3. Protected endpoints return 401 without valid JWT -- existing require_auth/require_admin dependency chain works with JWT verification
   4. CLI seed script creates admin user (james@tablerocktx.com) in PostgreSQL with bcrypt-hashed password
   5. App fails fast at startup if JWT_SECRET_KEY is missing in production
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 23-01-PLAN.md -- Security module, JWT config, auth.py rewrite, SSE/admin fixes, startup check
+- [ ] 23-02-PLAN.md -- Auth API endpoints (login/me), seed script, tests
 
 ### Phase 24: Auth Frontend & Firebase Removal
 **Goal**: Frontend authenticates via local JWT with zero Firebase code remaining in the codebase
@@ -176,7 +179,7 @@ Phases 22 -> 23 -> 24 -> 25 -> 26 -> 27
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 22. Database Models & Schema | v2.0 | 2/2 | Complete    | 2026-03-25 |
-| 23. Auth Backend | v2.0 | 0/0 | Not started | - |
+| 23. Auth Backend | v2.0 | 0/2 | Not started | - |
 | 24. Auth Frontend & Firebase Removal | v2.0 | 0/0 | Not started | - |
 | 25. Database Service Port | v2.0 | 0/0 | Not started | - |
 | 26. AI Provider Swap | v2.0 | 0/0 | Not started | - |
