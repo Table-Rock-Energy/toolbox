@@ -48,11 +48,13 @@ class JobStatus(str, PyEnum):
 
 
 class User(Base):
-    """User model - synced from Firebase Auth."""
+    """Application user."""
 
     __tablename__ = "users"
 
-    id: Mapped[str] = mapped_column(String(128), primary_key=True)  # Firebase UID
+    id: Mapped[str] = mapped_column(
+        String(128), primary_key=True, default=lambda: str(uuid4())
+    )
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     display_name: Mapped[Optional[str]] = mapped_column(String(255))
     photo_url: Mapped[Optional[str]] = mapped_column(String(512))
@@ -65,6 +67,13 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    # Auth columns (local JWT auth)
+    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    role: Mapped[str] = mapped_column(String(20), default="user")
+    scope: Mapped[str] = mapped_column(String(20), default="all")
+    tools: Mapped[Optional[list]] = mapped_column(JSONB, default=list)
+    added_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     # Relationships
     jobs: Mapped[list["Job"]] = relationship("Job", back_populates="user")
@@ -503,3 +512,157 @@ class AuditLog(Base):
 
     def __repr__(self) -> str:
         return f"<AuditLog {self.action} {self.created_at}>"
+
+
+# =============================================================================
+# App Config Model
+# =============================================================================
+
+
+class AppConfig(Base):
+    """Application configuration key-value store."""
+
+    __tablename__ = "app_config"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    data: Mapped[dict] = mapped_column(JSONB, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<AppConfig {self.key}>"
+
+
+# =============================================================================
+# User Preference Model
+# =============================================================================
+
+
+class UserPreference(Base):
+    """Per-user preferences stored as JSONB."""
+
+    __tablename__ = "user_preferences"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(
+        String(128), ForeignKey("users.id"), unique=True, index=True
+    )
+    data: Mapped[dict] = mapped_column(JSONB, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationship
+    user: Mapped["User"] = relationship("User", backref="preferences")
+
+    def __repr__(self) -> str:
+        return f"<UserPreference user={self.user_id}>"
+
+
+# =============================================================================
+# RRC County Status Model
+# =============================================================================
+
+
+class RRCCountyStatus(Base):
+    """Track per-county RRC data download status."""
+
+    __tablename__ = "rrc_county_status"
+
+    key: Mapped[str] = mapped_column(String(20), primary_key=True)  # e.g. "08-003"
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    oil_record_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_downloaded_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True)
+    )
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<RRCCountyStatus {self.key} {self.status}>"
+
+
+# =============================================================================
+# GHL Connection Model
+# =============================================================================
+
+
+class GHLConnection(Base):
+    """GoHighLevel sub-account connection."""
+
+    __tablename__ = "ghl_connections"
+
+    id: Mapped[str] = mapped_column(
+        String(128), primary_key=True, default=lambda: str(uuid4())
+    )
+    name: Mapped[str] = mapped_column(String(255))
+    encrypted_token: Mapped[str] = mapped_column(Text)
+    token_last4: Mapped[str] = mapped_column(String(4))
+    location_id: Mapped[str] = mapped_column(String(255))
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    validation_status: Mapped[str] = mapped_column(String(20), default="pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<GHLConnection {self.name}>"
+
+
+# =============================================================================
+# RRC Sync Job Model
+# =============================================================================
+
+
+class RRCSyncJob(Base):
+    """Background RRC download job tracking."""
+
+    __tablename__ = "rrc_sync_jobs"
+
+    id: Mapped[str] = mapped_column(
+        String(128), primary_key=True
+    )  # e.g. "rrc-sync-2026-03-25T02-00-00"
+    status: Mapped[str] = mapped_column(String(30), default="downloading_oil")
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    oil_rows: Mapped[int] = mapped_column(Integer, default=0)
+    gas_rows: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    steps: Mapped[Optional[list]] = mapped_column(JSONB, default=list)
+
+    def __repr__(self) -> str:
+        return f"<RRCSyncJob {self.id} {self.status}>"
+
+
+# =============================================================================
+# RRC Metadata Model
+# =============================================================================
+
+
+class RRCMetadata(Base):
+    """RRC data counts and sync metadata."""
+
+    __tablename__ = "rrc_metadata"
+
+    key: Mapped[str] = mapped_column(
+        String(50), primary_key=True
+    )  # e.g. "counts"
+    oil_rows: Mapped[int] = mapped_column(Integer, default=0)
+    gas_rows: Mapped[int] = mapped_column(Integer, default=0)
+    last_sync_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    new_records: Mapped[int] = mapped_column(Integer, default=0)
+    updated_records: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<RRCMetadata {self.key}>"
