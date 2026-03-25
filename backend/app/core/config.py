@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     # Shared secret for cron/CI auth (bypasses Firebase token verification)
     cron_secret: Optional[str] = None
 
+    # JWT settings (local auth)
+    jwt_secret_key: str = "dev-only-change-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 1440  # 24 hours
+
     # Google Maps API settings (address validation)
     google_maps_api_key: Optional[str] = None
     google_maps_enabled: bool = False
