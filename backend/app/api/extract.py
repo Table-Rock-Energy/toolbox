@@ -229,7 +229,7 @@ async def upload_pdf(
             post_process=pp_result,
         )
 
-        # Persist to Firestore (non-blocking)
+        # Persist to database (non-blocking)
         user_email = request.headers.get("x-user-email") or None
         user_name = request.headers.get("x-user-name") or None
         job_id = await persist_job_result(

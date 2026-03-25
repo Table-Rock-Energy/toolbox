@@ -125,7 +125,7 @@ class ProcessingResult(BaseModel):
         None, description="Error message if processing failed"
     )
     source_filename: Optional[str] = Field(None, description="Original CSV filename")
-    job_id: Optional[str] = Field(None, description="Firestore job ID")
+    job_id: Optional[str] = Field(None, description="Job ID")
     county_downloads: Optional[list[CountyDownloadInfo]] = Field(
         None, description="On-demand county download statuses"
     )

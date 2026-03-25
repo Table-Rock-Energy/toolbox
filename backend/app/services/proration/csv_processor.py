@@ -125,7 +125,7 @@ async def process_csv(
 
         # Convert to MineralHolderRow objects using 3-phase approach:
         # Phase 1: Parse rows, check cache, collect misses
-        # Phase 2: Batch Firestore reads for all cache misses (PERF-03)
+        # Phase 2: Batch database reads for all cache misses (PERF-03)
         # Phase 3: Build MineralHolderRow objects using cached results
         rows: list[MineralHolderRow] = []
         failed_count = 0
@@ -185,7 +185,7 @@ async def process_csv(
                 logger.exception(f"Error parsing row {idx}: {e}")
                 failed_count += 1
 
-        # Phase 2: Batch Firestore reads for all cache misses (PERF-03)
+        # Phase 2: Batch database reads for all cache misses (PERF-03)
         if cache_misses and _use_database:
             sem = asyncio.Semaphore(25)
 

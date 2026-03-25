@@ -315,7 +315,7 @@ async def bulk_send_endpoint(
 ) -> BulkSendStartResponse:
     """Start an async bulk contact send job.
 
-    Validates contacts, creates job in Firestore, and starts background processing.
+    Validates contacts, creates job in database, and starts background processing.
     Returns immediately with job_id. Use /send/{job_id}/progress to stream progress.
     """
     from app.services.ghl.bulk_send_service import validate_batch, process_batch_async, create_send_job
@@ -338,7 +338,7 @@ async def bulk_send_endpoint(
         total_valid = len(valid_contacts)
         total_count = total_valid + skipped_count
 
-        # Step 4: Create job in Firestore
+        # Step 4: Create job in database
         campaign_name = data.campaign_tag
         await create_send_job(
             job_id=job_id,
@@ -390,7 +390,7 @@ async def bulk_send_endpoint(
 async def stream_send_progress(job_id: str, request: Request, token: Optional[str] = None):
     """Stream SSE progress events for a bulk send job.
 
-    Polls Firestore every 300ms for job status and yields progress events.
+    Polls database every 300ms for job status and yields progress events.
     When job completes, yields a final 'complete' event with full results.
     Authenticates via query parameter token (SSE/EventSource cannot send headers).
     """
@@ -406,7 +406,7 @@ async def stream_send_progress(job_id: str, request: Request, token: Optional[st
     import json
 
     async def event_generator():
-        """Generate SSE events from Firestore polling."""
+        """Generate SSE events from database polling."""
         previous_processed = -1
 
         while True:
@@ -415,7 +415,7 @@ async def stream_send_progress(job_id: str, request: Request, token: Optional[st
                 logger.info(f"Client disconnected from SSE stream for job {job_id}")
                 break
 
-            # Fetch job status from Firestore
+            # Fetch job status from database
             job_data = await get_job_status(job_id)
 
             if job_data is None:
@@ -499,7 +499,7 @@ async def stream_send_progress(job_id: str, request: Request, token: Optional[st
 async def cancel_send(job_id: str, user: dict = Depends(require_auth)):
     """Cancel a running bulk send job.
 
-    Sets cancellation flag in Firestore. The background task will check this flag
+    Sets cancellation flag in database. The background task will check this flag
     before processing each contact and stop gracefully.
     """
     from app.services.ghl.bulk_send_service import cancel_job

@@ -348,7 +348,7 @@ async def upload_csv(
             file.filename,
         )
 
-        # Persist to Firestore (non-blocking)
+        # Persist to database (non-blocking)
         user_email = request.headers.get("x-user-email") or None
         user_name = request.headers.get("x-user-name") or None
         job_id = await persist_job_result(
@@ -415,7 +415,7 @@ async def fetch_missing_rrc_data(request: FetchMissingRequest, background_tasks:
         total = len(request.rows)
         yield json.dumps({"event": "started", "total": total}) + "\n"
 
-        # Step 1: Parse district/lease from each row and check Firestore first
+        # Step 1: Parse district/lease from each row and check database first
         updated_rows = []
         matched = 0
         missing_leases: list[tuple[int, str, str, str]] = []

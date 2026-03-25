@@ -88,7 +88,7 @@ class ProcessingResult(BaseModel):
         None, description="Error message if processing failed"
     )
     source_filename: Optional[str] = Field(None, description="Original filename")
-    job_id: Optional[str] = Field(None, description="Firestore job ID")
+    job_id: Optional[str] = Field(None, description="Job ID")
     post_process: Optional[PostProcessResult] = Field(
         None, description="Auto-correction results from post-processing pipeline"
     )

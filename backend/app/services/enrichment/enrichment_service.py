@@ -16,7 +16,7 @@ from app.models.enrichment import (
 
 logger = logging.getLogger(__name__)
 
-# Runtime overrides for API keys (set via admin UI, persisted in Firestore)
+# Runtime overrides for API keys (set via admin UI, persisted in database)
 _runtime_pdl_key: Optional[str] = None
 _runtime_searchbug_key: Optional[str] = None
 _runtime_enabled: Optional[bool] = None

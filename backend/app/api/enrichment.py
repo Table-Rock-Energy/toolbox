@@ -46,11 +46,11 @@ async def update_enrichment_config(request: EnrichmentConfigUpdateRequest, user:
         enabled=request.enabled,
     )
 
-    # Persist to Firestore
+    # Persist to database
     try:
         await _save_enrichment_config(request)
     except Exception as e:
-        logger.warning(f"Failed to persist enrichment config to Firestore: {e}")
+        logger.warning(f"Failed to persist enrichment config to database: {e}")
 
     status = get_enrichment_status()
     logger.info(f"Enrichment config updated: enabled={status.enabled}, pdl={status.pdl_configured}, searchbug={status.searchbug_configured}")

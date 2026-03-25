@@ -91,7 +91,7 @@ class ExtractionResult(BaseModel):
         None, description="Error message if extraction failed"
     )
     source_filename: Optional[str] = Field(None, description="Original PDF filename")
-    job_id: Optional[str] = Field(None, description="Firestore job ID")
+    job_id: Optional[str] = Field(None, description="Job ID")
     format_detected: Optional[str] = Field(
         None, description="Auto-detected format (e.g., TABLE_ATTENTION, FREE_TEXT_LIST)"
     )

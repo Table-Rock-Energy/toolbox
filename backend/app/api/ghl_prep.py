@@ -53,7 +53,7 @@ async def upload_file(
         user_email = request.headers.get("x-user-email") or None
         user_name = request.headers.get("x-user-name") or None
 
-        # Fire-and-forget: persist to Firestore in background
+        # Fire-and-forget: persist to database in background
         asyncio.create_task(
             _persist_in_background(
                 job_id=job_id,
@@ -102,7 +102,7 @@ async def _persist_in_background(
     user_id: Optional[str] = None,
     user_name: Optional[str] = None,
 ) -> None:
-    """Background task for Firestore persistence."""
+    """Background task for database persistence."""
     try:
         # For GHL Prep, we don't need to save individual entries (they're transformations, not entities)
         # Just persist the job metadata

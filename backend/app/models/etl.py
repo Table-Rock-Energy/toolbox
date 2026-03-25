@@ -79,7 +79,7 @@ class SourceReference(BaseModel):
     """Tracks where a piece of data came from."""
 
     tool: SourceTool = Field(..., description="Which tool produced this data")
-    job_id: Optional[str] = Field(None, description="Firestore job ID")
+    job_id: Optional[str] = Field(None, description="Job ID")
     document: Optional[str] = Field(None, description="Source filename")
     field: Optional[str] = Field(None, description="Specific field (e.g., 'primary_name')")
     extracted_text: Optional[str] = Field(None, description="Raw text that was parsed")
@@ -151,7 +151,7 @@ class Entity(BaseModel):
     addresses, properties, and relationships from across all tools.
     """
 
-    id: Optional[str] = Field(None, description="Firestore document ID")
+    id: Optional[str] = Field(None, description="Document ID")
     canonical_name: str = Field(..., description="Best known name for this entity")
     entity_type: EntityType = Field(default=EntityType.UNKNOWN)
     names: list[NameVariant] = Field(
@@ -197,7 +197,7 @@ class Relationship(BaseModel):
     and other connections between entities in the mineral rights database.
     """
 
-    id: Optional[str] = Field(None, description="Firestore document ID")
+    id: Optional[str] = Field(None, description="Document ID")
     from_entity_id: str = Field(..., description="Source entity ID")
     from_entity_name: Optional[str] = Field(None, description="Source entity name (denormalized)")
     to_entity_id: str = Field(..., description="Target entity ID")
@@ -237,7 +237,7 @@ class OwnershipRecord(BaseModel):
     enabling reconstruction of ownership chains.
     """
 
-    id: Optional[str] = Field(None, description="Firestore document ID")
+    id: Optional[str] = Field(None, description="Document ID")
     entity_id: str = Field(..., description="Entity that holds the interest")
     entity_name: Optional[str] = Field(None, description="Entity name (denormalized)")
     property_id: Optional[str] = None

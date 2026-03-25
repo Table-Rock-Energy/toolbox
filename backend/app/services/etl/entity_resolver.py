@@ -246,7 +246,7 @@ async def resolve_entity(
             first_name, middle_name, last_name, suffix, notes,
         ), True
 
-    # Get candidate entities from Firestore
+    # Get candidate entities from database
     candidates = await _find_candidates(db, normalized, entity_type)
 
     # Score each candidate
@@ -281,7 +281,7 @@ async def resolve_entity(
 
 
 async def _find_candidates(db, normalized: str, entity_type: EntityType) -> list[Entity]:
-    """Find candidate entities from Firestore for matching."""
+    """Find candidate entities from database for matching."""
     from app.services.etl.entity_registry import _dict_to_entity
 
     candidates = []

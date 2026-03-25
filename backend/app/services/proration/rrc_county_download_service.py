@@ -193,7 +193,7 @@ async def _download_county_oil(
     total_records = len(combined)
     logger.info("Downloaded %d oil records for %s County", total_records, county_name)
 
-    # Upsert to Firestore
+    # Upsert to database
     upserted = await _upsert_county_records(combined)
 
     return True, f"Downloaded {total_records} records, upserted {upserted}", total_records

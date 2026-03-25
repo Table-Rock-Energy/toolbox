@@ -158,7 +158,7 @@ async def _persist_result(
     errors: list[str],
     request: Request,
 ) -> None:
-    """Persist result to Firestore (non-blocking, best-effort)."""
+    """Persist result to database (non-blocking, best-effort)."""
     if not statements:
         return
     filenames = ", ".join(s.filename for s in statements)
@@ -280,7 +280,7 @@ async def upload_pdfs_stream(request: Request, files: list[UploadFile] = File(..
             post_process=aggregated_pp,
         )
 
-        # Persist to Firestore
+        # Persist to database
         await _persist_result(result, statements, total_rows, errors, request)
 
         # Final result

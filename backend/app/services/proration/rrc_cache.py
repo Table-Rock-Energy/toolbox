@@ -1,7 +1,7 @@
-"""In-memory RRC cache layer sitting in front of Firestore lookups.
+"""In-memory RRC cache layer sitting in front of database lookups.
 
 Provides a fast dict-based cache keyed by (district, lease_number) tuples.
-The cache is populated from RRC DataFrame data and individual Firestore
+The cache is populated from RRC DataFrame data and individual database
 results are backfilled via update_cache().
 """
 
@@ -42,7 +42,7 @@ def is_cache_ready() -> bool:
 
 
 def update_cache(key: tuple[str, str], value: dict | None) -> None:
-    """Single-key update for backfilling from Firestore results."""
+    """Single-key update for backfilling from database results."""
     _rrc_cache[key] = value
 
 
@@ -51,7 +51,7 @@ async def prewarm_rrc_cache() -> None:
 
     Loads the combined oil+gas lookup table in a background thread
     so the first proration request doesn't pay the cold-start cost.
-    Does NOT populate the Firestore-backed cache (too slow with 100K+ docs).
+    Does NOT populate the database-backed cache (too slow with 100K+ docs).
     """
     from app.services.proration.rrc_data_service import rrc_data_service
 

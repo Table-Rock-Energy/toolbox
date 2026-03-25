@@ -52,25 +52,25 @@ def test_invalidate_cache_clears_data():
     assert rrc_cache.get_from_cache("08", "41100") is None
 
 
-# --- PERF-01: Cache hit skips Firestore ---
+# --- PERF-01: Cache hit skips database ---
 
 
-def test_cache_hit_skips_firestore():
-    """When cache has data for a key, Firestore lookup must NOT be called (PERF-01)."""
+def test_cache_hit_skips_database():
+    """When cache has data for a key, database lookup must NOT be called (PERF-01)."""
     record = {"acres": 640.0, "type": "oil"}
     rrc_cache.populate_cache({("08", "41100"): record})
 
-    # The cache provides data directly -- no Firestore interaction needed
+    # The cache provides data directly -- no database interaction needed
     result = rrc_cache.get_from_cache("08", "41100")
     assert result is not None
     assert result["acres"] == 640.0
 
-    # Verify the pattern: if get_from_cache returns non-None, caller skips Firestore.
+    # Verify the pattern: if get_from_cache returns non-None, caller skips database.
     # This is a contract test -- csv_processor integration is plan 02.
-    mock_firestore = AsyncMock()
+    mock_db = AsyncMock()
     if result is not None:
-        # Firestore should never be called when cache hits
-        mock_firestore.assert_not_called()
+        # Database should never be called when cache hits
+        mock_db.assert_not_called()
 
 
 # --- PERF-02: Startup pre-warm ---
@@ -94,14 +94,14 @@ async def test_startup_prewarm():
         mock_service._load_lookup.assert_called_once()
 
     # After pre-warm, cache should NOT be populated (pre-warm only loads DataFrame,
-    # not the Firestore cache -- per plan anti-pattern guidance)
+    # not the DB cache -- per plan anti-pattern guidance)
 
 
-# --- PERF-03: Batch Firestore reads ---
+# --- PERF-03: Batch database reads ---
 
 
 @pytest.mark.asyncio
-async def test_batch_firestore_reads():
+async def test_batch_database_reads():
     """Cache misses are batched via asyncio.gather, not sequential awaits (PERF-03)."""
     import asyncio
 

@@ -1,6 +1,6 @@
 """Tests for RRC fetch-missing fixes (RRC-01, RRC-02, RRC-03).
 
-RRC-01: Use individual_results directly instead of re-querying Firestore.
+RRC-01: Use individual_results directly instead of re-querying database.
 RRC-02: Split compound lease numbers (slash/comma separated) before lookup.
 RRC-03: Set per-row fetch_status on every row returned from fetch-missing.
 """
@@ -76,10 +76,10 @@ async def test_split_lookup_status():
     """Compound lease where one sub-lease found, one not -> split_lookup status."""
     from unittest.mock import AsyncMock, patch
 
-    async def mock_lookup_rrc_acres(district, lease_number):
+    async def mock_lookup_rrc_acres(session, district, lease_number):
         return None
 
-    async def mock_lookup_rrc_by_lease_number(lease_number):
+    async def mock_lookup_rrc_by_lease_number(session, lease_number):
         return None
 
     async def mock_fetch_individual_leases(leases):
@@ -230,7 +230,7 @@ def test_model_sub_lease_results_defaults_none():
 
 
 # ---------------------------------------------------------------------------
-# RRC-01: individual_results used directly (no redundant Firestore re-query)
+# RRC-01: individual_results used directly (no redundant database re-query)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
@@ -238,14 +238,14 @@ async def test_individual_results_used_directly(monkeypatch):
     """After individual fetch, results are used directly without calling lookup_rrc_acres again."""
     from unittest.mock import AsyncMock, patch
 
-    firestore_lookup_calls: list[str] = []
+    db_lookup_calls: list[str] = []
 
-    async def mock_lookup_rrc_acres(district, lease_number):
-        firestore_lookup_calls.append(f"lookup_rrc_acres({district},{lease_number})")
+    async def mock_lookup_rrc_acres(session, district, lease_number):
+        db_lookup_calls.append(f"lookup_rrc_acres({district},{lease_number})")
         return None
 
-    async def mock_lookup_rrc_by_lease_number(lease_number):
-        firestore_lookup_calls.append(f"lookup_rrc_by_lease_number({lease_number})")
+    async def mock_lookup_rrc_by_lease_number(session, lease_number):
+        db_lookup_calls.append(f"lookup_rrc_by_lease_number({lease_number})")
         return None
 
     async def mock_fetch_individual_leases(leases):
@@ -285,14 +285,14 @@ async def test_individual_results_used_directly(monkeypatch):
             ),
         ])
 
-        firestore_lookup_calls.clear()
+        db_lookup_calls.clear()
 
         response = await fetch_missing_rrc_data(request, bg)
         result = await _consume_streaming_response(response)
 
-        step1_calls = [c for c in firestore_lookup_calls if "lookup_rrc_acres" in c or "lookup_rrc_by_lease_number" in c]
+        step1_calls = [c for c in db_lookup_calls if "lookup_rrc_acres" in c or "lookup_rrc_by_lease_number" in c]
         assert len(step1_calls) <= 2, (
-            f"Expected at most 2 Firestore lookups (Step 1 only), got {len(step1_calls)}: {step1_calls}"
+            f"Expected at most 2 DB lookups (Step 1 only), got {len(step1_calls)}: {step1_calls}"
         )
 
         assert result["matched_count"] == 1
@@ -308,10 +308,10 @@ async def test_fetch_status_set_on_returned_rows(monkeypatch):
     """Rows returned from fetch-missing have fetch_status set appropriately."""
     from unittest.mock import AsyncMock, patch
 
-    async def mock_lookup_rrc_acres(district, lease_number):
+    async def mock_lookup_rrc_acres(session, district, lease_number):
         return None
 
-    async def mock_lookup_rrc_by_lease_number(lease_number):
+    async def mock_lookup_rrc_by_lease_number(session, lease_number):
         return None
 
     async def mock_fetch_individual_leases(leases):
