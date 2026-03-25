@@ -19,15 +19,20 @@ router = APIRouter()
 
 @router.get("/status", response_model=AiStatusResponse)
 async def ai_status() -> AiStatusResponse:
-    """Check if AI validation is enabled and return rate limit info."""
-    from app.services.gemini_service import get_ai_status
+    """Check if AI validation is enabled and return status."""
+    from app.core.config import settings
+    from app.services.llm import get_llm_provider
 
-    return get_ai_status()
+    provider = get_llm_provider()
+    return AiStatusResponse(
+        enabled=provider is not None and provider.is_available(),
+        model=settings.llm_model if settings.use_ai else "",
+    )
 
 
 @router.post("/validate", response_model=AiValidationResult)
 async def ai_validate(request: AiValidationRequest) -> AiValidationResult:
-    """Validate entries using Gemini AI and return suggestions."""
+    """Validate entries using AI and return suggestions."""
     valid_tools = {"extract", "title", "proration", "revenue"}
     if request.tool not in valid_tools:
         return AiValidationResult(
@@ -48,9 +53,15 @@ async def ai_validate(request: AiValidationRequest) -> AiValidationResult:
         )
 
     try:
-        from app.services.gemini_service import validate_entries
+        from app.services.llm import get_llm_provider
 
-        result = await validate_entries(request.tool, request.entries)
+        provider = get_llm_provider()
+        if provider is None:
+            return AiValidationResult(
+                success=False,
+                error_message="AI validation is not enabled. Set AI_PROVIDER=lmstudio.",
+            )
+        result = await provider.validate_entries(request.tool, request.entries)
         return result
     except Exception as e:
         logger.exception(f"AI validation error: {e}")

@@ -5,7 +5,7 @@ Orchestrates multi-step processing:
 2. Address validation (Google Maps Geocoding API) — skips if address_verified
 3. Places lookup (Google Places API) — flags institutional addresses
 4. Data enrichment (PDL + SearchBug) — phones, emails, public records
-5. AI QA (Gemini) — final quality review
+5. AI QA — final quality review
 
 Also provides `enrich_entries()` — a streaming pipeline that yields
 progress events as JSON-serializable dicts.
@@ -689,9 +689,16 @@ async def _validate_names_step(
     tool: str,
     field_map: dict,
 ) -> AsyncGenerator[dict, None]:
-    """Step 4: Validate names using Gemini AI."""
-    if not settings.use_gemini:
-        yield {"step": "names", "status": "skipped", "message": "Gemini AI not configured"}
+    """Step 4: Validate names using AI."""
+    if not settings.use_ai:
+        yield {"step": "names", "status": "skipped", "message": "AI not configured"}
+        return
+
+    from app.services.llm import get_llm_provider
+
+    provider = get_llm_provider()
+    if provider is None:
+        yield {"step": "names", "status": "skipped", "message": "AI provider not available"}
         return
 
     total = len(entries)
@@ -703,9 +710,7 @@ async def _validate_names_step(
     }
 
     try:
-        from app.services.gemini_service import validate_entries
-
-        result = await validate_entries(tool, entries)
+        result = await provider.validate_entries(tool, entries)
 
         if result.success and result.suggestions:
             applied = 0
@@ -832,7 +837,7 @@ async def enrich_entries(
     1. Validate addresses (Google Maps) — skips verified
     2. Places lookup (Google Places) — flags institutional
     3. Enrich contacts (PDL + SearchBug) — skips enriched
-    4. Validate names (Gemini AI)
+    4. Validate names (AI)
     5. Split multiple names
 
     Args:
@@ -855,7 +860,7 @@ async def enrich_entries(
         "google_maps_enabled": settings.use_google_maps,
         "places_enabled": settings.use_places,
         "enrichment_enabled": settings.use_enrichment,
-        "gemini_enabled": settings.use_gemini,
+        "ai_enabled": settings.use_ai,
     }) + "\n"
 
     # Step 1: Address validation

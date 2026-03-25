@@ -90,18 +90,3 @@ class AiStatusResponse(BaseModel):
 
     enabled: bool = Field(description="Whether AI validation is enabled")
     model: str = Field(default="", description="Model being used")
-    requests_remaining_minute: int = Field(
-        default=0, description="Remaining requests this minute"
-    )
-    requests_remaining_day: int = Field(
-        default=0, description="Remaining requests today"
-    )
-    monthly_budget: float = Field(
-        default=0, description="Monthly budget limit in USD"
-    )
-    monthly_spend: float = Field(
-        default=0, description="Amount spent this month in USD"
-    )
-    monthly_budget_remaining: float = Field(
-        default=0, description="Remaining budget this month in USD"
-    )

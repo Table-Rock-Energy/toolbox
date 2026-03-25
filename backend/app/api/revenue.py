@@ -10,7 +10,6 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
-from app.core.config import settings
 from app.core.ingestion import file_response, persist_job_result
 from app.models.ai_validation import PostProcessResult
 from app.models.revenue import (
@@ -73,35 +72,25 @@ async def _process_single_pdf(file: UploadFile) -> tuple[RevenueStatement | None
                 )
             return None, errors
 
-        # Try Gemini-first parsing when enabled
+        # Format-specific parsing
         statement = None
-        if settings.use_gemini:
-            try:
-                from app.services.revenue.gemini_revenue_parser import gemini_parse_revenue
-                statement = await gemini_parse_revenue(text, file.filename)
-            except Exception as e:
-                logger.warning(f"Gemini parsing failed for {file.filename}, falling back to traditional: {e}")
-                statement = None
+        format_type = detect_format(text)
+        parser = get_parser_for_format(format_type)
 
-        # Traditional format-specific parsing (fallback or primary)
-        if statement is None:
-            format_type = detect_format(text)
-            parser = get_parser_for_format(format_type)
+        if parser is None:
+            errors.append(
+                f"Unknown statement format for {file.filename}. "
+                "Text was extracted but did not match EnergyLink, Enverus, "
+                "or Energy Transfer format."
+            )
+            return None, errors
 
-            if parser is None:
-                errors.append(
-                    f"Unknown statement format for {file.filename}. "
-                    "Text was extracted but did not match EnergyLink, Enverus, "
-                    "or Energy Transfer format."
-                )
-                return None, errors
-
-            # Enverus parser needs raw PDF bytes for positional extraction
-            if parser == "enverus":
-                from app.services.revenue.enverus_parser import parse_enverus_statement
-                statement = parse_enverus_statement(content, file.filename)
-            else:
-                statement = parser(text, file.filename)
+        # Enverus parser needs raw PDF bytes for positional extraction
+        if parser == "enverus":
+            from app.services.revenue.enverus_parser import parse_enverus_statement
+            statement = parse_enverus_statement(content, file.filename)
+        else:
+            statement = parser(text, file.filename)
 
         # Collect per-statement errors
         for err in statement.errors:

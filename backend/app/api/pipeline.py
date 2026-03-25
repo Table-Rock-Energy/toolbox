@@ -98,14 +98,14 @@ DEFAULT_ENRICH_MAPPINGS: dict[str, dict[str, str]] = {
 async def pipeline_cleanup(request: Request, body: PipelineRequest) -> PipelineResponse:
     """Run AI-powered data cleanup on entries.
 
-    Uses the configured LLM provider (Gemini) to suggest corrections
+    Uses the configured LLM provider to suggest corrections
     for name casing, abbreviations, entity types, etc.
     """
     provider = get_llm_provider()
     if provider is None:
         return PipelineResponse(
             success=False,
-            error="AI cleanup not configured. Enable Gemini in settings.",
+            error="AI cleanup not configured. Set AI_PROVIDER=lmstudio in settings.",
         )
 
     try:

@@ -13,7 +13,7 @@ router = APIRouter()
 async def feature_status() -> dict:
     """Return which optional enrichment features are enabled."""
     return {
-        "cleanup_enabled": settings.use_gemini,
+        "cleanup_enabled": settings.use_ai,
         "validate_enabled": settings.use_google_maps,
         "enrich_enabled": settings.use_enrichment,
     }

@@ -42,14 +42,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/toolbox"
     database_enabled: bool = True  # Always on -- PostgreSQL is the only database
 
-    # Unified Google Cloud API key (Gemini, Places, Geocoding/Maps)
+    # Unified Google Cloud API key (Places, Geocoding/Maps)
     google_api_key: Optional[str] = None
-
-    # Gemini AI settings (optional AI-powered data validation)
-    gemini_api_key: Optional[str] = None
-    gemini_enabled: bool = False
-    gemini_model: str = "gemini-2.5-flash"
-    gemini_monthly_budget: float = 15.00  # Maximum monthly spend in USD
 
     # AI provider settings (lmstudio or none)
     ai_provider: str = "none"
@@ -115,11 +109,6 @@ class Settings(BaseSettings):
     def use_database(self) -> bool:
         """Check if database should be used."""
         return self.database_enabled and bool(self.database_url)
-
-    @property
-    def use_gemini(self) -> bool:
-        """Check if Gemini AI validation should be used."""
-        return self.gemini_enabled and bool(self.gemini_api_key or self.google_api_key)
 
     @property
     def use_google_maps(self) -> bool:

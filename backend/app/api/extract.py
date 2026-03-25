@@ -310,7 +310,7 @@ async def pipeline_status():
 
     return {
         "google_maps_enabled": settings.use_google_maps,
-        "gemini_enabled": settings.use_gemini,
+        "ai_enabled": settings.use_ai,
     }
 
 
