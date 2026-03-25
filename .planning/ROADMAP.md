@@ -90,7 +90,7 @@ See: `.planning/milestones/v1.8-ROADMAP.md` for full details
 - [x] **Phase 23: Auth Backend** - JWT login/me endpoints, token verification middleware, admin seed script (completed 2026-03-25)
 - [x] **Phase 24: Auth Frontend & Firebase Removal** - Local auth context with JWT, remove all Firebase packages and imports (completed 2026-03-25)
 - [x] **Phase 25: Database Service Port** - Replace every Firestore service function with PostgreSQL equivalent (completed 2026-03-25)
-- [ ] **Phase 26: AI Provider Swap** - LM Studio via OpenAI-compatible API, remove Gemini dependency
+- [x] **Phase 26: AI Provider Swap** - LM Studio via OpenAI-compatible API, remove Gemini dependency (completed 2026-03-25)
 - [ ] **Phase 27: Storage & Dependency Cleanup** - Local filesystem default, GCS removal, migration script, final purge
 
 ## Phase Details
@@ -167,7 +167,7 @@ Plans:
 **Plans**: 2 plans
 Plans:
 - [x] 26-01-PLAN.md -- OpenAI provider, config fields, factory, JSON parser, and tests
-- [ ] 26-02-PLAN.md -- Swap all Gemini references, delete Gemini files, update frontend
+- [x] 26-02-PLAN.md -- Swap all Gemini references, delete Gemini files, update frontend
 
 ### Phase 27: Storage & Dependency Cleanup
 **Goal**: App runs fully on-prem with zero Google cloud dependencies in code or requirements.txt
@@ -193,5 +193,5 @@ Phases 22 -> 23 -> 24 -> 25 -> 26 -> 27
 | 23. Auth Backend | v2.0 | 2/2 | Complete    | 2026-03-25 |
 | 24. Auth Frontend & Firebase Removal | v2.0 | 2/2 | Complete    | 2026-03-25 |
 | 25. Database Service Port | v2.0 | 3/3 | Complete    | 2026-03-25 |
-| 26. AI Provider Swap | v2.0 | 1/2 | In Progress|  |
+| 26. AI Provider Swap | v2.0 | 2/2 | Complete   | 2026-03-25 |
 | 27. Storage & Dependency Cleanup | v2.0 | 0/0 | Not started | - |

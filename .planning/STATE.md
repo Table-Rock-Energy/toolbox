@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Full On-Prem Migration
-status: Ready to execute
-stopped_at: Completed 26-01-PLAN.md
-last_updated: "2026-03-25T22:24:28.210Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 26-02-PLAN.md
+last_updated: "2026-03-25T22:39:26.630Z"
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 11
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # Project State
@@ -52,6 +52,7 @@ Plan: 2 of 2
 | Phase 25 P02 | 16 | 2 tasks | 18 files |
 | Phase 25 P03 | 6min | 2 tasks | 24 files |
 | Phase 26-ai-provider-swap P01 | 3min | 1 tasks | 6 files |
+| Phase 26-ai-provider-swap P02 | 12min | 2 tasks | 21 files |
 
 ### Decisions
 
@@ -86,6 +87,9 @@ Plan: 2 of 2
 - [Phase 26]: openai SDK for LM Studio (OpenAI-compatible API, same SDK)
 - [Phase 26]: Gemini legacy fallback in factory until Plan 02 removes it
 - [Phase 26]: No rate limiting for local LM Studio inference
+- [Phase 26]: Remove Gemini revenue parsing fallback (traditional parsers only)
+- [Phase 26]: Clean break for /settings/ai (no backward compat with /settings/gemini)
+- [Phase 26]: LM Studio model as text input (not dropdown)
 
 ### Pending Todos
 
@@ -98,6 +102,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-25T22:24:28.208Z
-Stopped at: Completed 26-01-PLAN.md
+Last session: 2026-03-25T22:39:26.627Z
+Stopped at: Completed 26-02-PLAN.md
 Resume file: None
