@@ -1,23 +1,17 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Settings as SettingsIcon, User, Bell, Shield, Database, Check, AlertCircle, Upload } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import {
-  updatePassword,
-  updateProfile,
-  EmailAuthProvider,
-  reauthenticateWithCredential,
-} from 'firebase/auth'
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Settings() {
-  const { user, getIdToken } = useAuth()
+  const { user, getToken } = useAuth()
 
-  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
-    const token = await getIdToken()
+  const authHeaders = useCallback((): Record<string, string> => {
+    const token = getToken()
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
-  }, [getIdToken])
+  }, [getToken])
 
   // Section refs for scroll navigation
   const profileRef = useRef<HTMLDivElement>(null)
@@ -57,12 +51,12 @@ export default function Settings() {
     }
   }, [user])
 
-  // Load notification preferences from Firestore
+  // Load notification preferences
   useEffect(() => {
     if (!user?.email) return
     const loadPreferences = async () => {
       try {
-        const res = await fetch(`${API_BASE}/admin/preferences/${encodeURIComponent(user.email!)}`, { headers: await authHeaders() })
+        const res = await fetch(`${API_BASE}/admin/preferences/${encodeURIComponent(user.email!)}`, { headers: authHeaders() })
         if (res.ok) {
           const data = await res.json()
           setNotifications({
@@ -84,7 +78,7 @@ export default function Settings() {
     setIsSavingNotifications(true)
     setNotificationSuccess('')
     try {
-      const hdrs = await authHeaders()
+      const hdrs = authHeaders()
       const res = await fetch(`${API_BASE}/admin/preferences/${encodeURIComponent(user.email)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...hdrs },
@@ -114,8 +108,6 @@ export default function Settings() {
   const [passwordError, setPasswordError] = useState('')
   const [passwordSuccess, setPasswordSuccess] = useState('')
 
-  const isGoogleUser = user?.providerData?.[0]?.providerId === 'google.com'
-
   const scrollToSection = (ref: React.RefObject<HTMLDivElement | null>) => {
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
@@ -128,14 +120,19 @@ export default function Settings() {
     setProfileSuccess('')
 
     try {
-      // Combine first and last name for displayName
-      const fullName = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ')
-      await updateProfile(user, {
-        displayName: fullName || null,
+      const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(user.email)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+        }),
       })
-      setProfileSuccess('Profile updated successfully!')
-      // Force a re-render by reloading the user
-      await user.reload()
+      if (res.ok) {
+        setProfileSuccess('Profile updated!')
+      } else {
+        setProfileError('Failed to update profile.')
+      }
     } catch (error) {
       console.error('Error updating profile:', error)
       setProfileError('Failed to update profile. Please try again.')
@@ -172,11 +169,11 @@ export default function Settings() {
       // Upload to backend
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('user_id', user.uid)
+      formData.append('user_id', user.id)
 
       const response = await fetch(`${API_BASE}/admin/upload-profile-image`, {
         method: 'POST',
-        headers: await authHeaders(),
+        headers: authHeaders(),
         body: formData,
       })
 
@@ -191,13 +188,6 @@ export default function Settings() {
         return
       }
 
-      // Update Firebase profile with the new photo URL
-      // Add cache-busting timestamp so the browser fetches the new image
-      const photoUrl = `${data.photo_url}?t=${Date.now()}`
-      await updateProfile(user, {
-        photoURL: photoUrl,
-      })
-      await user.reload()
       setProfileSuccess('Profile photo updated!')
       // Force page reload to show new photo
       window.location.reload()
@@ -219,8 +209,8 @@ export default function Settings() {
       return
     }
 
-    if (newPassword.length < 6) {
-      setPasswordError('Password must be at least 6 characters.')
+    if (newPassword.length < 8) {
+      setPasswordError('Password must be at least 8 characters.')
       return
     }
 
@@ -232,23 +222,27 @@ export default function Settings() {
     setIsChangingPassword(true)
 
     try {
-      const credential = EmailAuthProvider.credential(user.email, currentPassword)
-      await reauthenticateWithCredential(user, credential)
-      await updatePassword(user, newPassword)
+      const res = await fetch(`${API_BASE}/auth/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        setPasswordError(data.detail || 'Failed to update password.')
+        return
+      }
 
       setPasswordSuccess('Password updated successfully!')
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
-    } catch (error: unknown) {
-      const firebaseError = error as { code?: string }
-      if (firebaseError.code === 'auth/wrong-password') {
-        setPasswordError('Current password is incorrect.')
-      } else if (firebaseError.code === 'auth/requires-recent-login') {
-        setPasswordError('Please sign out and sign back in before changing your password.')
-      } else {
-        setPasswordError('Failed to update password. Please try again.')
-      }
+    } catch {
+      setPasswordError('Failed to update password. Please try again.')
     } finally {
       setIsChangingPassword(false)
     }
@@ -417,99 +411,80 @@ export default function Settings() {
             {/* Account Type Info */}
             <div className="mb-6 p-4 bg-gray-50 rounded-lg">
               <p className="text-sm text-gray-600">
-                <span className="font-medium">Account type:</span>{' '}
-                {isGoogleUser ? 'Google Sign-In' : 'Email/Password'}
+                <span className="font-medium">Account type:</span> Email/Password
               </p>
               <p className="text-sm text-gray-600 mt-1">
                 <span className="font-medium">Email:</span> {user?.email}
               </p>
             </div>
 
-            {isGoogleUser ? (
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-blue-800 text-sm">
-                  Your account uses Google Sign-In. Password management is handled through your Google Account.
-                  Visit{' '}
-                  <a
-                    href="https://myaccount.google.com/security"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline font-medium"
-                  >
-                    Google Account Settings
-                  </a>{' '}
-                  to manage your password.
-                </p>
+            <form onSubmit={handlePasswordChange} className="space-y-4">
+              <h3 className="font-medium text-gray-900">Change Password</h3>
+
+              <div>
+                <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700 mb-1">
+                  Current Password
+                </label>
+                <input
+                  type="password"
+                  id="currentPassword"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
+                  required
+                />
               </div>
-            ) : (
-              <form onSubmit={handlePasswordChange} className="space-y-4">
-                <h3 className="font-medium text-gray-900">Change Password</h3>
 
-                <div>
-                  <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700 mb-1">
-                    Current Password
-                  </label>
-                  <input
-                    type="password"
-                    id="currentPassword"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
-                    required
-                  />
+              <div>
+                <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700 mb-1">
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  id="newPassword"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
+                  required
+                />
+              </div>
+
+              <div>
+                <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
+                  Confirm New Password
+                </label>
+                <input
+                  type="password"
+                  id="confirmPassword"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
+                  required
+                />
+              </div>
+
+              {passwordError && (
+                <div className="flex items-center gap-2 text-red-600 text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  {passwordError}
                 </div>
+              )}
 
-                <div>
-                  <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700 mb-1">
-                    New Password
-                  </label>
-                  <input
-                    type="password"
-                    id="newPassword"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
-                    required
-                  />
+              {passwordSuccess && (
+                <div className="flex items-center gap-2 text-green-600 text-sm">
+                  <Check className="w-4 h-4" />
+                  {passwordSuccess}
                 </div>
+              )}
 
-                <div>
-                  <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
-                    Confirm New Password
-                  </label>
-                  <input
-                    type="password"
-                    id="confirmPassword"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
-                    required
-                  />
-                </div>
-
-                {passwordError && (
-                  <div className="flex items-center gap-2 text-red-600 text-sm">
-                    <AlertCircle className="w-4 h-4" />
-                    {passwordError}
-                  </div>
-                )}
-
-                {passwordSuccess && (
-                  <div className="flex items-center gap-2 text-green-600 text-sm">
-                    <Check className="w-4 h-4" />
-                    {passwordSuccess}
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={isChangingPassword}
-                  className="px-6 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors disabled:opacity-50"
-                >
-                  {isChangingPassword ? 'Updating...' : 'Update Password'}
-                </button>
-              </form>
-            )}
+              <button
+                type="submit"
+                disabled={isChangingPassword}
+                className="px-6 py-2 bg-tre-navy text-white rounded-lg hover:bg-tre-navy/90 transition-colors disabled:opacity-50"
+              >
+                {isChangingPassword ? 'Updating...' : 'Update Password'}
+              </button>
+            </form>
           </div>
 
           {/* Notifications Section */}
