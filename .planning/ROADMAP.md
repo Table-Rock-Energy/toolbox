@@ -103,7 +103,10 @@ See: `.planning/milestones/v1.8-ROADMAP.md` for full details
   1. SQLAlchemy models exist for all Firestore collections -- AppConfig, UserPreference, RRCCountyStatus, GHLConnection added; User model has password_hash, role, scope, tools columns
   2. `alembic upgrade head` creates all tables in an empty PostgreSQL database with correct column types, indexes, and foreign keys
   3. Alembic initialized with async template and initial migration auto-generated from models
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 22-01-PLAN.md -- Extend db_models.py with 6 new models and User auth columns
+- [ ] 22-02-PLAN.md -- Initialize Alembic async template and generate initial migration
 
 ### Phase 23: Auth Backend
 **Goal**: Users authenticate via email/password against PostgreSQL with JWT tokens verified on every protected request
@@ -172,7 +175,7 @@ Phases 22 -> 23 -> 24 -> 25 -> 26 -> 27
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 22. Database Models & Schema | v2.0 | 0/0 | Not started | - |
+| 22. Database Models & Schema | v2.0 | 0/2 | Not started | - |
 | 23. Auth Backend | v2.0 | 0/0 | Not started | - |
 | 24. Auth Frontend & Firebase Removal | v2.0 | 0/0 | Not started | - |
 | 25. Database Service Port | v2.0 | 0/0 | Not started | - |
