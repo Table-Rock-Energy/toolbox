@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Full On-Prem Migration
-status: Ready to execute
-stopped_at: Completed 25-02-PLAN.md
-last_updated: "2026-03-25T21:56:42.550Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 25-03-PLAN.md
+last_updated: "2026-03-25T22:04:55.184Z"
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # Project State
@@ -50,6 +50,7 @@ Plan: 3 of 3
 | Phase 24 P02 | 4min | 2 tasks | 12 files |
 | Phase 25 P01 | 13min | 2 tasks | 2 files |
 | Phase 25 P02 | 16 | 2 tasks | 18 files |
+| Phase 25 P03 | 6min | 2 tasks | 24 files |
 
 ### Decisions
 
@@ -79,6 +80,8 @@ Plan: 3 of 3
 - [Phase 25]: ETL entity_registry uses AppConfig table as key-value store with prefixed keys
 - [Phase 25]: bulk_send_service stores progress in Job.options JSONB field
 - [Phase 25]: database_enabled defaults to True, FIRESTORE_ENABLED removed from config
+- [Phase 25]: Mock db_service.lookup_rrc_acres with session parameter to match PostgreSQL signature
+- [Phase 25]: Purge all Firestore references from comments and docstrings (not just imports)
 
 ### Pending Todos
 
@@ -91,6 +94,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-25T21:56:42.548Z
-Stopped at: Completed 25-02-PLAN.md
+Last session: 2026-03-25T22:04:55.181Z
+Stopped at: Completed 25-03-PLAN.md
 Resume file: None

@@ -89,7 +89,7 @@ See: `.planning/milestones/v1.8-ROADMAP.md` for full details
 - [x] **Phase 22: Database Models & Schema** - Extend SQLAlchemy models for all Firestore collections and initialize Alembic (completed 2026-03-25)
 - [x] **Phase 23: Auth Backend** - JWT login/me endpoints, token verification middleware, admin seed script (completed 2026-03-25)
 - [x] **Phase 24: Auth Frontend & Firebase Removal** - Local auth context with JWT, remove all Firebase packages and imports (completed 2026-03-25)
-- [ ] **Phase 25: Database Service Port** - Replace every Firestore service function with PostgreSQL equivalent
+- [x] **Phase 25: Database Service Port** - Replace every Firestore service function with PostgreSQL equivalent (completed 2026-03-25)
 - [ ] **Phase 26: AI Provider Swap** - LM Studio via OpenAI-compatible API, remove Gemini dependency
 - [ ] **Phase 27: Storage & Dependency Cleanup** - Local filesystem default, GCS removal, migration script, final purge
 
@@ -152,7 +152,7 @@ Plans:
 Plans:
 - [x] 25-01-PLAN.md -- Complete db_service.py with missing functions + sync session factory
 - [x] 25-02-PLAN.md -- Swap all Firestore imports to db_service across 14 files
-- [ ] 25-03-PLAN.md -- Update test mocks, delete firestore_service.py, remove firebase-admin
+- [x] 25-03-PLAN.md -- Update test mocks, delete firestore_service.py, remove firebase-admin
 
 ### Phase 26: AI Provider Swap
 **Goal**: AI operations use LM Studio via OpenAI-compatible API -- Gemini dependency fully removed
@@ -188,6 +188,6 @@ Phases 22 -> 23 -> 24 -> 25 -> 26 -> 27
 | 22. Database Models & Schema | v2.0 | 2/2 | Complete    | 2026-03-25 |
 | 23. Auth Backend | v2.0 | 2/2 | Complete    | 2026-03-25 |
 | 24. Auth Frontend & Firebase Removal | v2.0 | 2/2 | Complete    | 2026-03-25 |
-| 25. Database Service Port | v2.0 | 2/3 | In Progress|  |
+| 25. Database Service Port | v2.0 | 3/3 | Complete   | 2026-03-25 |
 | 26. AI Provider Swap | v2.0 | 0/0 | Not started | - |
 | 27. Storage & Dependency Cleanup | v2.0 | 0/0 | Not started | - |
