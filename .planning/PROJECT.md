@@ -79,9 +79,23 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 
 ### Active
 
-<!-- No active milestone -->
+<!-- v2.0 Full On-Prem Migration -->
 
-(No active milestone)
+- [ ] **AUTH-01**: Replace Firebase Auth with local JWT auth (bcrypt + PostgreSQL users table)
+- [ ] **AUTH-02**: Backend /api/auth/login and /api/auth/me endpoints returning JWT tokens
+- [ ] **AUTH-03**: Replace Firebase token verification middleware with JWT verification
+- [ ] **AUTH-04**: CLI/startup script to create initial admin user (james@tablerocktx.com)
+- [ ] **AUTH-05**: Frontend local auth context replacing Firebase Auth context
+- [ ] **AUTH-06**: Remove firebase.ts, Firebase npm packages, and all Firebase imports
+- [ ] **DB-01**: Remove Firestore entirely — PostgreSQL as only database via SQLAlchemy
+- [ ] **DB-02**: Extend SQLAlchemy models to cover all Firestore collections
+- [ ] **DB-03**: Schema creation script (create_tables.py)
+- [ ] **DB-04**: One-time Firestore→PostgreSQL migration script
+- [ ] **DB-05**: Ensure every service using firestore_service.py has a PostgreSQL equivalent
+- [ ] **AI-01**: OpenAI-compatible provider for LM Studio alongside Gemini
+- [ ] **AI-02**: Provider abstraction routing all AI calls through configurable backend
+- [ ] **AI-03**: New env vars: AI_PROVIDER, LLM_API_BASE, LLM_MODEL
+- [ ] **STOR-01**: Local filesystem fallback with no GCS warnings when GCS_BUCKET_NAME empty
 
 ### Out of Scope
 
@@ -95,24 +109,37 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - Rate limiting — defer
 - Structured logging / request tracing — defer
 
+## Current Milestone: v2.0 Full On-Prem Migration
+
+**Goal:** Remove all Google cloud dependencies (Firebase Auth, Firestore, GCS) and run fully on-prem with PostgreSQL, local filesystem storage, and LM Studio for AI.
+
+**Target features:**
+- Replace Firebase Auth with local JWT auth (bcrypt passwords, PostgreSQL users table, admin-only creation)
+- Remove Firestore entirely — PostgreSQL becomes the only database via SQLAlchemy
+- One-time Firestore→PostgreSQL migration script
+- LM Studio as AI provider via OpenAI-compatible API with provider abstraction
+- Local filesystem storage with no GCS warnings when unconfigured
+
 ## Context
 
 - **Production URL:** https://tools.tablerocktx.com
 - **Users:** Small internal team at Table Rock Energy (land and revenue departments)
-- **Deployment:** Google Cloud Run, us-central1, `--allow-unauthenticated` (network-level access open, auth enforced at app level)
+- **Deployment:** Google Cloud Run (current), migrating to on-prem Ubuntu server with Docker
 - **Primary admin:** james@tablerocktx.com
-- **Auth model:** Firebase Auth tokens verified server-side, JSON allowlist for authorization
+- **Auth model:** Firebase Auth (current), migrating to local JWT + PostgreSQL users table
 - **Codebase:** ~476K LOC (TypeScript + Python), React 19 + FastAPI + Firestore
 - **Test suite:** 50+ pytest tests (auth smoke, CORS, extract parsers, revenue parser), CI via GitHub Actions
 - **Extract formats:** Standard OCC Exhibit A, ECF multiunit well filings (with optional Convey 640 CSV/Excel)
 - **Shipped:** v1.3 Security Hardening (2026-03-11), v1.4 ECF Extraction (2026-03-12), v1.5 Enrichment Pipeline (2026-03-17), v1.6 Pipeline Fixes & Unified Enrichment (2026-03-19)
 - **Shipped:** v1.7 Batch Processing & Resilience (2026-03-20)
 - **Shipped:** v1.8 Preview System Overhaul (2026-03-24)
+- **In progress:** v2.0 Full On-Prem Migration
 
 ## Constraints
 
-- **Stack:** React 19 + FastAPI + Firestore + Firebase Auth — no changes to core stack
-- **No new dependencies:** Use existing PyMuPDF for PDF text extraction, pandas for CSV/Excel processing
+- **Stack:** React 19 + FastAPI + PostgreSQL + local JWT auth (migrating from Firestore + Firebase Auth)
+- **No new dependencies (parsing):** Use existing PyMuPDF for PDF text extraction, pandas for CSV/Excel processing
+- **New dependencies (infra):** bcrypt, python-jose (JWT), openai (LM Studio client)
 - **Mineral export format:** Output must match existing MINERAL_EXPORT_COLUMNS (shared across Extract/Title tools)
 - **Memory:** 1Gi Cloud Run instances
 - **RRC SSL:** RRC website requires custom SSL adapter with `verify=False` — known, accepted risk
@@ -142,4 +169,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Local variable threading in runAllSteps (not React state) | Avoids stale closure between sequential async steps | ✓ Good — v1.6 |
 
 ---
-*Last updated: 2026-03-24 after v1.8 milestone complete*
+*Last updated: 2026-03-25 — v2.0 milestone started*

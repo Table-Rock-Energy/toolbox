@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.8
-milestone_name: Preview System Overhaul
-status: complete
+milestone: v2.0
+milestone_name: Full On-Prem Migration
+status: active
 stopped_at: null
 last_updated: "2026-03-25"
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 4
-  completed_plans: 4
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
@@ -19,22 +19,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Between milestones. v1.8 shipped 2026-03-24.
+**Current focus:** v2.0 Full On-Prem Migration — remove all Google cloud dependencies.
 
 ## Current Position
 
-Phase: All complete
-Plan: All complete
-Status: Milestone v1.8 archived
-Last activity: 2026-03-25 — Milestone v1.8 archived, tag created
-
-Progress: [##########] 100%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-25 — Milestone v2.0 started
 
 ## Accumulated Context
 
 ### Decisions
 
-(Cleared at milestone boundary — see .planning/milestones/v1.8-ROADMAP.md for v1.8 decisions)
+- Remove Firestore entirely (no toggle) — PostgreSQL is the only database
+- Admin-only user creation (no self-registration)
+- One-time migration script for Firestore→PostgreSQL
+- Do NOT touch Dockerfile, docker-compose, or CI/CD
 
 ### Pending Todos
 
@@ -47,5 +48,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-25
-Stopped at: Milestone v1.8 archived
+Stopped at: Defining requirements for v2.0
 Resume file: None
