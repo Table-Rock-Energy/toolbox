@@ -52,13 +52,29 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """Initialize database tables."""
+    """Initialize database tables (fallback when Alembic is not configured).
+
+    Prefer `alembic upgrade head` for schema management.
+    This only runs create_all if the alembic_version table does not exist.
+    """
+    from sqlalchemy import inspect
+
     async with engine.begin() as conn:
-        # Import models to register them with Base
         from app.models import db_models  # noqa: F401
 
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database tables created")
+        def _check_and_create(sync_conn):
+            inspector = inspect(sync_conn)
+            if "alembic_version" not in inspector.get_table_names():
+                Base.metadata.create_all(sync_conn)
+                return True
+            return False
+
+        created = await conn.run_sync(_check_and_create)
+
+    if created:
+        logger.info("Database tables created via create_all (no Alembic)")
+    else:
+        logger.info("Alembic manages schema -- skipping create_all")
 
 
 async def close_db() -> None:
