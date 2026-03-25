@@ -1,67 +1,144 @@
-"""Tests for LLM provider protocol, Pydantic models, and cleanup prompts."""
+"""Tests for LLM provider protocol, OpenAI provider, JSON parsing, and factory."""
 
 from __future__ import annotations
+
+import json
 
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
 from app.models.pipeline import ProposedChange, PipelineRequest, PipelineResponse
 from app.services.llm.protocol import LLMProvider
-from app.services.llm.gemini_provider import GeminiProvider
 from app.services.llm.prompts import CLEANUP_PROMPTS
 from app.models.ai_validation import AiSuggestion, AiValidationResult, ConfidenceLevel
 
 
 class TestLLMProtocol:
-    """Test that GeminiProvider satisfies the LLMProvider Protocol."""
+    """Test that OpenAIProvider satisfies the LLMProvider Protocol."""
 
-    def test_gemini_provider_satisfies_protocol(self):
-        """GeminiProvider is a valid LLMProvider (runtime_checkable)."""
-        provider = GeminiProvider()
+    def test_openai_provider_satisfies_protocol(self):
+        """OpenAIProvider is a valid LLMProvider (runtime_checkable)."""
+        from app.services.llm.openai_provider import OpenAIProvider
+
+        provider = OpenAIProvider()
         assert isinstance(provider, LLMProvider)
 
-    @patch("app.services.llm.gemini_provider.settings")
-    def test_is_available_returns_false_when_disabled(self, mock_settings):
-        """is_available() returns False when GEMINI_ENABLED is not set."""
-        mock_settings.use_gemini = False
-        provider = GeminiProvider()
-        assert provider.is_available() is False
+    @patch("app.services.llm.openai_provider.settings")
+    def test_is_available_returns_true_when_lmstudio(self, mock_settings):
+        """is_available() returns True when ai_provider='lmstudio'."""
+        from app.services.llm.openai_provider import OpenAIProvider
 
-    @patch("app.services.llm.gemini_provider.settings")
-    def test_is_available_returns_true_when_enabled(self, mock_settings):
-        """is_available() returns True when Gemini is enabled."""
-        mock_settings.use_gemini = True
-        provider = GeminiProvider()
+        mock_settings.ai_provider = "lmstudio"
+        provider = OpenAIProvider()
         assert provider.is_available() is True
 
+    @patch("app.services.llm.openai_provider.settings")
+    def test_is_available_returns_false_when_none(self, mock_settings):
+        """is_available() returns False when ai_provider='none'."""
+        from app.services.llm.openai_provider import OpenAIProvider
 
-class TestGeminiProviderCleanup:
-    """Test GeminiProvider.cleanup_entries transforms results correctly."""
+        mock_settings.ai_provider = "none"
+        provider = OpenAIProvider()
+        assert provider.is_available() is False
+
+
+class TestJsonParsing:
+    """Test parse_json_response handles various LLM output formats."""
+
+    def test_clean_json(self):
+        """parse_json_response extracts from clean JSON string."""
+        from app.services.llm.openai_provider import parse_json_response
+
+        text = '{"suggestions": [{"entry_index": 0, "field": "name"}]}'
+        result = parse_json_response(text)
+        assert result["suggestions"][0]["entry_index"] == 0
+
+    def test_markdown_fenced_json(self):
+        """parse_json_response extracts from markdown-fenced JSON."""
+        from app.services.llm.openai_provider import parse_json_response
+
+        text = '```json\n{"suggestions": []}\n```'
+        result = parse_json_response(text)
+        assert result["suggestions"] == []
+
+    def test_preamble_json(self):
+        """parse_json_response extracts from preamble + JSON."""
+        from app.services.llm.openai_provider import parse_json_response
+
+        text = 'Here are my suggestions:\n{"suggestions": [{"entry_index": 1, "field": "state"}]}'
+        result = parse_json_response(text)
+        assert result["suggestions"][0]["entry_index"] == 1
+
+    def test_non_json_raises_valueerror(self):
+        """parse_json_response raises ValueError on non-JSON text."""
+        from app.services.llm.openai_provider import parse_json_response
+
+        with pytest.raises(ValueError):
+            parse_json_response("This is just plain text with no JSON.")
+
+
+class TestProviderFactory:
+    """Test get_llm_provider factory routing."""
+
+    @patch("app.services.llm.openai_provider.settings")
+    @patch("app.core.config.settings")
+    def test_factory_returns_openai_when_lmstudio(self, mock_config_settings, mock_provider_settings):
+        """get_llm_provider returns OpenAIProvider when ai_provider='lmstudio'."""
+        from app.services.llm.openai_provider import OpenAIProvider
+
+        mock_config_settings.ai_provider = "lmstudio"
+        mock_provider_settings.ai_provider = "lmstudio"
+
+        from app.services.llm import get_llm_provider
+
+        provider = get_llm_provider()
+        assert provider is not None
+        assert isinstance(provider, OpenAIProvider)
+
+    @patch("app.core.config.settings")
+    def test_factory_returns_none_when_none(self, mock_settings):
+        """get_llm_provider returns None when ai_provider='none'."""
+        mock_settings.ai_provider = "none"
+
+        from app.services.llm import get_llm_provider
+
+        provider = get_llm_provider()
+        assert provider is None
+
+
+class TestOpenAIProviderCleanup:
+    """Test OpenAIProvider.cleanup_entries transforms results correctly."""
 
     @pytest.mark.asyncio
     async def test_cleanup_entries_returns_proposed_changes(self):
-        """cleanup_entries() calls gemini infrastructure and returns list[ProposedChange]."""
-        canned_suggestions = [
-            AiSuggestion(
-                entry_index=0,
-                field="name",
-                current_value="JOHN SMITH",
-                suggested_value="John Smith",
-                reason="Convert ALL CAPS to Title Case",
-                confidence=ConfidenceLevel.HIGH,
-            ),
-        ]
+        """cleanup_entries() calls AsyncOpenAI and returns list[ProposedChange]."""
+        from app.services.llm.openai_provider import OpenAIProvider
 
-        provider = GeminiProvider()
+        # Mock the AsyncOpenAI response
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = json.dumps({
+            "suggestions": [
+                {
+                    "entry_index": 0,
+                    "field": "name",
+                    "current_value": "JOHN SMITH",
+                    "suggested_value": "John Smith",
+                    "reason": "Convert ALL CAPS to Title Case",
+                    "confidence": "high",
+                }
+            ]
+        })
 
-        with patch(
-            "app.services.llm.gemini_provider.asyncio.to_thread",
-            new_callable=AsyncMock,
-            return_value=canned_suggestions,
-        ), patch(
-            "app.services.gemini_service._get_client",
-            return_value=MagicMock(),
-        ):
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        provider = OpenAIProvider()
+        provider._client = mock_client
+
+        with patch("app.services.llm.openai_provider.settings") as mock_settings:
+            mock_settings.llm_model = "test-model"
+            mock_settings.ai_provider = "lmstudio"
             result = await provider.cleanup_entries(
                 "extract", [{"name": "JOHN SMITH"}]
             )
@@ -158,3 +235,29 @@ class TestCleanupPrompts:
             assert "do not guess" in lower or "don't guess" in lower, (
                 f"{tool} prompt missing 'do not guess' instruction"
             )
+
+
+class TestValidationPrompts:
+    """Test that TOOL_PROMPTS and REVENUE_VERIFY_PROMPT are in prompts.py."""
+
+    def test_tool_prompts_exist(self):
+        """TOOL_PROMPTS dict exists in prompts.py with expected keys."""
+        from app.services.llm.prompts import TOOL_PROMPTS
+
+        assert "extract" in TOOL_PROMPTS
+        assert "title" in TOOL_PROMPTS
+        assert "proration" in TOOL_PROMPTS
+        assert "revenue" in TOOL_PROMPTS
+
+    def test_revenue_verify_prompt_exists(self):
+        """REVENUE_VERIFY_PROMPT exists in prompts.py."""
+        from app.services.llm.prompts import REVENUE_VERIFY_PROMPT
+
+        assert isinstance(REVENUE_VERIFY_PROMPT, str)
+        assert len(REVENUE_VERIFY_PROMPT) > 50
+
+    def test_validation_response_schema_exists(self):
+        """VALIDATION_RESPONSE_SCHEMA exists in prompts.py."""
+        from app.services.llm.prompts import VALIDATION_RESPONSE_SCHEMA
+
+        assert "suggestions" in VALIDATION_RESPONSE_SCHEMA["properties"]
