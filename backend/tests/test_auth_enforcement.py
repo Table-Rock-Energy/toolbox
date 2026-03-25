@@ -334,16 +334,14 @@ async def test_ghl_daily_limit_no_auth_required(unauthenticated_client: AsyncCli
 
 @pytest.mark.asyncio
 async def test_no_dev_mode_bypass(unauthenticated_client: AsyncClient):
-    """When Firebase not configured, requests with fake tokens still get 401.
+    """Requests with invalid JWT tokens get 401.
 
-    v1.3 removed dev-mode bypass — no synthetic user is created when
-    Firebase Admin SDK is unavailable.
+    v2.0 uses JWT auth — invalid tokens fail decode and return 401.
     """
-    with patch("app.core.auth.get_firebase_app", return_value=None):
-        response = await unauthenticated_client.post(
-            "/api/extract/upload",
-            headers={"Authorization": "Bearer fake-dev-token"},
-        )
+    response = await unauthenticated_client.post(
+        "/api/extract/upload",
+        headers={"Authorization": "Bearer fake-dev-token"},
+    )
     assert response.status_code == 401
 
 

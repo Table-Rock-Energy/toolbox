@@ -332,10 +332,10 @@ async def add_user(request: AddUserRequest, user: dict = Depends(require_admin))
             detail=f"User {request.email} already in allowlist"
         )
 
-    # Set password in Firebase Auth if provided
+    # Set password in DB if provided
     if request.password:
         try:
-            set_user_password(request.email, request.password)
+            await set_user_password(request.email, request.password)
         except Exception as e:
             logger.warning(f"Added user to allowlist but failed to set password: {e}")
 
@@ -369,10 +369,10 @@ async def update_user(email: str, request: UpdateUserRequest, user: dict = Depen
             detail=f"User {email} not found in allowlist"
         )
 
-    # Set password in Firebase Auth if provided
+    # Set password in DB if provided
     if request.password:
         try:
-            set_user_password(email, request.password)
+            await set_user_password(email, request.password)
         except Exception as e:
             raise HTTPException(
                 status_code=500,

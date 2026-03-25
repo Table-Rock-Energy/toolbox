@@ -20,7 +20,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sse_starlette import EventSourceResponse
 
-from app.core.auth import get_firebase_app, require_auth, verify_firebase_token
+from app.core.auth import require_auth
 from app.models.ghl import (
     GHLConnectionCreate,
     GHLConnectionUpdate,
@@ -396,14 +396,13 @@ async def stream_send_progress(job_id: str, request: Request, token: Optional[st
     Authenticates via query parameter token (SSE/EventSource cannot send headers).
     """
     # SSE auth: query-param token since EventSource API cannot send headers
-    firebase_app = get_firebase_app()
-    if firebase_app is not None:
-        # Firebase is configured (production or configured dev)
-        if token is None:
-            raise HTTPException(status_code=401, detail="Authentication required: pass ?token=<firebase_id_token>")
-        verified = await verify_firebase_token(token)
-        if verified is None:
-            raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if token is None:
+        raise HTTPException(status_code=401, detail="Authentication required: pass ?token=<jwt_token>")
+    try:
+        from app.core.security import decode_access_token
+        decode_access_token(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     from app.services.ghl.bulk_send_service import get_job_status
     import json
 

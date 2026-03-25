@@ -1,14 +1,13 @@
-"""Firebase Authentication and Authorization for Table Rock Tools.
+"""Authentication and Authorization for Table Rock Tools.
 
 This module provides:
-- Firebase token verification
-- User allowlist management (persisted to Firestore)
+- JWT token verification (replacing Firebase)
+- User allowlist management (JSON file -- still used by admin.py during migration)
 - Protected route middleware
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from pathlib import Path
@@ -17,10 +16,13 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
+from sqlalchemy import select
+
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Path to allowlist file (local cache, source of truth is Firestore)
+# Path to allowlist file (local cache, still used by admin.py during migration)
 ALLOWLIST_FILE = Path(__file__).parent.parent.parent / "data" / "allowed_users.json"
 
 # Default allowed users
@@ -47,6 +49,11 @@ class AllowedUser(BaseModel):
     tools: list[str] = AVAILABLE_TOOLS.copy()
 
 
+# ============================================================================
+# Allowlist functions (still used by admin.py -- Phase 25 will replace)
+# ============================================================================
+
+
 def load_allowlist() -> list[str]:
     """Load allowed users from file, or return defaults."""
     if ALLOWLIST_FILE.exists():
@@ -60,52 +67,10 @@ def load_allowlist() -> list[str]:
 
 
 def save_allowlist(users: list[dict]) -> None:
-    """Save allowed users to local file and schedule Firestore persist."""
+    """Save allowed users to local file."""
     ALLOWLIST_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(ALLOWLIST_FILE, "w") as f:
         json.dump(users, f, indent=2)
-
-    # Fire-and-forget Firestore persist
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(_persist_allowlist_to_firestore(users))
-    except RuntimeError:
-        pass  # No event loop running
-
-
-async def _persist_allowlist_to_firestore(users: list[dict]) -> None:
-    """Async: save allowlist to Firestore."""
-    try:
-        from app.services.firestore_service import set_config_doc
-        await set_config_doc("allowed_users", {"users": users})
-        logger.info(f"Persisted {len(users)} users to Firestore")
-    except Exception as e:
-        logger.warning(f"Failed to persist allowlist to Firestore: {e}")
-
-
-async def init_allowlist_from_firestore() -> None:
-    """Load allowlist from Firestore on startup. Seeds Firestore if empty."""
-    try:
-        from app.services.firestore_service import get_config_doc, set_config_doc
-        data = await get_config_doc("allowed_users")
-        if data and "users" in data:
-            users = data["users"]
-            # Migrate old 'name' field to first_name/last_name
-            for u in users:
-                if "name" in u and "first_name" not in u:
-                    old_name = u.pop("name", None) or ""
-                    parts = old_name.strip().split(" ", 1)
-                    u["first_name"] = parts[0] if parts[0] else None
-                    u["last_name"] = parts[1] if len(parts) > 1 else None
-            save_allowlist(users)
-            logger.info(f"Loaded {len(users)} users from Firestore")
-        else:
-            # Seed Firestore from local file
-            users = get_full_allowlist()
-            await set_config_doc("allowed_users", {"users": users})
-            logger.info(f"Seeded Firestore with {len(users)} users from local file")
-    except Exception as e:
-        logger.warning(f"Could not load allowlist from Firestore: {e}")
 
 
 def get_full_allowlist() -> list[dict]:
@@ -203,7 +168,11 @@ def get_user_by_email(email: str) -> Optional[dict]:
 
 
 def is_user_admin(email: str) -> bool:
-    """Check if a user has admin role."""
+    """Check if a user has admin role.
+
+    Uses JSON allowlist (intentional dual-path during migration).
+    Phase 25 will unify this with DB-based role check in require_admin.
+    """
     user = get_user_by_email(email)
     if user is None:
         return email.lower() == "james@tablerocktx.com"
@@ -228,80 +197,38 @@ def is_user_allowed(email: str) -> bool:
     return email.lower() in [e.lower() for e in allowed]
 
 
-# Firebase Admin SDK initialization (lazy)
-_firebase_app = None
+# ============================================================================
+# Password management (DB-based, replaces Firebase set_user_password)
+# ============================================================================
 
 
-def get_firebase_app():
-    """Get or initialize Firebase Admin SDK."""
-    global _firebase_app
-    if _firebase_app is None:
-        try:
-            import firebase_admin
+async def set_user_password(email: str, password: str) -> dict:
+    """Set or update a user's password hash in PostgreSQL.
 
-            # Try to initialize with default credentials (for Cloud Run)
-            # or with a service account file
-            try:
-                _firebase_app = firebase_admin.get_app()
-            except ValueError:
-                # App not initialized, try to initialize
-                try:
-                    # First try Application Default Credentials
-                    _firebase_app = firebase_admin.initialize_app()
-                except Exception:
-                    # Log but don't fail - we'll handle auth differently
-                    logger.warning("Firebase Admin SDK not initialized - running without server-side auth")
-                    return None
-        except ImportError:
-            logger.warning("firebase-admin not installed")
-            return None
-    return _firebase_app
-
-
-def set_user_password(email: str, password: str) -> dict:
-    """Set or update a Firebase user's password.
-
-    If the user doesn't exist in Firebase Auth, creates a new account.
-    Returns a dict with status info.
+    Replaces the old Firebase-based set_user_password.
     """
-    app = get_firebase_app()
-    if app is None:
-        raise RuntimeError("Firebase Admin SDK not initialized")
+    from app.core.database import async_session_maker
+    from app.core.security import get_password_hash
+    from app.models.db_models import User
 
-    from firebase_admin import auth as fb_auth
+    async with async_session_maker() as session:
+        result = await session.execute(
+            select(User).where(User.email == email.lower())
+        )
+        user = result.scalar_one_or_none()
+        if user is None:
+            raise ValueError(f"User {email} not found in database")
 
-    try:
-        # Try to find existing user
-        user = fb_auth.get_user_by_email(email)
-        fb_auth.update_user(user.uid, password=password)
-        logger.info(f"Updated password for Firebase user: {email}")
-        return {"action": "updated", "email": email}
-    except fb_auth.UserNotFoundError:
-        # Create new Firebase Auth user with this email/password
-        fb_auth.create_user(email=email, password=password)
-        logger.info(f"Created Firebase user with password: {email}")
-        return {"action": "created", "email": email}
-    except Exception as e:
-        logger.error(f"Failed to set password for {email}: {e}")
-        raise
+        user.password_hash = get_password_hash(password)
+        await session.commit()
+
+    logger.info(f"Updated password for user: {email}")
+    return {"action": "updated", "email": email}
 
 
-async def verify_firebase_token(token: str) -> Optional[dict]:
-    """Verify a Firebase ID token and return the decoded token."""
-    app = get_firebase_app()
-    if app is None:
-        # Fall back to client-side only auth
-        # In production, you'd want to verify the token properly
-        logger.warning("Firebase not configured - skipping server-side verification")
-        return None
-
-    try:
-        from firebase_admin import auth
-        decoded_token = auth.verify_id_token(token)
-        return decoded_token
-    except Exception as e:
-        logger.error(f"Token verification failed: {e}")
-        return None
+# ============================================================================
+# JWT-based authentication (replaces Firebase token verification)
+# ============================================================================
 
 
 async def get_current_user(
@@ -311,7 +238,7 @@ async def get_current_user(
     """Get the current authenticated user from the request.
 
     Returns user info if authenticated and authorized, None otherwise.
-    Accepts a valid Firebase ID token or a CRON_SECRET for CI/cron jobs.
+    Accepts a valid JWT access token or a CRON_SECRET for CI/cron jobs.
     """
     if credentials is None:
         return None
@@ -319,25 +246,40 @@ async def get_current_user(
     token = credentials.credentials
 
     # Check for cron secret (CI/scheduled jobs)
-    from app.core.config import Settings
-    settings = Settings()
     if settings.cron_secret and token == settings.cron_secret:
         return {"email": "cron@tablerocktx.com", "uid": "cron", "cron": True}
 
-    decoded = await verify_firebase_token(token)
-
-    if decoded is None:
+    # Decode JWT token
+    try:
+        from app.core.security import decode_access_token
+        payload = decode_access_token(token)
+        email = payload.get("sub")
+        if email is None:
+            return None
+    except Exception:
         return None
 
-    # Check if user is in allowlist
-    email = decoded.get("email")
-    if email and not is_user_allowed(email):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User not authorized to access this application"
-        )
+    # DB lookup for active user
+    from app.core.database import async_session_maker
+    from app.models.db_models import User
 
-    return decoded
+    async with async_session_maker() as session:
+        result = await session.execute(
+            select(User).where(User.email == email, User.is_active == True)  # noqa: E712
+        )
+        user = result.scalar_one_or_none()
+
+    if user is None:
+        return None
+
+    return {
+        "email": user.email,
+        "uid": str(user.id),
+        "role": user.role,
+        "scope": user.scope,
+        "tools": user.tools or [],
+        "first_name": user.display_name,
+    }
 
 
 async def require_auth(
@@ -362,11 +304,11 @@ async def require_admin(
     """Require admin role for a route.
 
     Chains on require_auth, then checks if the user has admin role.
+    Uses DB-based role from JWT-decoded user dict, with james@ fallback.
     """
-    email = user.get("email", "")
-    if not is_user_admin(email):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required",
-        )
-    return user
+    if user.get("role") == "admin" or user.get("email", "").lower() == "james@tablerocktx.com":
+        return user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Admin access required",
+    )

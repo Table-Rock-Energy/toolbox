@@ -121,13 +121,12 @@ async def startup_event() -> None:
     if settings.environment != "production" and not settings.encryption_key:
         logger.warning("ENCRYPTION_KEY not set -- sensitive values will be stored in plaintext (development mode)")
 
-    # Load persistent config from Firestore (allowlist + app settings)
-    try:
-        from app.core.auth import init_allowlist_from_firestore
-        await init_allowlist_from_firestore()
-    except Exception as e:
-        logger.warning(f"Could not load allowlist from Firestore: {e}")
+    # Fail fast: production requires JWT_SECRET_KEY to be changed from default
+    if settings.environment == "production" and settings.jwt_secret_key == "dev-only-change-in-production":
+        logger.critical("FATAL: JWT_SECRET_KEY must be set in production (not default dev value)")
+        raise SystemExit(1)
 
+    # Load persistent config from Firestore (app settings)
     try:
         from app.api.admin import init_app_settings_from_firestore
         await init_app_settings_from_firestore()
