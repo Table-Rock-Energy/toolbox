@@ -1,7 +1,7 @@
 """
 GHL Connection CRUD Service
 
-Provides Firestore CRUD operations for GHL connections with encrypted token storage.
+Provides PostgreSQL CRUD operations for GHL connections with encrypted token storage.
 Handles connection validation, user listing, and contact upsert delegation.
 """
 from __future__ import annotations
@@ -12,7 +12,23 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-GHL_CONNECTIONS_COLLECTION = "ghl_connections"
+
+def _conn_to_dict(conn, include_token: bool = False) -> dict:
+    """Convert a GHLConnection ORM instance to a dict for API responses."""
+    result = {
+        "id": conn.id,
+        "name": conn.name,
+        "token_last4": conn.token_last4,
+        "location_id": conn.location_id,
+        "notes": conn.notes or "",
+        "validation_status": conn.validation_status or "pending",
+        "created_at": conn.created_at,
+        "updated_at": conn.updated_at,
+    }
+    if include_token:
+        from app.services.shared.encryption import decrypt_value
+        result["token"] = decrypt_value(conn.encrypted_token)
+    return result
 
 
 async def create_connection(
@@ -34,46 +50,28 @@ async def create_connection(
         Connection dict with id, name, token_last4, location_id, notes,
         validation_status, created_at, updated_at
     """
-    from app.services.firestore_service import get_firestore_client
+    from app.core.database import async_session_maker
+    from app.services import db_service
     from app.services.shared.encryption import encrypt_value
 
     # Encrypt token
     encrypted_token = encrypt_value(token)
     token_last4 = token[-4:] if len(token) >= 4 else ""
 
-    # Create document data
-    now = datetime.now(timezone.utc)
-    doc_data = {
-        "name": name,
-        "encrypted_token": encrypted_token,
-        "token_last4": token_last4,
-        "location_id": location_id,
-        "notes": notes or "",
-        "validation_status": "pending",
-        "created_at": now,
-        "updated_at": now,
-    }
+    async with async_session_maker() as session:
+        conn = await db_service.save_ghl_connection(session, {
+            "name": name,
+            "encrypted_token": encrypted_token,
+            "token_last4": token_last4,
+            "location_id": location_id,
+            "notes": notes or "",
+            "validation_status": "pending",
+        })
+        await session.commit()
 
-    # Save to Firestore
-    db = get_firestore_client()
-    doc_ref = db.collection(GHL_CONNECTIONS_COLLECTION).document()
-    await doc_ref.set(doc_data)
+        result = _conn_to_dict(conn)
 
-    connection_id = doc_ref.id
-    logger.info(f"Created connection {connection_id}")
-
-    # Return connection (without encrypted_token)
-    result = {
-        "id": connection_id,
-        "name": name,
-        "token_last4": token_last4,
-        "location_id": location_id,
-        "notes": notes or "",
-        "validation_status": "pending",
-        "created_at": now,
-        "updated_at": now,
-    }
-
+    logger.info(f"Created connection {result['id']}")
     return result
 
 
@@ -85,34 +83,20 @@ async def get_connection(
     Fetch a connection by ID.
 
     Args:
-        connection_id: Connection document ID
+        connection_id: Connection ID
         decrypt_token: If True, decrypt and include token in result
 
     Returns:
-        Connection dict (without encrypted_token) or None if not found
+        Connection dict or None if not found
     """
-    from app.services.firestore_service import get_firestore_client
-    from app.services.shared.encryption import decrypt_value
+    from app.core.database import async_session_maker
+    from app.services import db_service
 
-    db = get_firestore_client()
-    doc_ref = db.collection(GHL_CONNECTIONS_COLLECTION).document(connection_id)
-    doc = await doc_ref.get()
-
-    if not doc.exists:
-        return None
-
-    data = doc.to_dict()
-    data["id"] = doc.id
-
-    # Decrypt token if requested
-    if decrypt_token and "encrypted_token" in data:
-        encrypted_token = data.pop("encrypted_token")
-        data["token"] = decrypt_value(encrypted_token)
-    else:
-        # Always remove encrypted_token from returned dict
-        data.pop("encrypted_token", None)
-
-    return data
+    async with async_session_maker() as session:
+        conn = await db_service.get_ghl_connection(session, connection_id)
+        if not conn:
+            return None
+        return _conn_to_dict(conn, include_token=decrypt_token)
 
 
 async def list_connections() -> list[dict]:
@@ -120,25 +104,18 @@ async def list_connections() -> list[dict]:
     List all GHL connections.
 
     Returns:
-        List of connection dicts sorted by name (no encrypted_token fields)
+        List of connection dicts sorted by name (no encrypted tokens)
     """
-    from app.services.firestore_service import get_firestore_client
+    from app.core.database import async_session_maker
+    from app.services import db_service
 
-    db = get_firestore_client()
-    docs = db.collection(GHL_CONNECTIONS_COLLECTION).stream()
-
-    connections = []
-    async for doc in docs:
-        data = doc.to_dict()
-        data["id"] = doc.id
-        # Remove encrypted_token
-        data.pop("encrypted_token", None)
-        connections.append(data)
+    async with async_session_maker() as session:
+        connections = await db_service.get_ghl_connections(session)
+        result = [_conn_to_dict(c) for c in connections]
 
     # Sort by name
-    connections.sort(key=lambda c: c.get("name", "").lower())
-
-    return connections
+    result.sort(key=lambda c: c.get("name", "").lower())
+    return result
 
 
 async def update_connection(
@@ -152,7 +129,7 @@ async def update_connection(
     Update an existing connection.
 
     Args:
-        connection_id: Connection document ID
+        connection_id: Connection ID
         name: New name (if provided)
         token: New token (if provided, will be encrypted)
         location_id: New location ID (if provided)
@@ -161,45 +138,31 @@ async def update_connection(
     Returns:
         Updated connection dict or None if not found
     """
-    from app.services.firestore_service import get_firestore_client
+    from app.core.database import async_session_maker
+    from app.services import db_service
     from app.services.shared.encryption import encrypt_value
 
-    # Check if connection exists
-    existing = await get_connection(connection_id)
-    if not existing:
-        return None
-
-    # Build update data with only non-None fields
-    update_data = {}
+    # Build update data
+    update_data = {"id": connection_id}
 
     if name is not None:
         update_data["name"] = name
-
     if token is not None:
-        # Encrypt new token
         update_data["encrypted_token"] = encrypt_value(token)
         update_data["token_last4"] = token[-4:] if len(token) >= 4 else ""
-        # Reset validation status when token changes
         update_data["validation_status"] = "pending"
-
     if location_id is not None:
         update_data["location_id"] = location_id
-
     if notes is not None:
         update_data["notes"] = notes
 
-    # Always update timestamp
-    update_data["updated_at"] = datetime.now(timezone.utc)
-
-    # Update Firestore
-    db = get_firestore_client()
-    doc_ref = db.collection(GHL_CONNECTIONS_COLLECTION).document(connection_id)
-    await doc_ref.update(update_data)
+    async with async_session_maker() as session:
+        conn = await db_service.save_ghl_connection(session, update_data)
+        await session.commit()
+        result = _conn_to_dict(conn)
 
     logger.info(f"Updated connection {connection_id}")
-
-    # Return updated connection
-    return await get_connection(connection_id)
+    return result
 
 
 async def delete_connection(connection_id: str) -> bool:
@@ -207,26 +170,21 @@ async def delete_connection(connection_id: str) -> bool:
     Delete a connection.
 
     Args:
-        connection_id: Connection document ID
+        connection_id: Connection ID
 
     Returns:
         True if deleted, False if not found
     """
-    from app.services.firestore_service import get_firestore_client
+    from app.core.database import async_session_maker
+    from app.services import db_service
 
-    # Check if exists first
-    existing = await get_connection(connection_id)
-    if not existing:
-        return False
+    async with async_session_maker() as session:
+        deleted = await db_service.delete_ghl_connection(session, connection_id)
+        await session.commit()
 
-    # Delete
-    db = get_firestore_client()
-    doc_ref = db.collection(GHL_CONNECTIONS_COLLECTION).document(connection_id)
-    await doc_ref.delete()
-
-    logger.info(f"Deleted connection {connection_id}")
-
-    return True
+    if deleted:
+        logger.info(f"Deleted connection {connection_id}")
+    return deleted
 
 
 async def validate_connection(connection_id: str) -> dict:
@@ -234,7 +192,7 @@ async def validate_connection(connection_id: str) -> dict:
     Validate a connection by testing the token via GHL API.
 
     Args:
-        connection_id: Connection document ID
+        connection_id: Connection ID
 
     Returns:
         Dict with: valid (bool), error (str or None), users (list)
@@ -242,7 +200,8 @@ async def validate_connection(connection_id: str) -> dict:
     Raises:
         ValueError: If connection not found
     """
-    from app.services.firestore_service import get_firestore_client
+    from app.core.database import async_session_maker
+    from app.services import db_service
     from app.services.ghl.client import GHLClient, GHLAPIError, GHLAuthError
 
     # Fetch connection with decrypted token
@@ -256,59 +215,38 @@ async def validate_connection(connection_id: str) -> dict:
     if not token or not location_id:
         raise ValueError("Connection missing token or location_id")
 
-    # Try to validate via get_users
     validation_result = {
         "valid": False,
         "error": None,
         "users": [],
     }
 
+    new_status = "invalid"
+
     try:
         async with GHLClient(token=token, location_id=location_id) as client:
             response = await client.get_users()
-
-            # Success - parse users
             users_data = response.get("users", [])
             validation_result["valid"] = True
             validation_result["users"] = users_data
-
-            # Update validation status in Firestore
-            db = get_firestore_client()
-            doc_ref = db.collection(GHL_CONNECTIONS_COLLECTION).document(connection_id)
-            await doc_ref.update({
-                "validation_status": "valid",
-                "updated_at": datetime.now(timezone.utc),
-            })
-
+            new_status = "valid"
             logger.info(f"Connection {connection_id} validated successfully")
 
     except GHLAuthError as e:
-        # Auth error - invalid token
         validation_result["error"] = str(e)
-
-        # Update validation status
-        db = get_firestore_client()
-        doc_ref = db.collection(GHL_CONNECTIONS_COLLECTION).document(connection_id)
-        await doc_ref.update({
-            "validation_status": "invalid",
-            "updated_at": datetime.now(timezone.utc),
-        })
-
         logger.warning(f"Connection {connection_id} validation failed: auth error")
 
     except GHLAPIError as e:
-        # Other API error
         validation_result["error"] = str(e)
-
-        # Update validation status
-        db = get_firestore_client()
-        doc_ref = db.collection(GHL_CONNECTIONS_COLLECTION).document(connection_id)
-        await doc_ref.update({
-            "validation_status": "invalid",
-            "updated_at": datetime.now(timezone.utc),
-        })
-
         logger.warning(f"Connection {connection_id} validation failed: {e}")
+
+    # Update validation status in database
+    async with async_session_maker() as session:
+        await db_service.save_ghl_connection(session, {
+            "id": connection_id,
+            "validation_status": new_status,
+        })
+        await session.commit()
 
     return validation_result
 
@@ -318,7 +256,7 @@ async def get_connection_users(connection_id: str) -> list[dict]:
     Fetch GHL users for a connection (for contact owner dropdown).
 
     Args:
-        connection_id: Connection document ID
+        connection_id: Connection ID
 
     Returns:
         List of user dicts (id, name, email, role)
@@ -355,7 +293,7 @@ async def upsert_contact_via_connection(
     Upsert a contact via a GHL connection.
 
     Args:
-        connection_id: Connection document ID
+        connection_id: Connection ID
         contact_data: Contact data dict
 
     Returns:

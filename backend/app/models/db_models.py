@@ -31,6 +31,8 @@ class ToolType(str, PyEnum):
     TITLE = "title"
     PRORATION = "proration"
     REVENUE = "revenue"
+    GHL_PREP = "ghl_prep"
+    GHL_SEND = "ghl_send"
 
 
 class JobStatus(str, PyEnum):

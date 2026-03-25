@@ -130,29 +130,28 @@ async def startup_event() -> None:
         logger.critical("FATAL: JWT_SECRET_KEY must be set in production (not default dev value)")
         raise SystemExit(1)
 
-    # Load persistent config from Firestore (app settings)
+    # Initialize database (always required)
     try:
-        from app.api.admin import init_app_settings_from_firestore
-        await init_app_settings_from_firestore()
+        from app.core.database import init_db
+        await init_db()
+        logger.info("Database initialized successfully")
     except Exception as e:
-        logger.warning(f"Could not load app settings from Firestore: {e}")
+        logger.warning(f"Database initialization failed: {e}")
+        logger.warning("Continuing without database persistence")
 
-    # Load enrichment config from Firestore
+    # Load persistent config from database (app settings)
     try:
-        from app.api.enrichment import load_enrichment_config_from_firestore
-        await load_enrichment_config_from_firestore()
+        from app.api.admin import init_app_settings_from_db
+        await init_app_settings_from_db()
+    except Exception as e:
+        logger.warning(f"Could not load app settings from database: {e}")
+
+    # Load enrichment config from database
+    try:
+        from app.api.enrichment import load_enrichment_config_from_db
+        await load_enrichment_config_from_db()
     except Exception as e:
         logger.warning(f"Could not load enrichment config: {e}")
-
-    # Initialize database if enabled
-    if settings.use_database:
-        try:
-            from app.core.database import init_db
-            await init_db()
-            logger.info("Database initialized successfully")
-        except Exception as e:
-            logger.warning(f"Database initialization failed: {e}")
-            logger.warning("Continuing without database persistence")
 
     # Pre-warm RRC DataFrame cache (PERF-02)
     try:
@@ -172,12 +171,11 @@ async def shutdown_event() -> None:
     logger.info(f"{settings.app_name} shutting down")
 
     # Close database connections
-    if settings.use_database:
-        try:
-            from app.core.database import close_db
-            await close_db()
-        except Exception as e:
-            logger.warning(f"Error closing database: {e}")
+    try:
+        from app.core.database import close_db
+        await close_db()
+    except Exception as e:
+        logger.warning(f"Error closing database: {e}")
 
 
 # Static file serving for production (React frontend)

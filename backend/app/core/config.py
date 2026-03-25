@@ -37,13 +37,10 @@ class Settings(BaseSettings):
     gcs_uploads_folder: str = "uploads"
     gcs_profiles_folder: str = "profiles"
 
-    # Database settings (PostgreSQL - optional, for local dev)
+    # Database settings (PostgreSQL - always on)
     # Local dev: postgresql+asyncpg://postgres:postgres@localhost:5432/toolbox
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/toolbox"
-    database_enabled: bool = False  # Disabled by default, use Firestore instead
-
-    # Firestore settings (primary database)
-    firestore_enabled: bool = True
+    database_enabled: bool = True  # Always on -- PostgreSQL is the only database
 
     # Unified Google Cloud API key (Gemini, Places, Geocoding/Maps)
     google_api_key: Optional[str] = None
