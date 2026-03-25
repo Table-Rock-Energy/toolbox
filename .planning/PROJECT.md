@@ -81,10 +81,10 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 
 <!-- v2.0 Full On-Prem Migration -->
 
-- [ ] **AUTH-01**: Replace Firebase Auth with local JWT auth (bcrypt + PostgreSQL users table)
-- [ ] **AUTH-02**: Backend /api/auth/login and /api/auth/me endpoints returning JWT tokens
-- [ ] **AUTH-03**: Replace Firebase token verification middleware with JWT verification
-- [ ] **AUTH-04**: CLI/startup script to create initial admin user (james@tablerocktx.com)
+- [x] **AUTH-01**: Replace Firebase Auth with local JWT auth (bcrypt + PostgreSQL users table) — Phase 23
+- [x] **AUTH-02**: Backend /api/auth/login and /api/auth/me endpoints returning JWT tokens — Phase 23
+- [x] **AUTH-03**: Replace Firebase token verification middleware with JWT verification — Phase 23
+- [x] **AUTH-04**: CLI/startup script to create initial admin user (james@tablerocktx.com) — Phase 23
 - [ ] **AUTH-05**: Frontend local auth context replacing Firebase Auth context
 - [ ] **AUTH-06**: Remove firebase.ts, Firebase npm packages, and all Firebase imports
 - [ ] **DB-01**: Remove Firestore entirely — PostgreSQL as only database via SQLAlchemy
@@ -169,4 +169,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Local variable threading in runAllSteps (not React state) | Avoids stale closure between sequential async steps | ✓ Good — v1.6 |
 
 ---
-*Last updated: 2026-03-25 — Phase 22 complete (DB models + Alembic)*
+*Last updated: 2026-03-25 — Phase 23 complete (JWT auth backend)*

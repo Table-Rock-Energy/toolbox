@@ -169,6 +169,7 @@ Plans:
   3. One-time Firestore-to-PostgreSQL migration script handles all collections with per-table count verification
   4. `requirements.txt` has zero Google dependencies (firebase-admin, google-cloud-firestore, google-cloud-storage, google-genai)
   5. App starts and serves all five tools with only PostgreSQL, local filesystem, and optionally LM Studio
+  6. GitHub Actions CI/CD workflow (.github/workflows/deploy.yml) disabled or removed -- no auto-deploy to Cloud Run
 
 ## Progress
 
