@@ -1,4 +1,4 @@
-"""Auth API endpoints: login and user profile."""
+"""Auth API endpoints: login, user profile, and password management."""
 
 from __future__ import annotations
 
@@ -6,13 +6,13 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import require_auth
 from app.core.database import get_db
-from app.core.security import create_access_token, verify_password
+from app.core.security import create_access_token, get_password_hash, verify_password
 from app.models.db_models import User
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,13 @@ class LoginRequest(BaseModel):
 
     email: EmailStr
     password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    """Change password request."""
+
+    current_password: str
+    new_password: str = Field(..., min_length=8)
 
 
 class UserProfile(BaseModel):
@@ -91,3 +98,27 @@ async def me(user: dict = Depends(require_auth)):
         first_name=user.get("first_name"),
         is_admin=user.get("role") == "admin",
     )
+
+
+@router.post("/change-password")
+async def change_password(
+    body: ChangePasswordRequest,
+    user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change the current user's password."""
+    result = await db.execute(
+        select(User).where(User.email == user["email"])
+    )
+    db_user = result.scalar_one_or_none()
+
+    if db_user is None or not db_user.password_hash:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not verify_password(body.current_password, db_user.password_hash):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    db_user.password_hash = get_password_hash(body.new_password)
+    await db.commit()
+
+    return {"message": "Password updated"}

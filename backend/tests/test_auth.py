@@ -248,6 +248,66 @@ async def test_seed_admin_update():
     mock_session.commit.assert_called_once()
 
 
+# ---------------------------------------------------------------------------
+# Change password endpoint tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_change_password_success(authenticated_client: AsyncClient):
+    """POST /api/auth/change-password with valid current password succeeds."""
+    mock_user = _make_mock_user(password="oldpass123")
+    app.dependency_overrides[get_db] = _mock_db_session(mock_user)
+
+    try:
+        response = await authenticated_client.post(
+            "/api/auth/change-password",
+            json={"current_password": "oldpass123", "new_password": "newpass456"},
+        )
+        assert response.status_code == 200
+        assert response.json()["message"] == "Password updated"
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+@pytest.mark.asyncio
+async def test_change_password_wrong_current(authenticated_client: AsyncClient):
+    """POST /api/auth/change-password with wrong current password returns 401."""
+    mock_user = _make_mock_user(password="oldpass123")
+    app.dependency_overrides[get_db] = _mock_db_session(mock_user)
+
+    try:
+        response = await authenticated_client.post(
+            "/api/auth/change-password",
+            json={"current_password": "wrongpass", "new_password": "newpass456"},
+        )
+        assert response.status_code == 401
+        assert "incorrect" in response.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+@pytest.mark.asyncio
+async def test_change_password_too_short(authenticated_client: AsyncClient):
+    """POST /api/auth/change-password with short new password returns 422."""
+    mock_user = _make_mock_user(password="oldpass123")
+    app.dependency_overrides[get_db] = _mock_db_session(mock_user)
+
+    try:
+        response = await authenticated_client.post(
+            "/api/auth/change-password",
+            json={"current_password": "oldpass123", "new_password": "short"},
+        )
+        assert response.status_code == 422
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+# ---------------------------------------------------------------------------
+# Seed script tests
+# ---------------------------------------------------------------------------
+
+
 def test_seed_admin_short_password():
     """Seed script rejects passwords shorter than 8 characters."""
     import asyncio
