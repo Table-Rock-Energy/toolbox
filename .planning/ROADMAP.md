@@ -86,7 +86,7 @@ See: `.planning/milestones/v1.8-ROADMAP.md` for full details
 
 ### v2.0 Full On-Prem Migration
 
-- [ ] **Phase 22: Database Models & Schema** - Extend SQLAlchemy models for all Firestore collections and initialize Alembic
+- [x] **Phase 22: Database Models & Schema** - Extend SQLAlchemy models for all Firestore collections and initialize Alembic (completed 2026-03-25)
 - [ ] **Phase 23: Auth Backend** - JWT login/me endpoints, token verification middleware, admin seed script
 - [ ] **Phase 24: Auth Frontend & Firebase Removal** - Local auth context with JWT, remove all Firebase packages and imports
 - [ ] **Phase 25: Database Service Port** - Replace every Firestore service function with PostgreSQL equivalent
@@ -106,7 +106,7 @@ See: `.planning/milestones/v1.8-ROADMAP.md` for full details
 **Plans**: 2 plans
 Plans:
 - [x] 22-01-PLAN.md -- Extend db_models.py with 6 new models and User auth columns
-- [ ] 22-02-PLAN.md -- Initialize Alembic async template and generate initial migration
+- [x] 22-02-PLAN.md -- Initialize Alembic async template and generate initial migration
 
 ### Phase 23: Auth Backend
 **Goal**: Users authenticate via email/password against PostgreSQL with JWT tokens verified on every protected request
@@ -175,7 +175,7 @@ Phases 22 -> 23 -> 24 -> 25 -> 26 -> 27
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 22. Database Models & Schema | v2.0 | 1/2 | In Progress|  |
+| 22. Database Models & Schema | v2.0 | 2/2 | Complete   | 2026-03-25 |
 | 23. Auth Backend | v2.0 | 0/0 | Not started | - |
 | 24. Auth Frontend & Firebase Removal | v2.0 | 0/0 | Not started | - |
 | 25. Database Service Port | v2.0 | 0/0 | Not started | - |

@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Full On-Prem Migration
-status: Ready to execute
-stopped_at: Completed 22-01-PLAN.md
-last_updated: "2026-03-25T19:18:40.069Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 22-02-PLAN.md
+last_updated: "2026-03-25T19:23:37.526Z"
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -43,6 +43,7 @@ Plan: 2 of 2
 ## Accumulated Context
 
 | Phase 22-01 P01 | 2min | 1 tasks | 2 files |
+| Phase 22 P02 | 2min | 2 tasks | 5 files |
 
 ### Decisions
 
@@ -55,6 +56,8 @@ Plan: 2 of 2
 - Do NOT touch Dockerfile, docker-compose, or CI/CD
 - [Phase 22-01]: String columns for role/status fields instead of PostgreSQL Enum types
 - [Phase 22-01]: User.id gets uuid4 default callable for local auth
+- [Phase 22]: env.py overrides sqlalchemy.url from app settings (single source of truth for DB URL)
+- [Phase 22]: init_db() guarded by alembic_version table check (safe coexistence with Alembic)
 
 ### Pending Todos
 
@@ -67,6 +70,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-25T19:18:40.067Z
-Stopped at: Completed 22-01-PLAN.md
+Last session: 2026-03-25T19:23:37.523Z
+Stopped at: Completed 22-02-PLAN.md
 Resume file: None
