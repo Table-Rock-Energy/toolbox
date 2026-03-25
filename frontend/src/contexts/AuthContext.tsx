@@ -1,16 +1,15 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import {
-  type User,
-  signInWithPopup,
-  signInWithEmailAndPassword,
-  signOut as firebaseSignOut,
-  onAuthStateChanged
-} from 'firebase/auth';
-import { auth, googleProvider } from '../lib/firebase';
 import api from '../utils/api';
 
+export interface LocalUser {
+  email: string;
+  displayName: string | null;
+  photoURL: string | null;
+  id: string;
+}
+
 interface AuthContextType {
-  user: User | null;
+  user: LocalUser | null;
   userName: string | null;
   loading: boolean;
   isAuthorized: boolean;
@@ -20,18 +19,43 @@ interface AuthContextType {
   userTools: string[];
   authError: string | null;
   backendReachable: boolean;
-  signInWithGoogle: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
-  getIdToken: () => Promise<string | null>;
+  getToken: () => string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
+interface UserProfileResponse {
+  email: string;
+  role: string;
+  scope: string;
+  tools: string[];
+  first_name?: string | null;
+  last_name?: string | null;
+  is_admin: boolean;
+}
+
+interface LoginResponse {
+  access_token: string;
+  token_type: string;
+  user: UserProfileResponse;
+}
+
+function buildLocalUser(profile: UserProfileResponse): LocalUser {
+  const displayName = [profile.first_name, profile.last_name].filter(Boolean).join(' ') || null;
+  return {
+    email: profile.email,
+    displayName,
+    photoURL: null,
+    id: profile.email,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<LocalUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -42,161 +66,116 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
   const [backendReachable, setBackendReachable] = useState(true);
 
-  // Check if user is in allowlist and get role info
-  const checkAuthorization = async (email: string) => {
-    try {
-      const response = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(email)}/check`);
-      if (response.ok) {
-        const data = await response.json();
-        return data;
-      }
-      return false;
-    } catch (error) {
-      console.error('Error checking authorization:', error);
-      if (import.meta.env.DEV) {
-        console.warn('Backend unreachable in dev mode — fail-closed, auth denied');
-      }
-      // Fail-closed: deny access when backend is unreachable
-      return false;
-    }
+  const applyProfile = (profile: UserProfileResponse) => {
+    const localUser = buildLocalUser(profile);
+    setUser(localUser);
+    setIsAuthorized(true);
+    setIsAdmin(profile.is_admin);
+    setUserRole(profile.role);
+    setUserScope(profile.scope);
+    setUserTools(profile.tools || []);
+    setUserName(localUser.displayName);
   };
 
+  const clearAuth = () => {
+    localStorage.removeItem('auth_token');
+    api.clearAuthToken();
+    setUser(null);
+    setIsAuthorized(false);
+    setIsAdmin(false);
+    setUserRole(null);
+    setUserScope(null);
+    setUserTools([]);
+    setUserName(null);
+  };
+
+  // Session restore on mount
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setUser(user);
-      setAuthError(null);
+    const restore = async () => {
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        setLoading(false);
+        return;
+      }
 
-      if (user?.email) {
-        // Probe backend health before authorization check (retry for cold starts)
-        let reachable = false;
-        for (let attempt = 0; attempt < 3; attempt++) {
-          try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000);
-            await fetch(`${API_BASE}/health`, { signal: controller.signal });
-            clearTimeout(timeoutId);
-            reachable = true;
-            break;
-          } catch {
-            if (attempt < 2) await new Promise(r => setTimeout(r, 2000));
-          }
-        }
-        setBackendReachable(reachable);
-        if (!reachable) {
-          setIsAuthorized(false);
-          setLoading(false);
-          return;
-        }
+      api.setAuthToken(token);
 
-        // Set auth token on ApiClient for all api.* calls
+      // Probe backend health with retry for cold starts
+      let reachable = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          const token = await user.getIdToken();
-          api.setAuthToken(token);
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000);
+          await fetch(`${API_BASE}/health`, { signal: controller.signal });
+          clearTimeout(timeoutId);
+          reachable = true;
+          break;
         } catch {
-          // Token may not be available yet, will retry on next call
+          if (attempt < 2) await new Promise(r => setTimeout(r, 2000));
         }
+      }
 
-        // Register 401 token refresh handler
-        api.setUnauthorizedHandler(async () => {
-          const currentUser = auth.currentUser;
-          if (!currentUser) return false;
-          try {
-            const newToken = await currentUser.getIdToken(true);
-            api.setAuthToken(newToken);
-            return true;
-          } catch {
-            await firebaseSignOut(auth);
-            setAuthError('Your session has expired. Please sign in again.');
-            return false;
-          }
+      setBackendReachable(reachable);
+      if (!reachable) {
+        setLoading(false);
+        return;
+      }
+
+      // Validate token with /auth/me
+      try {
+        const response = await fetch(`${API_BASE}/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` },
         });
-
-        const authData = await checkAuthorization(user.email);
-        const authorized = typeof authData === 'object' ? authData.allowed : authData;
-        setIsAuthorized(authorized);
-        if (authorized && typeof authData === 'object') {
-          setIsAdmin(authData.is_admin || false);
-          setUserRole(authData.role || 'user');
-          setUserScope(authData.scope || 'all');
-          setUserTools(authData.tools || []);
-          const first = authData.first_name || '';
-          const last = authData.last_name || '';
-          const fullName = `${first} ${last}`.trim();
-          setUserName(fullName || user.displayName || null);
+        if (response.ok) {
+          const profile: UserProfileResponse = await response.json();
+          applyProfile(profile);
         } else {
-          setIsAdmin(false);
-          setUserRole(null);
-          setUserScope(null);
-          setUserTools([]);
-          setUserName(null);
+          // Token expired or invalid
+          clearAuth();
         }
-        if (!authorized) {
-          setAuthError('Your account is not authorized to access this application. Please contact an administrator.');
-        }
-      } else {
-        setIsAuthorized(false);
-        setIsAdmin(false);
-        setUserRole(null);
-        setUserScope(null);
-        setUserTools([]);
-        setUserName(null);
-        api.clearAuthToken();
+      } catch {
+        clearAuth();
       }
 
       setLoading(false);
+    };
+
+    // Register 401 handler -- session expired, no retry
+    api.setUnauthorizedHandler(async () => {
+      clearAuth();
+      setAuthError('Your session has expired. Please sign in again.');
+      return false;
     });
 
-    return () => unsubscribe();
-  }, []);
-
-  const signInWithGoogle = async () => {
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (error) {
-      console.error('Error signing in with Google:', error);
-      throw error;
-    }
-  };
+    restore();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const signInWithEmail = async (email: string, password: string) => {
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch (error: unknown) {
-      console.error('Error signing in with email:', error);
-      // Provide user-friendly error messages
-      const firebaseError = error as { code?: string };
-      if (firebaseError.code === 'auth/user-not-found') {
-        throw new Error('No account found with this email address.');
-      } else if (firebaseError.code === 'auth/wrong-password') {
-        throw new Error('Incorrect password.');
-      } else if (firebaseError.code === 'auth/invalid-email') {
-        throw new Error('Invalid email address.');
-      } else if (firebaseError.code === 'auth/invalid-credential') {
-        throw new Error('Invalid email or password.');
-      } else if (firebaseError.code === 'auth/too-many-requests') {
-        throw new Error('Too many failed attempts. Please try again later.');
-      }
-      throw new Error('Login failed. Please try again.');
+    const response = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.detail || 'Login failed');
     }
+
+    const loginData = data as LoginResponse;
+    localStorage.setItem('auth_token', loginData.access_token);
+    api.setAuthToken(loginData.access_token);
+    applyProfile(loginData.user);
+    setAuthError(null);
   };
 
   const signOut = async () => {
-    try {
-      await firebaseSignOut(auth);
-    } catch (error) {
-      console.error('Error signing out:', error);
-      throw error;
-    }
+    clearAuth();
   };
 
-  const getIdToken = async (): Promise<string | null> => {
-    if (!user) return null;
-    try {
-      return await user.getIdToken();
-    } catch (error) {
-      console.error('Error getting ID token:', error);
-      return null;
-    }
+  const getToken = (): string | null => {
+    return localStorage.getItem('auth_token');
   };
 
   const value = {
@@ -210,10 +189,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     userTools,
     authError,
     backendReachable,
-    signInWithGoogle,
     signInWithEmail,
     signOut,
-    getIdToken,
+    getToken,
   };
 
   return (
