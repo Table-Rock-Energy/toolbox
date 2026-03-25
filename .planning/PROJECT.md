@@ -92,9 +92,9 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - [x] **DB-03**: Alembic initialized with async template, initial migration generated — Phase 22
 - [ ] **DB-04**: One-time Firestore→PostgreSQL migration script
 - [x] **DB-05**: Every firestore_service.py function has PostgreSQL equivalent in db_service.py — Phase 25
-- [ ] **AI-01**: OpenAI-compatible provider for LM Studio alongside Gemini
-- [ ] **AI-02**: Provider abstraction routing all AI calls through configurable backend
-- [ ] **AI-03**: New env vars: AI_PROVIDER, LLM_API_BASE, LLM_MODEL
+- [x] **AI-01**: OpenAI-compatible provider for LM Studio — Phase 26
+- [x] **AI-02**: Provider factory routing AI calls based on AI_PROVIDER config — Phase 26
+- [x] **AI-03**: Gemini removed, LM Studio is only AI backend — Phase 26
 - [ ] **STOR-01**: Local filesystem fallback with no GCS warnings when GCS_BUCKET_NAME empty
 
 ### Out of Scope
@@ -169,4 +169,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Local variable threading in runAllSteps (not React state) | Avoids stale closure between sequential async steps | ✓ Good — v1.6 |
 
 ---
-*Last updated: 2026-03-25 — Phase 25 complete (Firestore removed, PostgreSQL is sole DB)*
+*Last updated: 2026-03-25 — Phase 26 complete (LM Studio replaces Gemini)*
