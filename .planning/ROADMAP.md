@@ -180,6 +180,10 @@ Plans:
   4. `requirements.txt` has zero Google dependencies (firebase-admin, google-cloud-firestore, google-cloud-storage, google-genai)
   5. App starts and serves all five tools with only PostgreSQL, local filesystem, and optionally LM Studio
   6. GitHub Actions CI/CD workflow (.github/workflows/deploy.yml) disabled or removed -- no auto-deploy to Cloud Run
+**Plans**: 2 plans
+Plans:
+- [ ] 27-01-PLAN.md -- Strip GCS code, update config defaults, remove dependency, disable CI/CD
+- [ ] 27-02-PLAN.md -- Firestore-to-PostgreSQL migration script
 
 ## Progress
 
@@ -194,4 +198,4 @@ Phases 22 -> 23 -> 24 -> 25 -> 26 -> 27
 | 24. Auth Frontend & Firebase Removal | v2.0 | 2/2 | Complete    | 2026-03-25 |
 | 25. Database Service Port | v2.0 | 3/3 | Complete    | 2026-03-25 |
 | 26. AI Provider Swap | v2.0 | 2/2 | Complete    | 2026-03-25 |
-| 27. Storage & Dependency Cleanup | v2.0 | 0/0 | Not started | - |
+| 27. Storage & Dependency Cleanup | v2.0 | 0/2 | In progress | - |
