@@ -14,7 +14,7 @@ Requirements for on-prem migration. Each maps to roadmap phases.
 - [x] **AUTH-03**: Backend verifies JWT tokens in require_auth/require_admin dependencies (replacing Firebase token verification)
 - [x] **AUTH-04**: Admin can create initial admin user via CLI seed script (james@tablerocktx.com)
 - [x] **AUTH-05**: Frontend uses local auth context with JWT storage, 401 refresh, and logout (replacing Firebase AuthContext)
-- [ ] **AUTH-06**: All Firebase imports, packages (frontend firebase npm + backend firebase-admin), and firebase.ts are removed
+- [x] **AUTH-06**: All Firebase imports, packages (frontend firebase npm + backend firebase-admin), and firebase.ts are removed
 - [x] **AUTH-07**: Google Sign-In provider removed -- email/password authentication only
 
 ### Database
@@ -76,7 +76,7 @@ Deferred to a later milestone. Tracked but not in current roadmap.
 | AUTH-03 | Phase 23 | Complete |
 | AUTH-04 | Phase 23 | Complete |
 | AUTH-05 | Phase 24 | Complete |
-| AUTH-06 | Phase 24 | Pending |
+| AUTH-06 | Phase 24 | Complete |
 | AUTH-07 | Phase 24 | Complete |
 | DB-01 | Phase 25 | Pending |
 | DB-02 | Phase 22 | Complete |

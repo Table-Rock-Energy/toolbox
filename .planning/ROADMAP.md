@@ -88,7 +88,7 @@ See: `.planning/milestones/v1.8-ROADMAP.md` for full details
 
 - [x] **Phase 22: Database Models & Schema** - Extend SQLAlchemy models for all Firestore collections and initialize Alembic (completed 2026-03-25)
 - [x] **Phase 23: Auth Backend** - JWT login/me endpoints, token verification middleware, admin seed script (completed 2026-03-25)
-- [ ] **Phase 24: Auth Frontend & Firebase Removal** - Local auth context with JWT, remove all Firebase packages and imports
+- [x] **Phase 24: Auth Frontend & Firebase Removal** - Local auth context with JWT, remove all Firebase packages and imports (completed 2026-03-25)
 - [ ] **Phase 25: Database Service Port** - Replace every Firestore service function with PostgreSQL equivalent
 - [ ] **Phase 26: AI Provider Swap** - LM Studio via OpenAI-compatible API, remove Gemini dependency
 - [ ] **Phase 27: Storage & Dependency Cleanup** - Local filesystem default, GCS removal, migration script, final purge
@@ -136,7 +136,7 @@ Plans:
 **Plans**: 2 plans
 Plans:
 - [x] 24-01-PLAN.md -- AuthContext rewrite with LocalUser + JWT, backend change-password endpoint, Login Google removal
-- [ ] 24-02-PLAN.md -- Settings.tsx Firebase removal, all consumer file updates, firebase.ts deletion, npm uninstall
+- [x] 24-02-PLAN.md -- Settings.tsx Firebase removal, all consumer file updates, firebase.ts deletion, npm uninstall
 
 ### Phase 25: Database Service Port
 **Goal**: Every data operation reads/writes PostgreSQL -- Firestore code completely removed from backend
@@ -183,7 +183,7 @@ Phases 22 -> 23 -> 24 -> 25 -> 26 -> 27
 |-------|-----------|----------------|--------|-----------|
 | 22. Database Models & Schema | v2.0 | 2/2 | Complete    | 2026-03-25 |
 | 23. Auth Backend | v2.0 | 2/2 | Complete    | 2026-03-25 |
-| 24. Auth Frontend & Firebase Removal | v2.0 | 1/2 | In Progress|  |
+| 24. Auth Frontend & Firebase Removal | v2.0 | 2/2 | Complete   | 2026-03-25 |
 | 25. Database Service Port | v2.0 | 0/0 | Not started | - |
 | 26. AI Provider Swap | v2.0 | 0/0 | Not started | - |
 | 27. Storage & Dependency Cleanup | v2.0 | 0/0 | Not started | - |
