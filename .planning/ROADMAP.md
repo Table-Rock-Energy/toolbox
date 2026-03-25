@@ -91,7 +91,7 @@ See: `.planning/milestones/v1.8-ROADMAP.md` for full details
 - [x] **Phase 24: Auth Frontend & Firebase Removal** - Local auth context with JWT, remove all Firebase packages and imports (completed 2026-03-25)
 - [x] **Phase 25: Database Service Port** - Replace every Firestore service function with PostgreSQL equivalent (completed 2026-03-25)
 - [x] **Phase 26: AI Provider Swap** - LM Studio via OpenAI-compatible API, remove Gemini dependency (completed 2026-03-25)
-- [ ] **Phase 27: Storage & Dependency Cleanup** - Local filesystem default, GCS removal, migration script, final purge
+- [x] **Phase 27: Storage & Dependency Cleanup** - Local filesystem default, GCS removal, migration script, final purge (completed 2026-03-25)
 
 ## Phase Details
 
@@ -198,4 +198,4 @@ Phases 22 -> 23 -> 24 -> 25 -> 26 -> 27
 | 24. Auth Frontend & Firebase Removal | v2.0 | 2/2 | Complete    | 2026-03-25 |
 | 25. Database Service Port | v2.0 | 3/3 | Complete    | 2026-03-25 |
 | 26. AI Provider Swap | v2.0 | 2/2 | Complete    | 2026-03-25 |
-| 27. Storage & Dependency Cleanup | v2.0 | 1/2 | In Progress|  |
+| 27. Storage & Dependency Cleanup | v2.0 | 1/2 | Complete    | 2026-03-25 |
