@@ -23,9 +23,6 @@ reportlab>=4.0.0
 # HTTP requests (proration tool - RRC data download)
 requests>=2.31.0
 
-# Google Cloud Storage (persistent file storage)
-google-cloud-storage>=2.14.0
-
 # Google Cloud Firestore (database)
 google-cloud-firestore>=2.14.0
 

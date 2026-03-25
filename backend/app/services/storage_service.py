@@ -1,74 +1,19 @@
-"""Google Cloud Storage service for persistent file storage."""
+"""Local filesystem storage service."""
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import BinaryIO, Optional
+from typing import BinaryIO
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Try to import GCS client
-try:
-    from google.cloud import storage
-    from google.cloud.exceptions import NotFound
-    GCS_AVAILABLE = True
-except ImportError:
-    GCS_AVAILABLE = False
-    logger.warning("google-cloud-storage not installed, using local storage only")
-
 
 class StorageService:
-    """Service for managing file storage in Google Cloud Storage with local fallback."""
-
-    def __init__(self):
-        self._client: Optional[storage.Client] = None
-        self._bucket: Optional[storage.Bucket] = None
-        self._initialized = False
-
-    def _init_client(self) -> bool:
-        """Initialize the GCS client lazily."""
-        if self._initialized:
-            return self._client is not None
-
-        self._initialized = True
-
-        if not GCS_AVAILABLE:
-            logger.info("GCS not available, using local storage")
-            return False
-
-        if not settings.use_gcs:
-            logger.info("GCS not configured, using local storage")
-            return False
-
-        try:
-            self._client = storage.Client(project=settings.gcs_project_id)
-            self._bucket = self._client.bucket(settings.gcs_bucket_name)
-
-            # Check if bucket exists, create if not
-            if not self._bucket.exists():
-                logger.info(f"Creating GCS bucket: {settings.gcs_bucket_name}")
-                self._bucket = self._client.create_bucket(
-                    settings.gcs_bucket_name,
-                    location="us-central1"
-                )
-
-            logger.info(f"GCS initialized with bucket: {settings.gcs_bucket_name}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to initialize GCS: {e}")
-            self._client = None
-            self._bucket = None
-            return False
-
-    @property
-    def is_gcs_enabled(self) -> bool:
-        """Check if GCS is available and enabled."""
-        return self._init_client()
+    """Local filesystem storage service."""
 
     # -------------------------------------------------------------------------
     # Core file operations
@@ -81,7 +26,7 @@ class StorageService:
         content_type: str = "application/octet-stream",
     ) -> str:
         """
-        Upload a file to storage.
+        Upload a file to local storage.
 
         Args:
             content: File content as bytes or file-like object
@@ -89,23 +34,13 @@ class StorageService:
             content_type: MIME type of the file
 
         Returns:
-            The storage path (GCS path or local path)
+            The local storage path
         """
-        if self.is_gcs_enabled:
-            try:
-                return self._upload_to_gcs(content, path, content_type)
-            except Exception as e:
-                logger.warning(f"GCS upload failed, falling back to local storage: {e}")
-                # Reset stream position if it's a file-like object
-                if hasattr(content, 'seek'):
-                    content.seek(0)
-                return self._upload_to_local(content, path)
-        else:
-            return self._upload_to_local(content, path)
+        return self._upload_to_local(content, path)
 
     def download_file(self, path: str) -> bytes | None:
         """
-        Download a file from storage.
+        Download a file from local storage.
 
         Args:
             path: Path to the file in storage
@@ -113,24 +48,11 @@ class StorageService:
         Returns:
             File content as bytes, or None if not found
         """
-        if self.is_gcs_enabled:
-            result = self._download_from_gcs(path)
-            if result is not None:
-                return result
-            # Fallback: check local storage in case file was saved locally
-            return self._download_from_local(path)
-        else:
-            return self._download_from_local(path)
+        return self._download_from_local(path)
 
     def file_exists(self, path: str) -> bool:
         """Check if a file exists in storage."""
-        if self.is_gcs_enabled:
-            if self._exists_in_gcs(path):
-                return True
-            # Fallback: check local storage too
-            return self._exists_locally(path)
-        else:
-            return self._exists_locally(path)
+        return self._exists_locally(path)
 
     def get_file_info(self, path: str) -> dict | None:
         """
@@ -139,143 +61,18 @@ class StorageService:
         Returns:
             Dict with 'size', 'modified', 'content_type' or None if not found
         """
-        if self.is_gcs_enabled:
-            return self._get_gcs_file_info(path)
-        else:
-            return self._get_local_file_info(path)
+        return self._get_local_file_info(path)
 
     def delete_file(self, path: str) -> bool:
         """Delete a file from storage."""
-        if self.is_gcs_enabled:
-            return self._delete_from_gcs(path)
-        else:
-            return self._delete_from_local(path)
+        return self._delete_from_local(path)
 
     def list_files(self, prefix: str) -> list[str]:
         """List files with a given prefix."""
-        if self.is_gcs_enabled:
-            return self._list_gcs_files(prefix)
-        else:
-            return self._list_local_files(prefix)
-
-    def get_signed_url(self, path: str, expiration_minutes: int = 60) -> str | None:
-        """
-        Get a signed URL for temporary access to a file.
-        Only available with GCS.
-        """
-        if not self.is_gcs_enabled:
-            return None
-
-        try:
-            blob = self._bucket.blob(path)
-            if not blob.exists():
-                return None
-
-            url = blob.generate_signed_url(
-                version="v4",
-                expiration=timedelta(minutes=expiration_minutes),
-                method="GET",
-            )
-            return url
-
-        except Exception as e:
-            logger.error(f"Error generating signed URL for {path}: {e}")
-            return None
+        return self._list_local_files(prefix)
 
     # -------------------------------------------------------------------------
-    # GCS operations
-    # -------------------------------------------------------------------------
-
-    def _upload_to_gcs(
-        self,
-        content: bytes | BinaryIO,
-        path: str,
-        content_type: str,
-    ) -> str:
-        """Upload file to GCS."""
-        try:
-            blob = self._bucket.blob(path)
-
-            if isinstance(content, bytes):
-                blob.upload_from_string(content, content_type=content_type)
-            else:
-                blob.upload_from_file(content, content_type=content_type)
-
-            logger.info(f"Uploaded to GCS: {path}")
-            return f"gs://{settings.gcs_bucket_name}/{path}"
-
-        except Exception as e:
-            logger.error(f"GCS upload failed for {path}: {e}")
-            raise
-
-    def _download_from_gcs(self, path: str) -> bytes | None:
-        """Download file from GCS."""
-        try:
-            blob = self._bucket.blob(path)
-            if not blob.exists():
-                logger.warning(f"File not found in GCS: {path}")
-                return None
-
-            content = blob.download_as_bytes()
-            logger.debug(f"Downloaded from GCS: {path} ({len(content)} bytes)")
-            return content
-
-        except NotFound:
-            return None
-        except Exception as e:
-            logger.error(f"GCS download failed for {path}: {e}")
-            return None
-
-    def _exists_in_gcs(self, path: str) -> bool:
-        """Check if file exists in GCS."""
-        try:
-            blob = self._bucket.blob(path)
-            return blob.exists()
-        except Exception as e:
-            logger.error(f"GCS exists check failed for {path}: {e}")
-            return False
-
-    def _get_gcs_file_info(self, path: str) -> dict | None:
-        """Get file info from GCS."""
-        try:
-            blob = self._bucket.blob(path)
-            if not blob.exists():
-                return None
-
-            blob.reload()
-            return {
-                "size": blob.size,
-                "modified": blob.updated.isoformat() if blob.updated else None,
-                "content_type": blob.content_type,
-            }
-        except Exception as e:
-            logger.error(f"GCS file info failed for {path}: {e}")
-            return None
-
-    def _delete_from_gcs(self, path: str) -> bool:
-        """Delete file from GCS."""
-        try:
-            blob = self._bucket.blob(path)
-            blob.delete()
-            logger.info(f"Deleted from GCS: {path}")
-            return True
-        except NotFound:
-            return True  # Already gone
-        except Exception as e:
-            logger.error(f"GCS delete failed for {path}: {e}")
-            return False
-
-    def _list_gcs_files(self, prefix: str) -> list[str]:
-        """List files in GCS with prefix."""
-        try:
-            blobs = self._bucket.list_blobs(prefix=prefix)
-            return [blob.name for blob in blobs]
-        except Exception as e:
-            logger.error(f"GCS list failed for prefix {prefix}: {e}")
-            return []
-
-    # -------------------------------------------------------------------------
-    # Local file operations (fallback)
+    # Local file operations
     # -------------------------------------------------------------------------
 
     def _get_local_path(self, path: str) -> Path:
@@ -356,7 +153,7 @@ class RRCDataStorage:
 
     def __init__(self, storage: StorageService):
         self.storage = storage
-        self.folder = settings.gcs_rrc_data_folder
+        self.folder = settings.storage_rrc_data_folder
 
     @property
     def oil_path(self) -> str:
@@ -390,7 +187,7 @@ class RRCDataStorage:
             "gas_size": gas_info["size"] if gas_info else 0,
             "oil_modified": oil_info["modified"] if oil_info else None,
             "gas_modified": gas_info["modified"] if gas_info else None,
-            "storage_type": "gcs" if self.storage.is_gcs_enabled else "local",
+            "storage_type": "local",
         }
 
 
@@ -399,7 +196,7 @@ class UploadStorage:
 
     def __init__(self, storage: StorageService):
         self.storage = storage
-        self.folder = settings.gcs_uploads_folder
+        self.folder = settings.storage_uploads_folder
 
     def save_upload(
         self,
@@ -440,7 +237,7 @@ class ProfileStorage:
 
     def __init__(self, storage: StorageService):
         self.storage = storage
-        self.folder = settings.gcs_profiles_folder
+        self.folder = settings.storage_profiles_folder
 
     def save_profile_image(self, content: bytes, user_id: str, filename: str) -> str:
         """Save a profile image."""
@@ -454,8 +251,6 @@ class ProfileStorage:
         for ext in ["jpg", "jpeg", "png", "gif"]:
             path = f"{self.folder}/{user_id}/avatar.{ext}"
             if self.storage.file_exists(path):
-                # Always use the API endpoint which proxies from storage (GCS or local).
-                # This avoids GCS signed URL issues on Cloud Run.
                 return f"/api/admin/profile-image/{user_id}"
         return None
 

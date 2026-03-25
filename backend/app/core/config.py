@@ -25,17 +25,13 @@ class Settings(BaseSettings):
     proration_extensions: list[str] = [".csv"]
     revenue_extensions: list[str] = [".pdf"]
 
-    # Local data directory (fallback when GCS not available)
+    # Local data directory
     data_dir: Path = Path(__file__).parent.parent.parent / "data"
 
-    # Google Cloud Storage settings
-    gcs_bucket_name: Optional[str] = "table-rock-tools-storage"
-    gcs_project_id: Optional[str] = "tablerockenergy"
-
-    # GCS folder paths
-    gcs_rrc_data_folder: str = "rrc-data"
-    gcs_uploads_folder: str = "uploads"
-    gcs_profiles_folder: str = "profiles"
+    # Storage folder paths
+    storage_rrc_data_folder: str = "rrc-data"
+    storage_uploads_folder: str = "uploads"
+    storage_profiles_folder: str = "profiles"
 
     # Database settings (PostgreSQL - optional, for local dev)
     # Local dev: postgresql+asyncpg://postgres:postgres@localhost:5432/toolbox
@@ -92,11 +88,6 @@ class Settings(BaseSettings):
         if self.environment == "production":
             return ["https://tools.tablerocktx.com"]
         return ["http://localhost:5173"]
-
-    @property
-    def use_gcs(self) -> bool:
-        """Check if GCS should be used for storage."""
-        return bool(self.gcs_bucket_name)
 
     @property
     def use_database(self) -> bool:
