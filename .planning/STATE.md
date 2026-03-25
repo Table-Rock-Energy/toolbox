@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Full On-Prem Migration
-status: active
-stopped_at: null
-last_updated: "2026-03-25"
+status: Ready to execute
+stopped_at: Completed 22-01-PLAN.md
+last_updated: "2026-03-25T19:18:40.069Z"
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
 ---
 
 # Project State
@@ -19,20 +19,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Phase 22 -- Database Models & Schema
+**Current focus:** Phase 22 — Database Models & Schema
 
 ## Current Position
 
-Phase: 22 of 27 (Database Models & Schema)
-Plan: --
-Status: Ready to plan
-Last activity: 2026-03-25 -- Roadmap created for v2.0 (6 phases, 19 requirements)
-
-Progress: [░░░░░░░░░░] 0%
+Phase: 22 (Database Models & Schema) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 0
 - Average duration: --
 - Total execution time: 0 hours
@@ -45,6 +42,8 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Accumulated Context
 
+| Phase 22-01 P01 | 2min | 1 tasks | 2 files |
+
 ### Decisions
 
 - Remove Firestore entirely (no toggle) -- PostgreSQL is the only database
@@ -54,6 +53,8 @@ Progress: [░░░░░░░░░░] 0%
 - Alembic for migrations (not create_all)
 - 24-hour JWT expiry, no refresh tokens (small internal team)
 - Do NOT touch Dockerfile, docker-compose, or CI/CD
+- [Phase 22-01]: String columns for role/status fields instead of PostgreSQL Enum types
+- [Phase 22-01]: User.id gets uuid4 default callable for local auth
 
 ### Pending Todos
 
@@ -66,6 +67,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-25
-Stopped at: Roadmap created, ready to plan Phase 22
+Last session: 2026-03-25T19:18:40.067Z
+Stopped at: Completed 22-01-PLAN.md
 Resume file: None

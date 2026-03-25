@@ -105,7 +105,7 @@ See: `.planning/milestones/v1.8-ROADMAP.md` for full details
   3. Alembic initialized with async template and initial migration auto-generated from models
 **Plans**: 2 plans
 Plans:
-- [ ] 22-01-PLAN.md -- Extend db_models.py with 6 new models and User auth columns
+- [x] 22-01-PLAN.md -- Extend db_models.py with 6 new models and User auth columns
 - [ ] 22-02-PLAN.md -- Initialize Alembic async template and generate initial migration
 
 ### Phase 23: Auth Backend
@@ -175,7 +175,7 @@ Phases 22 -> 23 -> 24 -> 25 -> 26 -> 27
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 22. Database Models & Schema | v2.0 | 0/2 | Not started | - |
+| 22. Database Models & Schema | v2.0 | 1/2 | In Progress|  |
 | 23. Auth Backend | v2.0 | 0/0 | Not started | - |
 | 24. Auth Frontend & Firebase Removal | v2.0 | 0/0 | Not started | - |
 | 25. Database Service Port | v2.0 | 0/0 | Not started | - |
