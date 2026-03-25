@@ -88,8 +88,8 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - [ ] **AUTH-05**: Frontend local auth context replacing Firebase Auth context
 - [ ] **AUTH-06**: Remove firebase.ts, Firebase npm packages, and all Firebase imports
 - [ ] **DB-01**: Remove Firestore entirely — PostgreSQL as only database via SQLAlchemy
-- [ ] **DB-02**: Extend SQLAlchemy models to cover all Firestore collections
-- [ ] **DB-03**: Schema creation script (create_tables.py)
+- [x] **DB-02**: Extend SQLAlchemy models to cover all Firestore collections — Phase 22
+- [x] **DB-03**: Alembic initialized with async template, initial migration generated — Phase 22
 - [ ] **DB-04**: One-time Firestore→PostgreSQL migration script
 - [ ] **DB-05**: Ensure every service using firestore_service.py has a PostgreSQL equivalent
 - [ ] **AI-01**: OpenAI-compatible provider for LM Studio alongside Gemini
@@ -169,4 +169,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Local variable threading in runAllSteps (not React state) | Avoids stale closure between sequential async steps | ✓ Good — v1.6 |
 
 ---
-*Last updated: 2026-03-25 — v2.0 milestone started*
+*Last updated: 2026-03-25 — Phase 22 complete (DB models + Alembic)*
