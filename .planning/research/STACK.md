@@ -1,194 +1,171 @@
-# Technology Stack: v1.7 Batch Processing & Resilience
+# Technology Stack: v2.0 On-Prem Migration
 
 **Project:** Table Rock Tools
-**Researched:** 2026-03-19
-**Scope:** New capabilities only -- batch orchestration, streaming, cancellation, operation persistence
+**Researched:** 2026-03-25
+**Scope:** NEW infrastructure only (JWT auth, PostgreSQL-only, local storage, LM Studio AI)
 
-## Executive Decision
+## Recommended Stack Changes
 
-**No new dependencies required.** The existing stack has every primitive needed. This milestone is about patterns, not packages.
+### Authentication (Firebase Auth -> Local JWT)
 
-## Existing Stack Already Covers v1.7
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| PyJWT | >=2.12.0 | JWT token creation/verification | FastAPI official docs switched from python-jose to PyJWT. python-jose is abandoned (no release in 3+ years). PyJWT is actively maintained, simpler API, HS256 is sufficient for internal app. |
+| pwdlib[bcrypt] | >=0.2.0 | Password hashing | FastAPI official docs switched from passlib to pwdlib. passlib is unmaintained and broken with bcrypt>=5.0 and Python>=3.13. pwdlib is from the FastAPI-Users author, supports bcrypt natively. Use `[bcrypt]` extra, not `[argon2]` -- bcrypt is simpler to deploy (no system deps) and sufficient for small internal team. |
 
-| Capability Needed | Already Have | Where Used |
-|-------------------|-------------|------------|
-| SSE streaming | `sse-starlette>=2.0` | GHL bulk send progress (`api/ghl.py`) |
-| NDJSON streaming | `StreamingResponse` (FastAPI built-in) | Enrichment pipeline (`api/extract.py`, `api/title.py`) |
-| Request cancellation (frontend) | `AbortController` | `useEnrichmentPipeline.ts`, `api.ts` timeout |
-| Request cancellation (backend) | Firestore flag polling | GHL `cancel_job()` in `bulk_send_service.py` |
-| Background jobs | `threading` + Firestore job docs | `rrc_background.py` with sync Firestore client |
-| Job status tracking | Firestore collections | `rrc_sync_jobs` collection with polling endpoint |
-| Async concurrency | `asyncio.gather`, `asyncio.Semaphore` | `rrc_county_download_service.py` (semaphore-throttled) |
-| Progress events | Custom event protocol | Both SSE (GHL) and NDJSON (enrichment) patterns |
+**NOT python-jose:** Abandoned, last release 2021. FastAPI PR #11589 formally replaced it.
+**NOT passlib:** Unmaintained since 2020, broken with bcrypt 5.0+, incompatible with Python 3.13+.
+**NOT argon2:** Requires system-level `argon2-cffi` build dependencies. Bcrypt is universally available and sufficient for <20 users.
 
-## What NOT to Add
+### Database (Firestore -> PostgreSQL-only)
 
-| Temptation | Why Skip | Do This Instead |
-|------------|---------|-----------------|
-| Celery / Dramatiq / ARQ | Overkill for 1-10 users. Requires Redis/RabbitMQ. Cloud Run cold starts kill workers. | Client-side batch orchestration with NDJSON streaming |
-| Redis | No shared state needed. Firestore persists jobs. 1Gi memory limit. | Firestore for persistence, in-memory dict for active state |
-| WebSockets | `EventSource` is simpler, auto-reconnects, works through proxies. Already proven in GHL. | SSE via `sse-starlette` (already installed) |
-| zustand / jotai | One global store for operation state is not worth a dep. | Module-level store with `useSyncExternalStore` |
-| react-query / SWR | Data fetching is simple POST-and-display, not cache-invalidation-heavy. | Keep existing `ApiClient` + `useEffect` pattern |
-| Server-side batch queue | Cloud Run scales to 0 -- no persistent process to poll. | Client drives batches, server processes one batch per request |
-| framer-motion | CSS `transition-colors` handles cell highlighting. 45KB not justified. | Tailwind transitions |
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| SQLAlchemy[asyncio] | >=2.0.0 | ORM + async database access | Already in requirements.txt and used in `database.py` + `db_models.py`. Models exist for all entity types. Just needs to become the primary path. |
+| asyncpg | >=0.29.0 | Async PostgreSQL driver | Already in requirements.txt. Used by SQLAlchemy async engine. |
+| Alembic | >=1.18.0 | Schema migrations | Already in requirements.txt. Required now because PostgreSQL becomes the sole database -- schema changes need proper migration tracking. Use `alembic init --template async` for async engine compat. |
+| psycopg2-binary | >=2.9.0 | Sync PostgreSQL driver (Alembic) | Already in requirements.txt. Alembic migrations run synchronously even with async engine. Needed for `env.py` offline mode. |
 
-## Implementation Patterns (Zero New Deps)
+**Key finding:** The existing codebase already has full SQLAlchemy models in `db_models.py` covering Users, Jobs, ExtractEntry, TitleEntry, ProrationRow, RevenueStatement, RevenueRow, RRC data, and AuditLog. The `database.py` module has async engine, session factory, and `init_db()`. This is not a greenfield migration -- it is activating and extending code that already exists.
 
-### Backend: Batch Streaming with Cancellation
+**Missing models to add:**
+- `AppConfig` -- replaces Firestore `app_config` collection (allowlist, settings)
+- `UserPreference` -- replaces Firestore `user_preferences` collection
+- `RRCCountyStatus` -- replaces Firestore `rrc_county_status` collection
+- `password_hash` column on existing `User` model
+- `role`, `scope`, `tools` columns on existing `User` model (currently in JSON allowlist)
 
-Use `request.is_disconnected()` -- built into Starlette. When the client aborts the `fetch()`, the server detects disconnection and stops processing. No Firestore flag needed for streaming endpoints.
+**Alembic vs create_all:** Use Alembic. The existing `init_db()` uses `Base.metadata.create_all` which is fine for initial setup but cannot handle schema evolution. With PostgreSQL as sole DB, Alembic is mandatory for adding columns, indexes, etc. without data loss.
 
+### AI Provider (Gemini -> LM Studio via OpenAI SDK)
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| openai | >=1.60.0 | OpenAI-compatible API client | LM Studio exposes `/v1/chat/completions` endpoint that is 100% OpenAI SDK compatible. Set `base_url="http://localhost:1234/v1"` and `api_key="not-needed"`. Zero code changes to prompt logic, just client initialization. |
+
+**NOT google-genai for LM Studio:** LM Studio does not speak Gemini protocol. The OpenAI-compatible endpoint is the standard for local LLMs.
+**NOT litellm:** Adds unnecessary abstraction. The openai SDK already handles routing to any OpenAI-compatible endpoint via `base_url`.
+**NOT lmstudio SDK:** Exists but is less mature. OpenAI SDK is battle-tested and lets you switch between LM Studio, Ollama, vLLM, or actual OpenAI with zero code changes.
+
+**Integration pattern:**
 ```python
-async def process_batch_stream(request: Request, entries: list[dict]) -> AsyncGenerator[str, None]:
-    for i in range(0, len(entries), BATCH_SIZE):
-        if await request.is_disconnected():
-            yield json.dumps({"type": "cancelled", "processed": i}) + "\n"
-            return
-        batch = entries[i:i + BATCH_SIZE]
-        results = await process_batch(batch)
-        yield json.dumps({"type": "progress", "processed": i + len(batch), "results": results}) + "\n"
+# Current Gemini code in gemini_service.py:
+from google import genai
+client = genai.Client(api_key=settings.gemini_api_key)
+response = client.models.generate_content(model=..., contents=..., config=...)
+
+# New OpenAI-compatible code:
+from openai import OpenAI
+client = OpenAI(base_url=settings.llm_api_base, api_key=settings.llm_api_key or "not-needed")
+response = client.chat.completions.create(model=settings.llm_model, messages=[...], response_format={"type": "json_object"})
 ```
 
-**Confidence:** HIGH -- `request.is_disconnected()` is core Starlette API.
+**LM Studio JSON mode:** LM Studio supports `response_format: {"type": "json_object"}` which replaces Gemini's `response_mime_type="application/json"` + `response_json_schema`. The schema enforcement is less strict -- validation moves to the application layer (Pydantic parsing of response).
 
-### Backend: Parallel Firestore Reads
+### Storage (GCS -> Local Filesystem)
 
-Replace sequential lookups with `asyncio.gather`:
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| (none new) | - | Local filesystem storage | `StorageService` already has local fallback. Change: make local the default when `GCS_BUCKET_NAME` is empty/unset, suppress GCS warnings. No new dependencies needed. |
 
-```python
-# Before: sequential
-for lease_id in lease_ids:
-    doc = await firestore_service.get_document("rrc_data", lease_id)
+**What changes:** Default `gcs_bucket_name` from `"table-rock-tools-storage"` to `None` in config.py. When `None`, `use_gcs` returns `False` and all storage silently uses `data_dir`. Remove log warnings about GCS unavailability.
 
-# After: parallel
-docs = await asyncio.gather(*[
-    firestore_service.get_document("rrc_data", lid) for lid in lease_ids
-])
-```
+### Frontend Auth (Firebase SDK -> fetch-based JWT)
 
-**Confidence:** HIGH -- `asyncio.gather` is stdlib, Firestore async client supports concurrent reads.
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| (none new) | - | JWT auth via fetch API | Remove `firebase` npm package (12.9.0). Replace `AuthContext.tsx` with local auth context that stores JWT in localStorage, sends as Bearer token. Login page calls `POST /api/auth/login` instead of Firebase `signInWithEmailAndPassword`. No new npm dependencies needed. |
 
-### Backend: Proration Cache Pre-warming
+**What gets removed from frontend:**
+- `firebase` npm package (~600KB gzipped)
+- `frontend/src/lib/firebase.ts`
+- All `firebase/auth` imports in `AuthContext.tsx`
+- Google Sign-In provider (replaced by email/password only)
+- Firebase config env vars (`VITE_FIREBASE_*`)
 
-Call existing RRC data load at startup instead of on first request:
+## New Environment Variables
 
-```python
-@app.on_event("startup")
-async def startup():
-    asyncio.create_task(warm_rrc_cache())
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `JWT_SECRET_KEY` | Yes (production) | auto-generated in dev | HMAC secret for JWT signing. Generate with `openssl rand -hex 32`. |
+| `JWT_ALGORITHM` | No | `HS256` | JWT signing algorithm |
+| `JWT_EXPIRE_MINUTES` | No | `1440` (24h) | Token expiry. 24h is fine for internal tool with small team. |
+| `AI_PROVIDER` | No | `none` | `gemini`, `openai`, or `none`. Controls which AI backend is used. |
+| `LLM_API_BASE` | No | `http://localhost:1234/v1` | Base URL for OpenAI-compatible API (LM Studio default). |
+| `LLM_MODEL` | No | `local-model` | Model name to request from LM Studio. |
+| `LLM_API_KEY` | No | `not-needed` | API key for LLM provider. LM Studio ignores this. |
+| `DATABASE_URL` | Yes | `postgresql+asyncpg://postgres:postgres@localhost:5432/toolbox` | Already exists. Becomes mandatory. |
+| `DATABASE_ENABLED` | Removed | - | No longer needed. PostgreSQL is always on. |
+| `FIRESTORE_ENABLED` | Removed | - | Firestore removed entirely. |
+| `GCS_BUCKET_NAME` | No | `None` | Default changes to None (was `table-rock-tools-storage`). |
 
-async def warm_rrc_cache():
-    from app.services.proration.rrc_data_service import rrc_data_service
-    await asyncio.to_thread(rrc_data_service.load_data)
-```
+## Alternatives Considered
 
-**Confidence:** HIGH -- `asyncio.to_thread` is stdlib, startup hooks already used in `main.py`.
-
-### Frontend: NDJSON Stream Consumption
-
-Same pattern as existing enrichment pipeline. `ReadableStream` API reads chunked NDJSON:
-
-```typescript
-const reader = response.body!.getReader()
-const decoder = new TextDecoder()
-let buffer = ''
-while (true) {
-  const { done, value } = await reader.read()
-  if (done) break
-  buffer += decoder.decode(value, { stream: true })
-  const lines = buffer.split('\n')
-  buffer = lines.pop()!
-  for (const line of lines) {
-    if (line.trim()) onEvent(JSON.parse(line))
-  }
-}
-```
-
-**Confidence:** HIGH -- already proven in the enrichment hook.
-
-### Frontend: Operation Persistence Across Navigation
-
-Module-level singleton outside React tree. Survives route changes, cleared on explicit action.
-
-```typescript
-// operationStore.ts
-const activeOperations = new Map<string, OperationState>()
-const listeners = new Set<() => void>()
-
-export function getOperation(id: string): OperationState | undefined { ... }
-export function setOperation(id: string, state: OperationState): void { ... }
-export function subscribe(listener: () => void): () => void { ... }
-
-// In components: useSyncExternalStore(subscribe, () => getOperation(id))
-```
-
-`useSyncExternalStore` is the correct React 19 API for binding external mutable state to components. No Context provider needed, no re-render cascade, no new dependency.
-
-**Confidence:** HIGH -- `useSyncExternalStore` is stable React API since React 18.
-
-## Architecture Decision: Client-Driven vs Server-Driven Batching
-
-**Decision: Client-driven batching for AI cleanup. Server-driven streaming for everything else.**
-
-| Feature | Who Drives | Why |
-|---------|-----------|-----|
-| AI cleanup (Gemini) | Client | Gemini has per-request token limits. Client controls batch size, retries failed batches, accumulates partial results. |
-| Revenue per-PDF progress | Server | Server knows the PDFs. Stream progress events between each PDF. |
-| Proration Firestore lookups | Server | Server knows the lease IDs. `asyncio.gather` for parallel reads. |
-| Enrichment pipeline | Server | Already server-driven via NDJSON streaming. No change needed. |
-
-**Rationale:** Cloud Run's 600s request timeout means server streams are viable (RRC downloads already push this). Client-driven batching for AI cleanup means natural cancel points between batches and automatic partial results on failure.
-
-## Streaming Protocol Choice: NDJSON vs SSE
-
-**Decision: NDJSON for batch processing. SSE stays for GHL send only.**
-
-| Protocol | Use For | Why |
-|----------|---------|-----|
-| NDJSON (`StreamingResponse`) | AI cleanup batches, revenue per-PDF, enrichment | Simpler. No event type negotiation. Works with `fetch()` + `ReadableStream`. Already used for enrichment. |
-| SSE (`EventSourceResponse`) | GHL bulk send | Already built and working. `EventSource` API handles reconnection automatically for long-running sends. |
-
-Don't convert GHL to NDJSON (working code, different access pattern with query-param auth). Don't use SSE for new batch endpoints (NDJSON is simpler when you control the fetch lifecycle).
-
-## Version Pinning
-
-No changes to `requirements.txt` or `package.json`. Current versions sufficient:
-
-| Package | Current Pin | Needed Capability |
-|---------|-------------|-------------------|
-| `fastapi>=0.109.0` | `Request.is_disconnected()`, `StreamingResponse` | Batch cancellation, NDJSON streaming |
-| `sse-starlette>=2.0` | `EventSourceResponse` | GHL send (unchanged) |
-| `google-cloud-firestore>=2.14.0` | Async client, batch operations | Parallel reads, job persistence |
-| `react>=19.2.0` | `useSyncExternalStore`, hooks | Operation persistence store |
-| `anyio>=4.0` | Cancellation scopes | Already installed |
+| Category | Recommended | Alternative | Why Not |
+|----------|-------------|-------------|---------|
+| JWT | PyJWT | python-jose | Abandoned, no releases since 2021, FastAPI dropped it |
+| JWT | PyJWT | Authlib | Heavier, full OAuth2 framework -- overkill for internal JWT |
+| Password hashing | pwdlib[bcrypt] | passlib[bcrypt] | Unmaintained, broken with bcrypt>=5.0, Python>=3.13 incompatible |
+| Password hashing | pwdlib[bcrypt] | bcrypt (direct) | No verify/hash helpers, pwdlib wraps it cleanly |
+| Password hashing | pwdlib[bcrypt] | pwdlib[argon2] | argon2 needs system deps (libargon2), bcrypt is simpler |
+| AI client | openai SDK | litellm | Unnecessary abstraction layer, openai SDK handles base_url natively |
+| AI client | openai SDK | httpx (raw) | Reinventing the wheel, openai SDK handles retries/streaming/types |
+| AI client | openai SDK | lmstudio-python | Less mature, smaller ecosystem, openai SDK is universal |
+| Migrations | Alembic | create_all | Can't evolve schema without data loss |
+| Migrations | Alembic | manual SQL | Error-prone, no rollback tracking |
 
 ## Installation
 
 ```bash
-# Nothing to install -- all deps already present
-make install  # only if starting fresh
+# New backend dependencies (add to requirements.txt)
+pip install PyJWT>=2.12.0
+pip install "pwdlib[bcrypt]>=0.2.0"
+pip install "openai>=1.60.0"
+
+# Already in requirements.txt (no changes needed)
+# sqlalchemy[asyncio]>=2.0.0
+# asyncpg>=0.29.0
+# psycopg2-binary>=2.9.0
+# alembic>=1.13.0
+
+# Frontend: REMOVE firebase
+cd frontend && npm uninstall firebase
+```
+
+## Dependencies to REMOVE
+
+```bash
+# Backend (requirements.txt)
+# REMOVE these lines:
+# google-cloud-storage>=2.14.0
+# google-cloud-firestore>=2.14.0
+# firebase-admin>=6.2.0
+# google-genai>=1.0.0   (keep if dual-provider support desired)
+
+# Frontend (package.json)
+# REMOVE:
+# "firebase": "^12.9.0"
 ```
 
 ## Confidence Assessment
 
-| Claim | Confidence | Basis |
-|-------|------------|-------|
-| No new backend deps needed | HIGH | All patterns use FastAPI/Starlette built-ins + asyncio stdlib |
-| No new frontend deps needed | HIGH | React 19 primitives + Web APIs cover all patterns |
-| `request.is_disconnected()` works for cancellation | HIGH | Core Starlette API, documented |
-| `useSyncExternalStore` for operation persistence | HIGH | Stable React API since v18, well-documented |
-| NDJSON streaming pattern works | HIGH | Already proven in enrichment pipeline |
-| Client-driven batching is correct for AI cleanup | HIGH | Matches Gemini token limits + partial result needs |
-| Cloud Run 600s timeout sufficient | MEDIUM | Most operations complete in <60s; revenue multi-PDF could push limits with large uploads |
+| Decision | Confidence | Basis |
+|----------|------------|-------|
+| PyJWT over python-jose | HIGH | FastAPI official docs PR #11589, python-jose abandoned |
+| pwdlib over passlib | HIGH | FastAPI official docs, passlib broken with bcrypt 5.0+ |
+| openai SDK for LM Studio | HIGH | LM Studio official docs confirm full OpenAI API compat |
+| Alembic for migrations | HIGH | Already in requirements.txt, standard SQLAlchemy practice |
+| No new frontend deps | HIGH | JWT auth is just fetch + localStorage, no library needed |
+| bcrypt over argon2 | MEDIUM | Both work, bcrypt avoids system deps, argon2 is theoretically stronger but irrelevant for <20 users |
 
 ## Sources
 
-- Codebase: `api/ghl.py` -- SSE with `EventSourceResponse`, cancellation via Firestore flag
-- Codebase: `api/extract.py` lines 333-336 -- NDJSON `StreamingResponse` for enrichment
-- Codebase: `hooks/useEnrichmentPipeline.ts` -- `AbortController` pattern, NDJSON consumption
-- Codebase: `hooks/useSSEProgress.ts` -- SSE consumption with reconnect
-- Codebase: `services/rrc_background.py` -- background thread + Firestore job tracking
-- Codebase: `services/proration/rrc_county_download_service.py` -- `asyncio.Semaphore` throttling
-- Codebase: `requirements.txt` -- `sse-starlette>=2.0`, `anyio>=4.0` already installed
-- Codebase: `utils/api.ts` -- `AbortController` for request timeouts
+- [FastAPI JWT Tutorial (official)](https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/) -- PyJWT + pwdlib
+- [FastAPI PR #11589: Replace python-jose with PyJWT](https://github.com/fastapi/fastapi/pull/11589)
+- [FastAPI Discussion #11345: Abandon python-jose](https://github.com/fastapi/fastapi/discussions/11345)
+- [FastAPI Discussion #11773: passlib unmaintained](https://github.com/fastapi/fastapi/discussions/11773)
+- [LM Studio OpenAI Compatibility Docs](https://lmstudio.ai/docs/developer/openai-compat)
+- [PyJWT PyPI](https://pypi.org/project/PyJWT/) -- v2.12.1
+- [OpenAI Python SDK PyPI](https://pypi.org/project/openai/) -- v2.29.0
+- [pwdlib PyPI](https://pypi.org/project/pwdlib/)
+- [Alembic Documentation](https://alembic.sqlalchemy.org/en/latest/) -- v1.18.4

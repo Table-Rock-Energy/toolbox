@@ -1,177 +1,223 @@
-# Project Research Summary
+# Research Summary: v2.0 On-Prem Migration
 
-**Project:** Table Rock Tools — v1.7 Batch Processing & Resilience
-**Domain:** Batch orchestration, streaming progress, operation persistence, and request cancellation for internal document-processing SPA
-**Researched:** 2026-03-19
-**Confidence:** HIGH
+**Project:** Table Rock Tools
+**Synthesized:** 2026-03-25
+**Milestone:** v2.0 Full On-Prem Migration
+**Research Confidence:** HIGH — all 4 research areas based on direct codebase analysis + authoritative documentation
+
+---
 
 ## Executive Summary
 
-v1.7 is a resilience milestone, not a feature milestone. The existing stack already contains every primitive needed: SSE via `sse-starlette`, NDJSON streaming via `StreamingResponse`, background jobs via `threading` + Firestore, abort via `AbortController` + `request.is_disconnected()`, and parallel reads via `asyncio.gather`. No new dependencies are required. The work is composing these proven patterns into a unified approach across the AI cleanup, Revenue multi-PDF, and Proration lookup flows.
+Table Rock Tools v2.0 is a cloud-to-on-prem infrastructure migration, not a feature build. The app itself (Extract, Title, Proration, Revenue, GHL Prep) remains unchanged. The goal is to replace four Google Cloud dependencies — Firebase Auth, Firestore, GCS, and Gemini — with self-hosted equivalents: local JWT auth, PostgreSQL, local filesystem storage, and LM Studio for AI. The migration is unusually low-risk for its scope because most of the target infrastructure already exists in the codebase: SQLAlchemy models cover 10 of 13 tables, the async database engine is already configured, local filesystem storage already has a working fallback, and the OpenAI SDK is the natural client for LM Studio's OpenAI-compatible API.
 
-The critical architectural decision is where batch orchestration lives. Research strongly recommends client-side orchestration for AI cleanup (Gemini has per-request token limits, client controls pacing and retries) and server-side streaming for Revenue per-PDF progress (backend controls the PDFs, SSE per-PDF is natural). This hybrid matches the existing codebase patterns precisely: `useEnrichmentPipeline` already does client-side step orchestration; `ghl.py` already does server-side SSE streaming. v1.7 extends both patterns rather than introducing a third.
+The recommended sequencing is database first, auth second, AI and storage last. Auth depends on the users table with a `password_hash` column, which means PostgreSQL must be promoted to primary before JWT endpoints can be built. Every API endpoint depends on auth, so auth must be complete before testing anything end-to-end. AI and storage are independent and can be addressed last. The migration should execute as a hard cutover — dual database operation (Firestore + PostgreSQL simultaneously) is explicitly an anti-pattern here, adding complexity without benefit for a small internal team.
 
-The primary risk is state architecture: if operation state is not moved out of component-local `useState` before batch work begins, navigation will destroy in-progress results. The mitigation is `OperationContext` at the `MainLayout` level — a React Context that survives route changes, following the exact same pattern as `AuthContext`. This must be designed first because the state shape dictates everything else.
+The most significant risks are not in the new code but in the migration data: Firestore's nested documents (revenue rows inside statement documents) must be explicitly decomposed into relational rows, 5+ SQLAlchemy models are missing and must be created before schema generation, and the RRC background worker requires a separate synchronous session factory because it runs outside the asyncio event loop. Addressing these in order during the database phase prevents all downstream failures.
+
+---
 
 ## Key Findings
 
-### Recommended Stack
+### From STACK.md — Technology Decisions
 
-No changes to `requirements.txt` or `package.json`. All patterns use FastAPI/Starlette built-ins, asyncio stdlib, and stable React 19 APIs. See [STACK.md](STACK.md) for full analysis.
+- **PyJWT** (>=2.12.0) replaces python-jose — python-jose is abandoned (last release 2021), FastAPI officially dropped it in PR #11589
+- **pwdlib[bcrypt]** (>=0.2.0) replaces passlib — passlib is broken with bcrypt>=5.0 and Python>=3.13+, pwdlib is from the FastAPI-Users author
+- **openai SDK** (>=1.60.0) is the right client for LM Studio — LM Studio exposes a 100% OpenAI-compatible `/v1/chat/completions` endpoint; set `base_url="http://localhost:1234/v1"` and `api_key="not-needed"`, zero new prompt logic needed
+- **Alembic** (already in requirements.txt) becomes mandatory — the existing `create_all()` approach cannot handle schema evolution once PostgreSQL is the sole database
+- **No new frontend dependencies** — JWT auth is fetch + localStorage, Firebase SDK removal saves ~600KB from the bundle
+- **SQLAlchemy + asyncpg already exist in requirements.txt** — the migration activates existing code, not greenfield work
 
-**Core technologies leveraged:**
-- `request.is_disconnected()` (Starlette built-in) — backend cancellation detection without Firestore flags
-- `asyncio.gather` (stdlib) — parallel Firestore reads replacing sequential per-row lookups
-- `useSyncExternalStore` (React 19 built-in) — binding module-level operation store to components without Context re-renders
-- `StreamingResponse` + NDJSON (FastAPI built-in) — batch streaming, already proven in enrichment pipeline
-- `EventSourceResponse` (sse-starlette, already installed) — Revenue per-PDF SSE progress
+### From FEATURES.md — Feature Scope
 
-**What to reject:** Celery, Redis, WebSockets, Zustand/Jotai, react-query, server-side batch queues, Framer Motion. Each adds a dependency or architecture layer that the existing stack renders unnecessary.
+**Table Stakes (must have for working app):**
 
-### Expected Features
+- Local email/password login with `/api/auth/login` and `/api/auth/refresh` endpoints
+- JWT Bearer token verification middleware replacing Firebase verification — zero changes to route handlers due to existing `Depends()` pattern
+- PostgreSQL as sole database with all 13 Firestore collections ported (10 models exist, 3 need creation)
+- Alembic initial migration generated from completed `db_models.py`
+- CLI seed script for initial admin user (`create_admin.py`)
+- Silent local filesystem storage (no GCS warning logs when `GCS_BUCKET_NAME` is unset)
+- LM Studio OpenAI-compatible provider implementing existing `LLMProvider` protocol
 
-See [FEATURES.md](FEATURES.md) for full table with complexity and dependency analysis.
+**Differentiators (valuable, low complexity):**
 
-**Must have (table stakes):**
-- Batch progress with ETA — 200-entry AI cleanup has no feedback without it
-- Partial results on failure — losing 5 completed batches on batch 6 failure is unacceptable
-- Cancel in-flight operation — user cannot stop an incorrectly-started 200-entry cleanup
-- Per-PDF progress for Revenue — multi-PDF upload blocks with no feedback
-- Operation survives navigation — state loss on tab switch destroys trust
-- Proration batch Firestore reads — O(n) sequential reads at 200 rows is unacceptable latency
+- Password change UI in AdminSettings (eliminates CLI dependency for password resets)
+- Health endpoint reporting PostgreSQL + AI provider connectivity status
+- Alembic auto-migration on startup (`alembic upgrade head` in FastAPI lifespan)
 
-**Should have (differentiators):**
-- Client-side batch orchestration hook (`useBatchPipeline`) — foundation for all progress/cancel features
-- Proration cache pre-warming on startup — eliminates cold-start penalty
-- Global undo across navigation — extends operation persistence context
-- Batch retry for failed items only — retry only failed entries after partial failure
+**Anti-features (explicitly excluded):**
 
-**Defer:**
-- Per-entry streaming within a batch — Gemini processes whole batch at once, no per-entry granularity available
-- Server-side batch job persistence to Firestore — ephemeral operations, React Context is sufficient
+- Google Sign-In / OAuth — removed entirely
+- Self-registration — admin-created accounts only
+- Refresh token rotation / token blacklist — 24-hour access tokens + DB deactivation is sufficient
+- Alembic downgrade support — forward-only migrations
+- Firebase-to-PostgreSQL live sync — one-time cutover script only
 
-### Architecture Approach
+**Deferred to production cutover:**
 
-The recommended architecture adds three new files (`OperationContext.tsx`, `useBatchPipeline.ts`, `OperationStatusBar.tsx`) and modifies six existing files. Server stays stateless per request. Client drives AI cleanup batches. Backend drives Revenue streaming. See [ARCHITECTURE.md](ARCHITECTURE.md) for full component boundary diagram and data flow.
+- DB-04: Firestore-to-PostgreSQL data migration script (only needed once when moving prod data)
 
-**Major components:**
-1. `OperationContext.tsx` — global operation state at `MainLayout` level, survives navigation, keyed by tool name
-2. `useBatchPipeline.ts` — client-side batch loop with `AbortController`, ETA calculation, partial result accumulation
-3. `OperationStatusBar.tsx` — persistent banner in `MainLayout` showing active/completed ops across route changes
-4. `revenue.py` `/upload-stream` endpoint — SSE per-PDF progress alongside existing `/upload`
-5. `proration.py` batch Firestore reads — `asyncio.gather` replacing sequential per-row lookups
-6. `rrc_data_service.py` startup pre-warming — `asyncio.to_thread` in FastAPI lifespan hook
+### From ARCHITECTURE.md — Structural Decisions
 
-### Critical Pitfalls
+- **Hard cutover, not dual-DB** — no period of simultaneous Firestore + PostgreSQL operation
+- **Dependency injection pattern preserved** — `get_current_user` → `require_auth` → `require_admin` chain stays identical, only internals of `get_current_user` change (JWT decode vs Firebase verify), zero route handler changes required
+- **`firestore_service.py` → `db_service.py`** — identical function signatures; callers change only the import path
+- **JWT token storage** — access token in localStorage (internal tool behind VPN, no CSRF risk, survives page refresh), 24-hour expiry, no refresh token complexity
+- **3 missing SQLAlchemy models** needed before schema generation: `AppConfig` (key/JSONB), `UserPreference` (user_id FK/JSONB), `RRCCountyStatus`
+- **4 new columns on `User` model**: `password_hash`, `role`, `scope`, `tools`
+- **RRC background worker** needs a separate sync `Session` factory — strip `+asyncpg` from the DATABASE_URL, use `sessionmaker` not `async_sessionmaker`
+- **OpenAI provider** implements existing `LLMProvider` protocol — factory in `llm/__init__.py` routes based on `AI_PROVIDER` env var
 
-See [PITFALLS-V1.7.md](PITFALLS-V1.7.md) for full pitfall catalog with detection and prevention details.
+### From PITFALLS.md — Critical Risk Areas
 
-1. **Batch architecture decided too late** — must choose client-side vs server-side orchestration in Phase 1 before any batch work. Research recommends client-side for AI cleanup, server-side SSE for Revenue. Changing mid-implementation requires rewriting state management.
-2. **Navigation destroys in-progress operations** — all tool state in component-local `useState` dies on unmount. `OperationContext` must be in place before batch UI is built, otherwise results are lost on any navigation event.
-3. **Partial results discarded on batch failure** — current `runAllSteps` error handling loses all completed batches. Results accumulator must live outside the `try/catch` block, returning `{partial: true, batches_completed: N}` on failure.
-4. **AbortController doesn't abort server** — frontend `abort()` cancels the `fetch()` but backend Gemini call continues burning quota. Backend must check `await request.is_disconnected()` between batches, or use client-side orchestration so each request is short-lived.
-5. **SSE connection lifecycle** — orphaned SSE handlers pin Cloud Run instances alive preventing scale-to-zero. Server must poll `request.is_disconnected()` every iteration. Client must close EventSource in `useEffect` cleanup.
+**Critical (cause rewrites or data loss):**
+
+1. **Nested Firestore docs flattened incorrectly** — Revenue rows are nested inside statement documents; must explicitly decompose with FK resolution (create parent row first to get PK, then insert child rows); add count-verification after migration
+2. **Async session lifecycle leaks** — Use `Depends(get_db)` generator pattern with explicit commit/rollback; set pool settings (`pool_size=5, max_overflow=10, pool_pre_ping=True`); separate sync session factory for the RRC background worker
+3. **JWT token shape vs Firebase User shape** — Frontend components reference `displayName`, `photoURL`, `getIdToken()` which don't exist on a plain JWT payload; define `LocalUser` interface; run `npx tsc --noEmit` after auth migration to catch all references
+4. **RRC background worker event loop isolation** — Cannot use async sessions in a daemon thread; must use sync `Session` with `postgresql://` URL (strip `+asyncpg`)
+5. **LM Studio JSON response parsing** — No schema-enforced JSON output; implement multi-layer fallback: direct parse → strip markdown fences → regex extract first `{...}` block → graceful empty return
+6. **Allowlist + config data silently lost** — 5+ Firestore collections lack SQLAlchemy models (`rrc_county_status`, `app_config`, `user_preferences`, `ghl_connections`, `entities`); GHL encrypted tokens must be migrated as-is (ENCRYPTION_KEY stays constant)
+
+**Moderate:**
+
+- JWT secret must be a persisted env var (not auto-generated at startup) or all tokens invalidate on container restart
+- Bcrypt 12 rounds in production, 4 in test fixtures
+- Firestore timestamps are sometimes timezone-naive — normalize all to `datetime.now(timezone.utc)` before PostgreSQL insert; replace all `datetime.utcnow()` calls (deprecated in Python 3.12+)
+- Docker named volume required for `/app/data` — files are lost on container restart without it
+- LM Studio timeout must be set to 120s+ (local models can take 60-90s for large batch prompts)
+- Test suite mocks `firestore_service` imports — update tests per-phase as services are ported
+
+**Integration risks:**
+
+- Firebase UIDs (strings like `"abc123def456"`) vs new user identifiers — use email as the stable `user_id` in FK columns to avoid orphaned job records
+- JWT expiry mid-pipeline — 24-hour tokens mitigate this; add `/api/auth/refresh` endpoint and wire up frontend 401 handler
+- Existing job records may contain `gs://` storage paths — audit `save_upload()` call sites before writing migration script
+
+---
 
 ## Implications for Roadmap
 
-Based on research, the ARCHITECTURE.md phase ordering is the correct build sequence. Dependencies are hard: operation context must precede batch UI, batch pipeline must precede progress/cancel features, Revenue streaming is independent.
+### Suggested Phase Structure
 
-### Phase 1: Foundation — Operation Context + Batch Pipeline
+**Phase 1 — Database Foundation**
 
-**Rationale:** Everything else depends on these two pieces. `OperationContext` defines the state shape that all tool pages will consume. `useBatchPipeline` is the engine that all client-driven batch features will use. Building either without the other creates throwaway code. Proration pre-warming is included here as an independent backend-only quick win.
-**Delivers:** Global operation state that survives navigation; client-side batch orchestration with abort and partial results; proration cache pre-warming
-**Addresses:** Operation survives navigation, partial results on failure, proration cold-start latency
-**Avoids:** Pitfall 1 (architecture decision made upfront), Pitfall 3 (navigation destroys state), Pitfall 4 (partial results lost)
+Rationale: Auth depends on the users table with `password_hash`; everything depends on auth. PostgreSQL must be primary before any other work begins. Session patterns must be established before any service is ported.
 
-### Phase 2: AI Cleanup Batching — Pipeline Refactor
+- Complete 5+ missing SQLAlchemy models (`AppConfig`, `UserPreference`, `RRCCountyStatus`, `GhlConnection`, `Entity`)
+- Add `password_hash`, `role`, `scope`, `tools` columns to `User` model
+- Initialize Alembic with async template, generate initial migration from complete `db_models.py`
+- Flip config defaults: `DATABASE_ENABLED=true`, `FIRESTORE_ENABLED=false`
+- Port all `firestore_service.py` functions to `db_service.py` with identical function signatures
+- Establish `Depends(get_db)` session generator pattern with explicit pool settings
+- Create separate sync session factory for `rrc_background.py`
+- Deliverable: App runs entirely on PostgreSQL; all tools functional; Firestore disabled
+- Pitfalls: #1 (nested docs), #2 (session leaks), #4 (background worker), #6 (missing models)
 
-**Rationale:** Phase 1 foundations enable this. `useEnrichmentPipeline` delegates batch splitting to `useBatchPipeline`. Adds batch progress UI to `EnrichmentModal`. This is the highest-value user-facing change: 200-entry AI cleanup goes from opaque blocking to transparent batch-by-batch progress with cancel.
-**Delivers:** Batch progress with ETA, cancel in-flight, partial results on failure — all for AI cleanup flow
-**Uses:** `useBatchPipeline`, `OperationContext`, `AbortController` + `request.is_disconnected()`
-**Implements:** Client-side batch orchestration pattern
-**Avoids:** Pitfall 4 (partial results), Pitfall 6 (abort doesn't stop server), Pitfall 11 (ETA jitter — use moving average, show batch count alongside)
+**Phase 2 — Auth Swap**
 
-### Phase 3: Operation Persistence UI
+Rationale: Every API endpoint depends on auth. Must be complete and tested before end-to-end validation of any tool.
 
-**Rationale:** Context is in place (Phase 1), batch operations are running (Phase 2). Now surface the context to users. `OperationStatusBar` in `MainLayout` shows active/completed operations across navigation. Tool pages check context on mount for pending results.
-**Delivers:** Persistent operation banner, results survive navigation, undo across tab switches
-**Implements:** `OperationStatusBar.tsx`, `MainLayout` integration, per-tool mount-time context check
-**Avoids:** Pitfall 10 (multi-tool race condition — key state by tool name, one active operation per tool)
+- Backend: `/api/auth/login` with bcrypt verify + JWT encode, `/api/auth/refresh`, `/api/auth/me`
+- Replace `verify_firebase_token()` with `jwt.decode()` in `auth.py` — keep `Depends()` chain identical
+- CLI seed script `create_admin.py` for initial admin user
+- Frontend: rewrite `AuthContext.tsx` with `LocalUser` interface; JWT stored in localStorage
+- Update `Login.tsx` to call `/api/auth/login` instead of Firebase `signInWithEmailAndPassword`
+- Remove Firebase SDK (`npm uninstall firebase`), delete `firebase.ts`
+- Wire `api.ts` 401 handler to `/api/auth/refresh` instead of `auth.currentUser.getIdToken(true)`
+- Deliverable: Firebase credentials no longer required to run the app
+- Pitfalls: #3 (token shape mismatch), #7 (JWT secret persistence), #8 (bcrypt rounds), #14 (dead Firebase bundle), Integration #1 (user ID format)
 
-### Phase 4: Revenue Multi-PDF Streaming
+**Phase 3 — AI Provider + Storage Cleanup**
 
-**Rationale:** Independent of Phases 2-3 (different tool, different pattern). SSE per-PDF progress follows the established GHL bulk send pattern exactly. Add `/upload-stream` endpoint alongside existing `/upload` for zero regression risk.
-**Delivers:** Per-PDF progress during multi-PDF Revenue upload; partial results if one PDF fails; concurrent PDF processing with semaphore
-**Uses:** `EventSourceResponse` (sse-starlette), generalized SSE hook pattern
-**Avoids:** Pitfall 2 (SSE lifecycle), Pitfall 8 (Cloud Run 600s timeout — worst case ~210s for 7 PDFs), Pitfall 9 (blocking UI)
+Rationale: Both are independent of database and auth; app already degrades gracefully without AI; local storage fallback already works. Combine into one phase.
 
-### Phase 5: Proration Optimization
+- Implement `OpenAICompatibleProvider` in `services/llm/openai_provider.py` with multi-layer JSON fallback parser
+- Wire into factory in `llm/__init__.py` with `AI_PROVIDER` env var routing (`gemini` | `lm_studio` | `none`)
+- Add `AI_PROVIDER`, `LLM_API_BASE`, `LLM_MODEL`, `LLM_API_KEY` to `config.py`
+- Change `gcs_bucket_name` and `gcs_project_id` defaults to `None`; suppress GCS log warnings when unconfigured
+- Verify Docker named volume for `/app/data` in `docker-compose.yml`
+- Deliverable: App runs fully on-prem with no Google Cloud dependencies
+- Pitfalls: #5 (JSON parsing), #10 (Docker volume), #11 (LM Studio timeout), #15 (token counting)
 
-**Rationale:** Independent of all other phases (backend-only, no new UI). Batch reads replace sequential reads in the existing proration upload path.
-**Delivers:** Faster proration upload (O(n) → O(n/100) Firestore round trips)
-**Implements:** `asyncio.gather` with chunked `get_all()`, `batch_lookup()` in `rrc_data_service`
-**Avoids:** Pitfall 5 (stale cache — invalidate on RRC sync completion), Pitfall 12 (Firestore batch size — chunk at 100), Pitfall 13 (memory pressure — load lazily in background after startup)
+**Phase 4 — Data Migration (Cutover Only)**
 
-### Phase Ordering Rationale
+Rationale: One-time script run only when moving production data. Deferred until production cutover is scheduled.
 
-- Phase 1 is prerequisite: `OperationContext` state shape must be final before any tool page consumes it; `useBatchPipeline` API must be stable before `useEnrichmentPipeline` refactors against it.
-- Phase 2 before Phase 3: Batch operations must exist before a status bar has anything to show. Context without operations is overhead with no value.
-- Phases 4 and 5 are independent: Revenue streaming has no dependency on the enrichment pipeline; proration optimization is purely backend. Both can be parallelized with Phases 2-3 if bandwidth allows.
-- The architecture decision in Pitfall 1 is embedded in Phase 1 as a Key Decision. Documenting it before Phase 2 begins prevents mid-implementation pivots.
+- Write `scripts/migrate_firestore_to_postgres.py` with per-collection handlers
+- Handle revenue statement nested rows explicitly (create parent FK first, then child rows)
+- Normalize all Firestore timestamps to UTC-aware before insert
+- Audit and rewrite `gs://` storage paths if found in job records
+- Verify migrated counts vs Firestore document counts per collection
+- Migrate `ghl_connections` with encrypted tokens as-is (`ENCRYPTION_KEY` stays constant)
+- Deliverable: Production data preserved in PostgreSQL; Firestore can be decommissioned
+- Pitfalls: #1 (nested docs), #6 (config/allowlist data), #9 (timestamps), Integration #3 (storage paths)
 
 ### Research Flags
 
-All phases use well-documented patterns — no phase requires `/gsd:research-phase`:
-- **Phase 1:** `OperationContext`, `useBatchPipeline`, `asyncio.to_thread` startup are all established and verified against the existing codebase.
-- **Phase 2:** `useEnrichmentPipeline` refactor is mechanical — same hook, moved batch loop to client. No new APIs.
-- **Phase 3:** `MainLayout` integration follows `AuthContext` pattern exactly.
-- **Phase 4:** SSE pattern is production-proven in GHL send. `revenue.py` `/upload-stream` follows identical structure.
-- **Phase 5:** `asyncio.gather`, Firestore `get_all()`, and startup hooks are documented stdlib/SDK features.
+- **Phase 1** — Well-documented SQLAlchemy patterns; no additional research phase needed. Follow the existing `db_models.py` and `database.py` patterns.
+- **Phase 2** — FastAPI JWT tutorial is the definitive reference; no additional research phase needed.
+- **Phase 3** — LM Studio JSON compliance varies by model. Consider a short spike with the specific model being deployed before writing the provider. Flag for `/gsd:research-phase` if the local model is undecided.
+- **Phase 4** — Firestore collection structure must be inspected against actual production data before writing the migration script. Run against staging first.
 
-Areas requiring care during implementation (upfront design, not formal research):
-- **Phase 2:** `AbortController` integration needs verification that existing `ApiClient` fetch wrapper can propagate the signal. Verify before building the cancel UI.
-- **Phase 4:** SSE token in query string (Pitfall 7) extends to new endpoints. Decide at Phase 4 kickoff whether to use short-lived job-scoped tokens or accept the existing pattern.
+---
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All patterns verified against existing codebase files; no new deps means no version compatibility unknowns |
-| Features | HIGH | Derived from concrete user-reported pain points (timeouts, state loss, no cancel), not speculative |
-| Architecture | HIGH | Every component boundary references existing files and proven patterns; build order driven by hard dependencies |
-| Pitfalls | HIGH | All critical pitfalls sourced from actual codebase analysis (`useEnrichmentPipeline.ts`, `gemini_service.py`, `ghl.py`) not speculation |
+| Stack | HIGH | PyJWT, pwdlib, openai SDK choices based on official FastAPI docs and active maintenance status; no ambiguity |
+| Features | HIGH | All features are direct ports of existing functionality; scope bounded by explicit anti-features list |
+| Architecture | HIGH | Most target patterns already exist in the codebase; `Depends()` chain preservation eliminates route handler changes |
+| Pitfalls | HIGH | Based on direct codebase analysis with specific line and file references; not hypothetical |
 
-**Overall confidence:** HIGH
+**Gaps requiring attention before execution:**
 
-### Gaps to Address
+- The actual count of Firestore collections may exceed 13. ETL `entity_registry.py` and `relationship_tracker.py` may write additional collections not surfaced in `firestore_service.py`. Audit before writing the migration script.
+- LM Studio model JSON compliance is model-dependent. The multi-layer fallback parser handles this defensively, but the specific local model should be tested before enabling AI features in production.
+- CORS allowed origins for the on-prem deployment URL are not yet defined. Must be set in the Docker env file before deployment.
 
-- **Cloud Run 600s timeout with large Gemini batch sets:** Research calculates 500 entries at ~3-4 minutes under normal conditions. If Gemini adds exponential backoff on rate limits, this could approach the limit. Track batch start time in `useBatchPipeline` and abort with graceful partial results if approaching 540s. Validate during Phase 2 with actual Gemini timing data.
-- **RRC CSV size in memory:** Research estimates 50-100MB for oil + gas DataFrames combined. Pre-warming at startup is safe but should be verified with production data volume before enabling the startup hook. Validate during Phase 5.
-- **SSE token exposure (Pitfall 7):** GHL SSE passes Firebase ID token as query param. Short-lived job-scoped tokens are the right fix but add complexity. Flag for Phase 4 implementation decision.
+---
+
+## Recommended MVP Sequence (Ordered)
+
+1. Complete SQLAlchemy models (missing 5+ tables, 4 User columns)
+2. Alembic init + initial migration
+3. Port `firestore_service.py` → `db_service.py` (same function signatures)
+4. Establish session patterns (`Depends(get_db)` generator + sync factory for background worker)
+5. JWT login/refresh/me endpoints + bcrypt password hashing
+6. Replace Firebase verification middleware with JWT decode (keep Depends chain)
+7. CLI admin seed script
+8. Frontend `AuthContext.tsx` rewrite + `Login.tsx` update
+9. Remove Firebase SDK (`npm uninstall firebase`)
+10. OpenAI-compatible LM Studio provider with JSON fallback parser
+11. Config default changes (`gcs_bucket_name=None`, `FIRESTORE_ENABLED=false`)
+12. Docker named volume verification
+13. (Cutover only) Firestore-to-PostgreSQL migration script
+
+---
 
 ## Sources
 
-### Primary (HIGH confidence — direct codebase inspection)
-- `frontend/src/hooks/useEnrichmentPipeline.ts` — pipeline orchestration, AbortController, partial results pattern
-- `frontend/src/hooks/useSSEProgress.ts` — SSE consumption with reconnect
-- `backend/app/api/ghl.py` — SSE with EventSourceResponse, cancellation via Firestore flag
-- `backend/app/api/extract.py` — NDJSON StreamingResponse for enrichment
-- `backend/app/services/rrc_background.py` — background thread + Firestore job tracking
-- `backend/app/services/proration/rrc_county_download_service.py` — asyncio.Semaphore throttling
-- `backend/app/services/firestore_service.py` — get_in_batches, batch write limits
-- `requirements.txt` — `sse-starlette>=2.0`, `anyio>=4.0` confirmed installed; no new deps needed
-- `utils/api.ts` — AbortController for request timeouts
+Aggregated from all 4 research files:
 
-### Secondary (MEDIUM confidence)
-- FastAPI SSE Tutorial — server-sent events integration
-- FastAPI Client Disconnect Discussion (GitHub) — `is_disconnected()` behavior
-- React State Management 2025 (developerway.com) — Context vs external store tradeoffs
-- Bulk API Design Patterns (mscharhag.com) — partial success response shapes
-- Partial Success Response Patterns (Akamai) — `partial: true` response shape
-
-### Tertiary (LOW confidence)
-- Cloud Run SSE timeout behavior under sustained Gemini rate limiting — inferred from 600s config + GHL SSE production behavior; not directly tested with batch streaming
-
----
-*Research completed: 2026-03-19*
-*Ready for roadmap: yes*
+- [FastAPI JWT Tutorial (official)](https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/)
+- [FastAPI PR #11589: Replace python-jose with PyJWT](https://github.com/fastapi/fastapi/pull/11589)
+- [FastAPI Discussion #11345: Abandon python-jose](https://github.com/fastapi/fastapi/discussions/11345)
+- [FastAPI Discussion #11773: passlib unmaintained](https://github.com/fastapi/fastapi/discussions/11773)
+- [LM Studio OpenAI Compatibility Docs](https://lmstudio.ai/docs/developer/openai-compat)
+- [LM Studio API Server Docs](https://lmstudio.ai/docs/developer/core/server)
+- [Alembic Async Cookbook](https://alembic.sqlalchemy.org/en/latest/cookbook.html)
+- [PyJWT PyPI](https://pypi.org/project/PyJWT/) — v2.12.1
+- [OpenAI Python SDK PyPI](https://pypi.org/project/openai/) — v2.29.0
+- [pwdlib PyPI](https://pypi.org/project/pwdlib/)
+- Codebase: `backend/app/core/auth.py`, `backend/app/core/database.py`
+- Codebase: `backend/app/models/db_models.py` — 10 of 13 tables confirmed
+- Codebase: `backend/app/services/firestore_service.py` — 13 collections, ~40 functions
+- Codebase: `backend/app/services/storage_service.py` — local fallback pattern
+- Codebase: `backend/app/services/rrc_background.py` — threading + asyncio.run() pattern
+- Codebase: `backend/app/services/gemini_service.py` — current AI integration structure
+- Codebase: `frontend/src/contexts/AuthContext.tsx` — Firebase User type dependencies
+- Codebase: `frontend/src/utils/api.ts` — setAuthToken/clearAuthToken/setUnauthorizedHandler
+- Codebase: `backend/app/services/llm/` — LLMProvider protocol + factory

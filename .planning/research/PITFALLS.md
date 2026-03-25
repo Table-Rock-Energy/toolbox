@@ -1,406 +1,330 @@
-# Pitfalls Research
+# Domain Pitfalls
 
-**Domain:** ECF PDF parsing and Convey 640 CSV/Excel merge for Extract tool
-**Researched:** 2026-03-11
-**Confidence:** HIGH
+**Domain:** On-prem migration of Firebase Auth, Firestore, GCS, and Gemini in an existing FastAPI+React application
+**Researched:** 2026-03-25
+**Confidence:** HIGH (based on direct codebase analysis + known patterns)
 
 ## Critical Pitfalls
 
-### Pitfall 1: Multi-Line Address Parsing with Inconsistent Line Breaks
+Mistakes that cause rewrites, data loss, or extended downtime.
 
-**What goes wrong:**
-ECF PDFs contain multi-line addresses (name line, street line, city/state/ZIP line) but PDF text extraction may not preserve line breaks consistently. Addresses collapse into single-line text or break at wrong positions, causing name fragments to bleed into address fields or vice versa.
+### Pitfall 1: Firestore Nested Documents and Arrays Flattened Incorrectly to SQL
 
-**Why it happens:**
-PDF text extraction returns text in reading order but doesn't always preserve visual layout. Multi-column or complex layouts can result in text blocks being extracted out of order. The existing parser (`_separate_name_and_address`) relies on detecting street patterns (`^\d+\s+`, `P.O. Box`, `c/o`) and city/state/ZIP patterns, but if line breaks are missing, these patterns may match fragments within names (e.g., "123 Trust" detected as street address).
+**What goes wrong:** Firestore stores revenue statement `rows` as a nested array inside the statement document (see `save_revenue_statement` in `firestore_service.py` lines 376-432). The migration script flattens these into a separate `revenue_rows` table but loses the ordering, or silently drops rows that have `None` values in fields that become NOT NULL columns. The RRC `raw_data` field (JSONB in the existing SQLAlchemy model) contains arbitrary dict structures that vary between oil and gas records -- a naive migration that tries to normalize these breaks lookups.
 
-**How to avoid:**
-- Test PDF extraction with multiple ECF filing formats to identify layout variations
-- Implement line-aware parsing that preserves `\n` boundaries and treats each line as a parsing unit
-- Add heuristic checks: if "street pattern" appears before sufficient name text (e.g., <10 chars), flag as suspicious
-- Validate against known entity types: if detected "street address" contains trust/estate keywords, likely misclassification
-- Use existing `_split_into_entries` pattern detection but enhance with address-specific line counting
+**Why it happens:** Firestore is schemaless. The same collection can have documents with different field sets. The existing `firestore_service.py` stores `rows` as a list-of-dicts inside the `revenue_statements` document. The SQLAlchemy `RevenueStatement` model stores rows as a separate `RevenueRow` table with a foreign key. The migration must decompose nested data correctly.
 
-**Warning signs:**
-- Names shorter than 10 characters (flagging condition already exists in `_check_flagging`)
-- ZIP codes or state abbreviations appearing in `primary_name` field
-- Entity types detected as Individual when address contains "Trust" or "Estate"
-- Very long street addresses (>150 chars) indicating collapsed multi-line data
+**Consequences:** Revenue data appears incomplete after migration. Users export CSVs with missing rows. The revenue tool reports fewer rows than previously shown. RRC lookups return `None` for records that existed in Firestore.
 
-**Phase to address:**
-Phase 1 (ECF PDF Parsing) — parser implementation must handle line breaks correctly from the start
+**Prevention:**
+- Write the migration script to explicitly handle the `rows` array: iterate each statement document, create the parent `RevenueStatement` row first (to get the FK), then insert each row element as a `RevenueRow`.
+- For RRC data, keep `raw_data` as JSONB (already in the model) -- do NOT try to normalize it into columns.
+- Add a count-verification step: after migration, compare document counts per collection vs row counts per table. Log mismatches.
+- The revenue statement uses a deterministic SHA256 ID (`statement_id = hashlib.sha256(composite.encode()).hexdigest()[:20]`). The SQLAlchemy model uses auto-increment integer IDs. Either change the PG model to use string IDs or maintain a mapping during migration.
+
+**Detection:** Post-migration smoke test: for each tool, load the 3 most recent jobs and compare entry counts against Firestore.
+
+**Phase:** DB migration phase. Must be addressed in the Firestore-to-PostgreSQL migration script (DB-04).
 
 ---
 
-### Pitfall 2: Convey 640 Line Number Contamination in Name Fields
+### Pitfall 2: Async SQLAlchemy Session Lifecycle Leaks and Deadlocks
 
-**What goes wrong:**
-Convey 640 CSV/Excel exports from OCR often embed entry line numbers directly in name fields (e.g., "1. John Smith" or "U45 Jane Doe Trust"). When merging, these line numbers prevent exact string matching and contaminate the clean name data from PDFs.
+**What goes wrong:** The current Firestore service uses a single global `AsyncClient` (`_db`) that is thread-safe and connection-pooled by the Google SDK. Replacing it with SQLAlchemy async sessions requires explicit session lifecycle management. If sessions aren't properly scoped (opened per-request, closed after), you get connection pool exhaustion under load, or worse, uncommitted transactions that block other queries.
 
-**Why it happens:**
-OCR tools parse the visual layout of PDFs and sometimes capture the entry number prefix as part of the name text. The Convey 640 export may not clean this up. If the merge logic uses naive string comparison or doesn't strip line numbers before matching, identical respondents won't match.
+**Why it happens:** The codebase has 30+ call sites that do `from app.services.firestore_service import ...` with lazy imports inside functions. Each currently gets the global client. If the PostgreSQL replacement follows the same pattern with `async_sessionmaker`, developers naturally write `session = get_session()` without `async with` and forget to commit/close. The RRC background worker (`rrc_background.py`) is especially dangerous -- it runs in a separate thread and uses `asyncio.run()` to call async functions, which creates a NEW event loop and a new session that shares the same connection pool.
 
-**How to avoid:**
-- Pre-clean Convey 640 names: strip entry number patterns (`^\s*(U\s*)?\d+\.\s*`) before any matching logic
-- Normalize both PDF and CSV names: lowercase, remove extra spaces, strip punctuation for comparison
-- Use fuzzy matching (Levenshtein distance or Jaro-Winkler) with threshold (e.g., 85% similarity) instead of exact match
-- Separate line number extraction into dedicated field (`entry_number`) before name comparison
-- Test with known OCR datasets to identify contamination patterns
+**Consequences:** After a few RRC sync operations or busy upload periods, the app hangs. All API requests block waiting for a connection from the exhausted pool. Only a restart fixes it.
 
-**Warning signs:**
-- Merge success rate <70% when line numbers are present
-- Duplicate entries with slight variations (e.g., "John Smith" vs "1. John Smith")
-- Entry number field populated from CSV but not matching PDF entry numbers
-- Names starting with digits in merged output
+**Prevention:**
+- Use FastAPI's `Depends()` with an async generator that yields a session and guarantees cleanup:
+  ```python
+  async def get_db() -> AsyncGenerator[AsyncSession, None]:
+      async with async_session_factory() as session:
+          try:
+              yield session
+              await session.commit()
+          except Exception:
+              await session.rollback()
+              raise
+  ```
+- For the RRC background worker: create a SEPARATE sync `Session` factory (like the existing `_get_sync_firestore_client()` pattern). Do NOT share the async pool.
+- Set `pool_size=5, max_overflow=10, pool_timeout=30, pool_recycle=1800` explicitly on the engine. The default `pool_size=5` with no overflow will deadlock under concurrent batch operations.
+- Add `pool_pre_ping=True` to handle dropped connections (critical for Docker where PG might restart).
 
-**Phase to address:**
-Phase 2 (Convey 640 CSV Parsing) — normalization must happen before merge attempt in Phase 3
+**Detection:** Monitor connection pool stats at `/api/health`. Add `engine.pool.status()` to the health check.
 
----
-
-### Pitfall 3: ZIP Code Data Type Loss in Excel Import
-
-**What goes wrong:**
-ZIP codes for Northeastern US states (MA, CT, RI, NH, VT, NJ, NY) start with 0 (e.g., 02101, 06511). Excel automatically converts these to integers when opening CSV files, stripping leading zeros (02101 becomes 2101). When merging Convey 640 data, ZIP codes become invalid and don't match PDF-extracted values.
-
-**Why it happens:**
-Excel interprets numeric-looking strings as numbers by default, removing leading zeros. When saving CSV, the leading zero is permanently lost unless the column is pre-formatted as Text. Pandas `read_csv` with default `dtype=None` may infer numeric type for ZIP columns.
-
-**How to avoid:**
-- Force ZIP code columns to string dtype when reading CSV/Excel: `dtype={'zip': str}` in pandas
-- Add validation: if ZIP is numeric and <10000, flag as missing leading zero
-- Implement ZIP code formatting: pad to 5 digits with leading zeros if 4 digits detected
-- Check state-ZIP correlation: if state is MA/CT/RI/NH/VT/ME and ZIP doesn't start with 0, auto-prepend 0
-- Warn users during upload if ZIP codes appear malformed (all <10000 or mixed 4/5 digit)
-
-**Warning signs:**
-- ZIP codes with 4 digits instead of 5
-- State abbreviations for Northeast states paired with ZIPs not starting with 0
-- Merge logic favoring CSV ZIP over PDF when CSV has data type corruption
-- ZIP validation failures in `_check_flagging` (existing pattern: `^\d{5}(-\d{4})?$`)
-
-**Phase to address:**
-Phase 2 (Convey 640 CSV Parsing) — must be handled at file ingestion, before any storage or merge
+**Phase:** DB migration phase (DB-01, DB-05). The session management pattern must be established before any service is ported.
 
 ---
 
-### Pitfall 4: Entity Type Detection Failure for Deceased Parties
+### Pitfall 3: JWT Token Shape Differs from Firebase Token -- Frontend Breaks Silently
 
-**What goes wrong:**
-Respondent entries like "John Smith, Deceased" or "Estate of Jane Doe" are misclassified as Individual instead of Estate. Deceased parties have special legal handling requirements (heirs, estate representatives), but if entity type is wrong, downstream workflows fail.
+**What goes wrong:** The frontend `AuthContext.tsx` currently uses Firebase's `User` object which has properties like `user.email`, `user.displayName`, `user.photoURL`, `user.getIdToken()`, `user.uid`. The new JWT auth returns a plain object from `/api/auth/me` with different property names. Components that access `user.displayName` or `user.photoURL` get `undefined` instead of `null`, causing blank names in the UI rather than a visible error. The `getIdToken()` method disappears entirely since JWT tokens are stored in memory/localStorage.
 
-**Why it happens:**
-The existing `detect_entity_type` pattern matching checks for "ESTATE" and "DECEASED" keywords, but pattern order matters. If "Deceased" appears after the name in comma-separated format and Individual pattern matches first (default fallback), Estate detection never runs. Additionally, "c/o [Executor Name]" patterns may override entity detection.
+**Why it happens:** Firebase's `User` type is a rich object with methods. A local JWT auth returns a plain data object. TypeScript interfaces may be updated for `AuthContextType` but individual components that destructure `user` directly from the Firebase `User` type will silently fail because the property names change (e.g., `displayName` vs `display_name`, `photoURL` vs `photo_url`).
 
-**How to avoid:**
-- Reorder entity detection: check Estate patterns BEFORE Individual fallback
-- Add deceased-specific patterns: `, Deceased`, `Deceased$`, `late [name]`, `formerly [name]`
-- Extract deceased annotations to notes field but still classify as Estate
-- Check for executor/administrator keywords: "by [Name], Executor" should flag Estate type
-- Implement two-pass detection: first pass extracts annotations, second pass classifies base entity
+**Consequences:** The UI shows blank user names, missing avatars, and the Settings page looks broken. The `AdminSettings.tsx` and `Settings.tsx` pages reference Firebase-specific properties. The 401 token refresh handler (`api.setUnauthorizedHandler`) currently calls `auth.currentUser.getIdToken(true)` which no longer exists.
 
-**Warning signs:**
-- Names ending with "Deceased" but entity_type=Individual
-- "Estate of" in primary_name field but entity_type≠Estate
-- Notes field contains "heir of" but no Estate classification
-- c/o addresses with "Executor" or "Administrator" in recipient name
+**Prevention:**
+- Define a `LocalUser` interface that maps to the JWT payload/me response. Update `AuthContextType` to use `LocalUser` instead of Firebase's `User`.
+- The new auth context should store the JWT token in state and provide `getToken(): string | null` (synchronous, not async like `getIdToken()`).
+- The 401 handler should attempt a token refresh via `/api/auth/refresh` endpoint, not Firebase.
+- Search for all files importing from `firebase/auth` or `../lib/firebase` (currently 4 files: `AuthContext.tsx`, `AdminSettings.tsx`, `Settings.tsx`, `firebase.ts`). All must be updated.
+- Remove the `firebase.ts` lib file LAST, after all imports are removed, to get clean TypeScript errors.
 
-**Phase to address:**
-Phase 1 (ECF PDF Parsing) — entity type detection must cover these edge cases from initial implementation
+**Detection:** Run `npx tsc --noEmit` after the auth migration. Any reference to removed Firebase types will error.
+
+**Phase:** Auth phase (AUTH-05, AUTH-06). Frontend auth context must be rewritten before Firebase packages are removed.
 
 ---
 
-### Pitfall 5: Merge Logic Choosing CSV Over PDF for Name Data
+### Pitfall 4: RRC Background Worker Cannot Use Async SQLAlchemy Sessions
 
-**What goes wrong:**
-PDF is designated as source of truth, but merge logic accidentally prefers Convey 640 CSV data when CSV fields are populated and PDF fields are parsed as None or empty string. OCR-corrupted names from CSV overwrite clean PDF names, defeating the purpose of the merge.
+**What goes wrong:** The `rrc_background.py` spawns a daemon thread (`threading.Thread`) and uses `asyncio.run()` to call async Firestore functions from within the thread. If the PostgreSQL replacement uses only async sessions tied to the main event loop, `asyncio.run()` creates a new event loop in the thread but the session factory's connection pool was created on the main loop. This causes `RuntimeError: Event loop is closed` or `attached to a different loop` errors.
 
-**Why it happens:**
-Naive merge logic using `csv_value or pdf_value` or `csv_value if csv_value else pdf_value` will choose CSV when both exist, assuming CSV is equally trustworthy. If PDF parser fails to extract a field (e.g., address parsing fails, returns None), merge falls back to CSV, which may have OCR errors.
+**Why it happens:** The existing code already handles this correctly for Firestore by using a separate synchronous `firestore.Client`. The same pattern MUST be replicated for PostgreSQL: the background worker needs its own synchronous `Session` (not `AsyncSession`).
 
-**How to avoid:**
-- Implement explicit precedence: `pdf_value if pdf_value is not None else csv_value`
-- For name fields: ALWAYS use PDF, ignore CSV (CSV only provides metadata like county, STR, case number)
-- For address fields: PDF primary, CSV fallback only if PDF parsing completely fails
-- Add merge audit logging: record which source was used for each field
-- Flag merged records where CSV was used for name/address: require manual review
+**Consequences:** RRC bulk download/sync silently fails. The job shows "downloading_oil" forever because the sync step crashes. Users see a stuck progress indicator.
 
-**Warning signs:**
-- Exported data contains OCR artifacts in names (misspellings, garbled text) despite clean PDF source
-- Address fields with impossible combinations (e.g., "Oklahoma City, TX" from OCR error)
-- Merge output has fewer records than PDF input (indicates CSV-based deduplication happened)
-- Entity types from CSV (if Convey 640 includes them) override PDF-detected types
+**Prevention:**
+- Create a `get_sync_session()` factory using `create_engine` (not `create_async_engine`) with `sessionmaker` (not `async_sessionmaker`). Use this exclusively in `rrc_background.py`.
+- The sync engine should use the same `DATABASE_URL` but with `postgresql://` scheme (not `postgresql+asyncpg://`). Strip the `+asyncpg` part: `sync_url = settings.database_url.replace("+asyncpg", "")`.
+- Keep the existing thread-based architecture. Do NOT try to make it fully async -- the RRC download uses `requests` (synchronous HTTP) with a custom SSL adapter that cannot be easily converted to `httpx`.
 
-**Phase to address:**
-Phase 3 (PDF-CSV Merge) — merge logic must explicitly encode "PDF is source of truth" rule
+**Detection:** Test the full RRC download flow end-to-end after migration. Check the job reaches "complete" status.
+
+**Phase:** DB migration phase (DB-05). Must be addressed when porting `rrc_background.py` from Firestore to PostgreSQL.
 
 ---
 
-### Pitfall 6: Name Parser Failure on Mc/Mac/O' Prefixes
+### Pitfall 5: LM Studio Response Format Differences Break JSON Parsing
 
-**What goes wrong:**
-Irish/Scottish names like "O'Brien", "McDonald's Trust", "MacGregor Estate" are misparsed. Apostrophes are stripped as punctuation, "Mc" is treated as middle initial, or name splitting separates "Mac" from rest of name. First/last name fields end up corrupted.
+**What goes wrong:** The Gemini provider uses `response_mime_type="application/json"` and `response_json_schema=RESPONSE_SCHEMA` to guarantee structured JSON output. LM Studio's OpenAI-compatible API does not support `response_format` with a JSON schema for most models, or supports it inconsistently. The model returns markdown-wrapped JSON (````json\n{...}\n````), or adds conversational text before/after the JSON, or returns a slightly different schema structure.
 
-**Why it happens:**
-The existing `parse_person_name` function splits on spaces and uses suffix/prefix detection, but doesn't have special handling for Celtic name prefixes. Apostrophes in "O'Name" may be removed by `clean_text` or treated as word boundary. "Mc"/"Mac" may match middle initial pattern if followed by capital letter (e.g., "McDonald" → first="Mc", middle="", last="Donald").
+**Why it happens:** Gemini's structured output is enforced at the API level (constrained decoding). OpenAI's `response_format: { type: "json_object" }` only hints -- it doesn't enforce a schema. LM Studio passes this through to the underlying model which may or may not respect it. Smaller local models (7B-13B) are especially unreliable with complex JSON schemas.
 
-**How to avoid:**
-- Add prefix preservation rules: keep "O'", "Mc", "Mac", "D'", "De", "Van", "Von" attached to following name part
-- Use Unicode-aware apostrophe handling: recognize both ASCII apostrophe (U+0027) and typographic apostrophe (U+2019)
-- Implement capitalization check: "McDonald" has two capital letters, not typical first/middle/last pattern
-- Test against known Irish/Scottish name corpus
-- Preserve original casing: don't force title case if original has internal capitals (McDonald not Mcdonald)
+**Consequences:** Every AI cleanup/validation call fails with `json.JSONDecodeError`. The enrichment pipeline reports 0 suggestions. Users think AI is broken.
 
-**Warning signs:**
-- First names containing "Mc" or "O" as standalone values
-- Last names missing expected prefix (e.g., "Brien" instead of "O'Brien")
-- Names with apostrophes removed entirely
-- Entity type detection failing because "McDonald Trust" became "Donald Trust"
+**Prevention:**
+- In the OpenAI-compatible provider, wrap JSON parsing with a fallback:
+  1. Try `json.loads(response.choices[0].message.content)`
+  2. If that fails, try stripping markdown code fences: `re.sub(r'^```json\s*|\s*```$', '', text, flags=re.MULTILINE)`
+  3. If that fails, try extracting the first `{...}` block with regex
+  4. If all fail, return empty suggestions list (graceful degradation, not a crash)
+- Set `temperature=0.1` (already done for Gemini, replicate for OpenAI provider).
+- Include "Return ONLY valid JSON with no additional text" in the system prompt for the OpenAI provider.
+- Test with the specific LM Studio model before going live. Different models have wildly different JSON compliance.
 
-**Phase to address:**
-Phase 1 (ECF PDF Parsing) — name parsing enhancement before any export
+**Detection:** Add a `json_parse_failures` counter to the AI status endpoint. If it exceeds a threshold, surface a warning in the admin panel.
+
+**Phase:** AI migration phase (AI-01, AI-02). Must be handled when implementing the OpenAI-compatible provider.
 
 ---
 
-### Pitfall 7: Trustee Name Conflation with Trust Entity Name
+### Pitfall 6: Allowlist and Config Data Lost During Migration
 
-**What goes wrong:**
-Entry text like "Smith Family Trust, John Smith as Trustee" is parsed with "John Smith" as primary_name instead of "Smith Family Trust". The trust entity is lost and replaced with individual trustee name, breaking entity type classification.
+**What goes wrong:** The auth allowlist is stored in TWO places: Firestore (`app_config/allowed_users`) and a local JSON file (`data/allowed_users.json`). The Firestore version is the source of truth, with the local file as a cache. User preferences (`user_preferences` collection), GHL connections (`ghl_connections` with encrypted tokens), and app config (`app_config` collection) are Firestore-only with no local fallback. If the migration script only handles the "obvious" collections (jobs, entries, RRC data), these config collections get silently lost.
 
-**Why it happens:**
-The `_extract_notes` function extracts trustee info to notes field but doesn't restructure the primary name. The `_clean_name` function removes "c/o" prefixes which may contain trustee info, and the parser assumes first substantial text is the name. "Trustee" pattern matching happens after name extraction.
+**Why it happens:** The migration checklist focuses on the high-volume data collections. Config/settings collections are small and easy to overlook. The GHL connections are especially tricky because they contain Fernet-encrypted API tokens that must be migrated as-is (they're encrypted with `ENCRYPTION_KEY` which stays the same).
 
-**How to avoid:**
-- Reverse parsing order: detect trust/trustee patterns FIRST, extract trust name as primary
-- Parse structure: "[Trust Name], [Trustee Name] as Trustee" → primary_name="[Trust Name]", notes="Trustee: [Trustee Name]"
-- Use entity type to guide parsing: if "Trust" detected, prioritize trust name over individual names
-- Handle "by [Name], Trustee" format: extract representative to notes, keep entity as primary
-- Test with known trust naming patterns: "[Family Name] Trust", "[Name] Living Trust", etc.
+**Consequences:** After migration: all users except the hardcoded default (`james@tablerocktx.com`) lose access. GHL connections disappear. User preferences (batch size, theme, etc.) reset. Admin has to re-add every user manually.
 
-**Warning signs:**
-- Entity type detected as Trust but primary_name looks like individual name (First Last format)
-- Notes field contains "Trustee: [Name]" but primary_name matches that same name
-- Trust keyword in notes but entity_type=Individual
-- Export shows individuals where trusts expected (e.g., all entries have first/middle/last names)
+**Prevention:**
+- The migration script must explicitly handle ALL Firestore collections. Full list from `firestore_service.py`:
+  - `users` -- map to `users` table
+  - `jobs` -- map to `jobs` table
+  - `extract_entries`, `title_entries`, `proration_rows`, `revenue_statements` -- map to respective tables
+  - `rrc_oil_proration`, `rrc_gas_proration` -- map to RRC tables
+  - `rrc_data_syncs` -- map to `rrc_data_syncs` table
+  - `rrc_county_status` -- needs new table (NOT in current SQLAlchemy models)
+  - `rrc_sync_jobs` -- needs new table (NOT in current SQLAlchemy models)
+  - `rrc_metadata` -- needs new table or merge into config
+  - `audit_logs` -- map to `audit_logs` table
+  - `app_config` -- needs new table (key-value config store)
+  - `user_preferences` -- needs new table
+  - `ghl_connections` -- needs new table (with encrypted token column)
+  - `entities` (from ETL entity_registry) -- needs new table
+- Create SQLAlchemy models for the 5 missing tables BEFORE running migration.
+- GHL encrypted tokens: migrate the `encrypted_token` field as-is (it's a string). The `ENCRYPTION_KEY` env var stays the same so decryption still works.
 
-**Phase to address:**
-Phase 1 (ECF PDF Parsing) — entity-aware parsing must prioritize entity name over representative name
+**Detection:** After migration, verify: `SELECT COUNT(*) FROM app_config`, `SELECT COUNT(*) FROM ghl_connections`, `SELECT COUNT(*) FROM user_preferences`. All should be > 0 if Firestore had data.
 
----
+**Phase:** DB migration phase (DB-02 for models, DB-04 for migration script). The missing models must be created first.
 
-### Pitfall 8: PDF Format Variation Across OCC Filing Dates
+## Moderate Pitfalls
 
-**What goes wrong:**
-ECF PDF format changes over time as OCC updates filing templates. Older filings use different layout, fonts, spacing, or section headers. Parser works on recent filings but fails on older PDFs from different years.
+### Pitfall 7: JWT Secret Key Management in Docker
 
-**Why it happens:**
-The existing Extract tool has format detection (`format_detector.py`) but only distinguishes OCC Exhibit A formats. ECF filings from different periods may have different:
-- Section header text ("RESPONDENTS" vs "RESPONDENT LIST" vs "PARTIES")
-- Entry numbering (continuous vs restarting after "ADDRESS UNKNOWN")
-- Address formatting (comma-separated vs line-separated)
-- Font/spacing affecting text extraction order
+**What goes wrong:** The JWT secret key is generated once and must persist across container restarts. If it's randomly generated at startup (a common pattern in tutorials), every restart invalidates all active tokens, forcing all users to re-login. If it's hardcoded in the Dockerfile or committed to git, it's a security vulnerability.
 
-**How to avoid:**
-- Collect sample ECF PDFs spanning multiple years (2020-2026) before building parser
-- Implement format detection heuristics: detect section headers, numbering patterns, layout structure
-- Use flexible pattern matching: regex with optional components for section headers
-- Add version detection: extract filing date from header, apply version-specific parsing rules
-- Fail gracefully: if format not recognized, flag entire filing for manual review rather than partial parse
+**Prevention:**
+- Use `JWT_SECRET_KEY` as an env var, loaded via Pydantic Settings (already the pattern for `ENCRYPTION_KEY`).
+- Generate it once during initial setup: `python3 -c "import secrets; print(secrets.token_urlsafe(64))"`.
+- Store in `.env` file on the host, mounted into Docker via `env_file` in docker-compose.
+- Add `JWT_SECRET_KEY` to the production environment variables alongside `ENCRYPTION_KEY`.
+- Add a startup check: if `JWT_SECRET_KEY` is missing in production, fail fast (same pattern as the existing `ENCRYPTION_KEY` check in `main.py`).
 
-**Warning signs:**
-- Parser works on test PDFs but fails in production on older filings
-- Entry number extraction fails (returns no matches or wrong sequence)
-- Section detection misses "ADDRESS UNKNOWN" boundary in older formats
-- Address parsing success rate varies dramatically by filing date
-
-**Phase to address:**
-Phase 1 (ECF PDF Parsing) — format detection must be robust before any production use
+**Phase:** Auth phase (AUTH-01, AUTH-02).
 
 ---
 
-### Pitfall 9: Case Metadata Extraction Failure from PDF Header
+### Pitfall 8: Bcrypt Hashing Rounds Too Low or Too High
 
-**What goes wrong:**
-County, legal description, applicant, and case number are required for mineral export output but are extracted incorrectly or missing. Header parsing fails when these fields span multiple lines or use inconsistent formatting.
+**What goes wrong:** Default bcrypt rounds (12) take ~250ms per hash. This is fine for login (one hash per request) but becomes a problem if the admin user creation CLI script needs to hash passwords for batch user creation, or if the test suite creates users in fixtures. Conversely, using low rounds (4) for speed makes passwords trivially crackable.
 
-**Why it happens:**
-PDF headers often use non-standard layouts: fields may be in tables, use label-value pairs with varying separators, or split across pages. Text extraction may not preserve field structure. Applicant names may contain commas (e.g., "Smith Oil & Gas, LLC") which break comma-based parsing.
+**Prevention:**
+- Use 12 rounds for production (the bcrypt default). This is the industry standard for 2024-2026 hardware.
+- For tests, override with a lower round count (4) via a test config fixture. Do NOT lower the production default.
+- The admin CLI script creates one user at a time, so 250ms is acceptable.
+- Store the hashed password, not the bcrypt rounds, in the database. Bcrypt embeds the round count in the hash string itself.
 
-**How to avoid:**
-- Develop header parser separately from respondent parser (different text structure)
-- Use label-based extraction: find "County:", "Legal Description:", "Applicant:" labels and extract following text
-- Handle multi-line fields: county may be "COUNTY OF GRADY" or just "GRADY"; legal description spans 3-5 lines
-- Store unparsed header text for fallback: if structured extraction fails, provide raw text for manual entry
-- Validate extracted values: county against known OK county list, case number format (e.g., CD-XXXXXX)
-
-**Warning signs:**
-- County field contains legal description text (multi-line bleed)
-- Case number has extra text appended (parsing didn't stop at field boundary)
-- Applicant field truncated or missing when name contains special characters
-- Legal description incomplete (only first line captured)
-
-**Phase to address:**
-Phase 1 (ECF PDF Parsing) — metadata extraction is parallel track to respondent parsing
+**Phase:** Auth phase (AUTH-01, AUTH-04).
 
 ---
 
-### Pitfall 10: Merge Match Rate Too Low (Undetected Mismatches)
+### Pitfall 9: Firestore Timestamps vs PostgreSQL Timestamps
 
-**What goes wrong:**
-PDF contains 50 respondents, Convey 640 CSV has 48, but merge only matches 25. Many valid matches missed due to overly strict matching criteria or name variations not accounted for. Users assume merge is complete but half the metadata is lost.
+**What goes wrong:** Firestore stores `datetime.utcnow()` as a Firestore Timestamp with microsecond precision and implicit UTC. The migration script reads these as Python `datetime` objects, but some are timezone-naive (`datetime.utcnow()` returns naive) and some are timezone-aware (Firestore returns aware datetimes). PostgreSQL `DateTime(timezone=True)` columns expect timezone-aware values. Inserting naive datetimes silently assumes the server's local timezone, causing timestamps to shift by hours.
 
-**Why it happens:**
-String matching algorithms are too strict (exact match only) or fuzzy matching threshold too high (>95% similarity required). Name variations not normalized:
-- "Smith, John A." (PDF) vs "John A Smith" (CSV) — comma placement differs
-- "ABC Trust" (PDF) vs "ABC Living Trust" (CSV) — extra word in CSV
-- "O'Brien" (PDF) vs "OBrien" (CSV) — apostrophe stripped in OCR
-- Entry number mismatch: PDF entry U15 corresponds to CSV entry 30 (renumbering occurred)
+**Prevention:**
+- In the migration script, normalize ALL datetimes to UTC-aware before inserting: `dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt`.
+- In the new codebase, replace ALL `datetime.utcnow()` calls with `datetime.now(timezone.utc)`. The `utcnow()` function is deprecated in Python 3.12+ and returns naive datetimes.
+- The SQLAlchemy models already use `DateTime(timezone=True)` -- this is correct. Just ensure the values going in are aware.
 
-**How to avoid:**
-- Use multi-strategy matching: try exact match, then fuzzy (85% threshold), then phonetic (Soundex/Metaphone)
-- Normalize aggressively: remove punctuation, extra spaces, "Living"/"Family", common trust words
-- Try bidirectional matching: PDF→CSV and CSV→PDF, combine results
-- Match by position first: PDF entry 1 likely matches CSV entry 1 even if names differ slightly
-- Report match statistics: show matched/unmatched counts, flag records below similarity threshold for review
-- Allow manual match confirmation: UI displays side-by-side PDF/CSV candidates for user approval
-
-**Warning signs:**
-- Match rate <60% when CSV has similar record count to PDF
-- Unmatched records with visually similar names when inspected manually
-- Position-based matching would succeed but name-based matching fails
-- Many unmatched records have only minor differences (punctuation, spacing, word order)
-
-**Phase to address:**
-Phase 3 (PDF-CSV Merge) — matching algorithm must be tuned after parser testing, before UI implementation
+**Phase:** DB migration phase (DB-04 for migration script, DB-05 for updating service code).
 
 ---
 
-## Technical Debt Patterns
+### Pitfall 10: Storage Path Hardcoding for Docker Volumes
 
-| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
-|----------|-------------------|----------------|-----------------|
-| Exact string matching only (no fuzzy) | Simple implementation, fast | Low merge success rate, manual fixes required | Never — fuzzy matching is core requirement |
-| CSV field overwrites PDF field if populated | Simple merge logic | Violates "PDF is source of truth", OCR errors propagate | Never — explicit precedence required |
-| Skip entry number normalization | Faster CSV parsing | Line numbers contaminate names, merge fails | Never — must strip before any processing |
-| Use pandas default dtypes for CSV | No explicit dtype specification | ZIP codes lose leading zeros | Never — dtype must be explicit |
-| Single PDF format parser (no version detection) | Works for test files | Fails on older/newer filings in production | Only acceptable for MVP if all test files are recent (post-2024) |
-| Manual case metadata entry (skip header parsing) | Faster Phase 1 implementation | Users must type county/case# for every filing | Acceptable for MVP if filing volume is low (<10/month) |
-| Store merged data without audit trail | Simpler data model | Can't debug merge errors, unknown data provenance | Never — must track PDF vs CSV source per field |
+**What goes wrong:** The current `StorageService` uses `settings.data_dir` which defaults to `Path(__file__).parent.parent.parent / "data"` -- a path relative to the Python source. In Docker, this resolves to somewhere inside the container's read-only filesystem layer. Uploaded files, RRC data CSVs, and profile images written here disappear on container restart.
 
-## Integration Gotchas
+**Prevention:**
+- Change `data_dir` default to `/app/data` for Docker (already the case in the Dockerfile, but verify).
+- In `docker-compose.yml`, mount a named volume: `volumes: - toolbox_data:/app/data`.
+- Verify the mounted directory is writable by the container user (common Docker permission issue).
+- The `RRCDataStorage`, `UploadStorage`, and `ProfileStorage` all derive paths from `settings.data_dir` -- no additional changes needed if the base path is correct.
+- Test: upload a file, restart the container, verify the file persists.
 
-| Integration | Common Mistake | Correct Approach |
-|-------------|----------------|------------------|
-| Pandas CSV reading | Use default `read_csv()` without dtype | Specify `dtype={'zip': str, 'entry_number': str}` to prevent type coercion |
-| Mineral export format | Assume Extract mineral export matches Title mineral export | Verify MINERAL_EXPORT_COLUMNS constant is shared/identical across tools |
-| Entity type enum | Use string literals instead of EntityType enum | Import from `app.models.extract.EntityType`, use enum values consistently |
-| Existing parser reuse | Copy-paste parser code for ECF format | Extend existing parser classes, add ECF format to format detection |
-| Address parser | Write new address parser for ECF | Reuse `services/shared/address_parser.py`, extend if needed |
-| Firestore job storage | Create separate collection for ECF jobs | Use existing `extract_jobs` collection, add `format` field to distinguish |
+**Phase:** Storage phase (STOR-01). Address when removing GCS dependency.
 
-## Performance Traps
+---
 
-| Trap | Symptoms | Prevention | When It Breaks |
-|------|----------|------------|----------------|
-| Loading entire CSV into memory for fuzzy matching | Slow merge (>30s for 50 records) | Use indexed lookup by entry number first, fuzzy match only for unmatched | >500 records in CSV |
-| N×M fuzzy string comparison (PDF entries × CSV rows) | Exponential slowdown | Early termination: stop after first high-similarity match (>90%) | N×M >10,000 comparisons |
-| Re-parsing PDF for every merge attempt | Redundant PDF extraction on each CSV upload | Cache parsed PDF results in session or Firestore | Users upload multiple CSV versions |
-| Regex compilation inside loop | Slow pattern matching | Compile regex patterns once at module level (already done in `patterns.py`) | N/A — existing patterns are pre-compiled |
+### Pitfall 11: LM Studio Timeout and Connection Differences
 
-## Security Mistakes
+**What goes wrong:** The Gemini provider uses Google's SDK which has built-in retry and long timeouts. The OpenAI Python client defaults to 10-minute timeouts, but LM Studio running on local hardware may be slow for large batches (25 entries with detailed prompts). A 7B model on CPU can take 60-90 seconds per batch. The client times out, the pipeline marks the batch as failed, and retry logic re-sends it (now the model is processing both the original and retry simultaneously, consuming memory).
 
-| Mistake | Risk | Prevention |
-|---------|------|------------|
-| Trust CSV uploaded filenames | Path traversal, filename injection | Sanitize filenames, store with generated UUIDs, validate extensions |
-| Display raw PDF text in error messages | Information disclosure (PII in logs) | Truncate text samples to first 50 chars, redact names/addresses in logs |
-| Allow arbitrary CSV column names | CSV injection attacks in Excel | Validate column headers against expected schema, reject unexpected columns |
-| Store uploaded files indefinitely | Storage cost, compliance risk | Implement retention policy (delete after 90 days), document in privacy policy |
+**Prevention:**
+- Set explicit timeouts on the OpenAI client: `openai.AsyncOpenAI(base_url=..., timeout=httpx.Timeout(120.0, connect=10.0))`.
+- Reduce batch size for local models: make `BATCH_SIZE` configurable via admin settings (already stored in Firestore/config, extend to the new provider).
+- Add a model warm-up call at startup (single short prompt) to detect if LM Studio is running and responsive.
+- The disconnect detection logic (`disconnect_check` callback) already exists in the pipeline -- ensure the OpenAI provider passes it through.
 
-## UX Pitfalls
+**Phase:** AI migration phase (AI-01, AI-02).
 
-| Pitfall | User Impact | Better Approach |
-|---------|-------------|-----------------|
-| No merge preview before commit | Users don't see what data came from PDF vs CSV | Show side-by-side comparison table: PDF column, CSV column, Merged column |
-| Silent merge failures | Low match rate goes unnoticed, incomplete data exported | Display match statistics: "45/50 matched (90%)", list unmatched entries |
-| No manual match override | Users can't fix false negatives from fuzzy matching | Provide UI to manually link PDF entry to CSV row |
-| Cryptic flagging reasons | Users see "flagged" but don't know why | Show specific reason: "No address found", "Invalid ZIP format: 1234" |
-| PDF-only mode feels incomplete | Users expect CSV to be required, confused when optional | Clear UI messaging: "CSV optional — improves metadata, but PDF has all names/addresses" |
-| No validation summary | Users export without reviewing flags | Show summary before export: "3 entries flagged, 5 addresses incomplete — review?" |
+---
 
-## "Looks Done But Isn't" Checklist
+### Pitfall 12: Test Suite Mocks Assume Firebase/Firestore Imports
 
-- [ ] **Merge logic:** Often missing audit trail (which fields came from PDF vs CSV) — verify `merge_audit` metadata stored
-- [ ] **ZIP code handling:** Often missing leading zero restoration for Northeast states — verify state-ZIP correlation check exists
-- [ ] **Entity type detection:** Often missing deceased/estate patterns — verify Estate patterns run before Individual fallback
-- [ ] **Name normalization:** Often missing Mc/Mac/O' prefix handling — verify prefix preservation in name parser
-- [ ] **Address parsing:** Often missing multi-line preservation — verify line-aware parsing for ECF format
-- [ ] **CSV column validation:** Often missing dtype enforcement — verify `dtype={'zip': str}` in pandas read
-- [ ] **Fuzzy matching threshold:** Often missing tuning/testing — verify match rate >75% on real sample data
-- [ ] **Header metadata:** Often missing multi-line field support — verify legal description captures all lines
-- [ ] **Format detection:** Often missing version handling — verify parser works on filings from 2020-2026
-- [ ] **Match statistics:** Often missing from UI — verify unmatched record list displayed to user
+**What goes wrong:** The existing test suite (`conftest.py`) overrides `require_auth` via FastAPI dependency injection, which will work with JWT auth too. But tests like `test_auth_enforcement.py` and `test_fetch_missing.py` mock `firestore_service` directly. After migration, these import paths change. Tests that mock `from app.services.firestore_service import ...` will fail because the module no longer exists (or has been replaced with a PostgreSQL service).
 
-## Recovery Strategies
+**Prevention:**
+- During migration, update test mocks incrementally. The auth tests that override `require_auth` via `app.dependency_overrides` will continue to work -- this is the correct pattern for both Firebase and JWT auth.
+- For Firestore mocks in `test_fetch_missing.py`: update to mock the new database service instead. Use an in-memory SQLite database for tests if possible (caveat: SQLite doesn't support JSONB, use `JSON` type alias).
+- Better: use `pytest-postgresql` or a test database fixture that creates real tables in a throwaway PG database. This catches schema issues that SQLite would miss.
+- Keep the existing conftest pattern of dependency overrides -- it's clean and works with both auth systems.
 
-| Pitfall | Recovery Cost | Recovery Steps |
-|---------|---------------|----------------|
-| ZIP code leading zeros lost | LOW | Run batch correction: detect state, prepend 0 if needed, update Firestore records |
-| Merge used CSV names instead of PDF | MEDIUM | Re-run merge with corrected precedence logic, requires re-upload of PDF+CSV |
-| Entry numbers contaminated names | MEDIUM | Run name cleaning script with regex strip, update database, re-export |
-| Entity types misclassified | LOW | Re-run entity detection with corrected pattern order, update records in place |
-| Multi-line addresses collapsed | HIGH | Re-parse original PDFs with fixed line-aware logic, replace all extracted data |
-| Fuzzy matching too strict (low match rate) | MEDIUM | Lower threshold from 95% to 85%, re-run merge, review new matches manually |
-| Case metadata extraction failed | LOW | Extract header text separately, provide manual entry form, store alongside auto-extracted |
-| PDF format variation unhandled | MEDIUM | Add format detection for specific filing date range, re-parse affected PDFs |
-| Trustee names replaced entity names | MEDIUM | Re-parse with entity-first logic, swap primary_name and notes fields if needed |
-| Name parser broke Celtic prefixes | MEDIUM | Add prefix preservation rules, re-parse affected names, validate against originals |
+**Detection:** Run `make test` after each migration phase. Tests should pass continuously, not just at the end.
 
-## Pitfall-to-Phase Mapping
+**Phase:** Crosses all phases. Each migration phase should update affected tests before merging.
 
-| Pitfall | Prevention Phase | Verification |
-|---------|------------------|--------------|
-| Multi-line address parsing | Phase 1 | Test with 10 ECF PDFs, address parse success rate >90% |
-| Line number contamination | Phase 2 | Inspect parsed CSV names, no entries start with digits or "U\d+" |
-| ZIP code data type loss | Phase 2 | Load CSV, check all ZIP codes are strings with correct length |
-| Deceased entity detection | Phase 1 | Test cases with "Deceased", "Estate of" patterns, verify Estate classification |
-| Merge precedence (CSV over PDF) | Phase 3 | Merge audit log shows PDF source for name/address fields |
-| Mc/Mac/O' name parsing | Phase 1 | Test with Irish/Scottish names, verify prefixes preserved |
-| Trustee/trust name conflation | Phase 1 | Test with trust entries, verify entity name is primary not trustee |
-| PDF format variation | Phase 1 | Test with PDFs from 2020-2026, parser handles all formats |
-| Case metadata extraction | Phase 1 | Extract county/case#/applicant from 5 sample PDFs, 100% success |
-| Low merge match rate | Phase 3 | Merge 3 PDF+CSV pairs, match rate >75%, report unmatched records |
+## Minor Pitfalls
+
+### Pitfall 13: CORS Origins Must Include On-Prem URL
+
+**What goes wrong:** The current CORS config returns `["https://tools.tablerocktx.com"]` in production and `["http://localhost:5173"]` in development. On-prem deployment may use a different URL (e.g., `http://192.168.1.x:5173` or `https://tools.internal.tablerocktx.com`). If CORS origins aren't updated, the browser blocks all API requests.
+
+**Prevention:** The `CORS_ALLOWED_ORIGINS` env var already supports comma-separated origins. Document the on-prem URL and set it in the Docker env file.
+
+**Phase:** Deployment/infrastructure setup.
+
+---
+
+### Pitfall 14: Firebase npm Packages Left as Dead Dependencies
+
+**What goes wrong:** After removing all Firebase imports from the frontend, the packages (`firebase`, `@firebase/auth`) remain in `package.json`. They add ~500KB to the production bundle and trigger npm audit warnings for known vulnerabilities in transitive dependencies.
+
+**Prevention:** After AUTH-06 (remove Firebase imports), run `npm uninstall firebase` and verify the build still works. Check `dist/` bundle size before and after.
+
+**Phase:** Auth phase (AUTH-06), after all frontend Firebase references are removed.
+
+---
+
+### Pitfall 15: OpenAI Client Token Counting Differs from Gemini
+
+**What goes wrong:** The Gemini service tracks token usage via `response.usage_metadata.prompt_token_count` and `candidates_token_count` for monthly budget enforcement. The OpenAI API uses `response.usage.prompt_tokens` and `response.usage.completion_tokens`. LM Studio may or may not populate the `usage` field depending on the model backend (llama.cpp populates it, some others don't).
+
+**Prevention:** In the OpenAI provider, handle missing usage gracefully: `usage = response.usage; prompt_tokens = usage.prompt_tokens if usage else 0`. Budget tracking becomes best-effort for local models -- acceptable since LM Studio is free.
+
+**Phase:** AI migration phase (AI-01).
+
+## Phase-Specific Warnings
+
+| Phase Topic | Likely Pitfall | Mitigation |
+|-------------|---------------|------------|
+| Auth (AUTH-01 to AUTH-04) | JWT secret not persisted across restarts | Env var, fail-fast check at startup |
+| Auth (AUTH-05) | Frontend `User` type mismatch | New `LocalUser` interface, TypeScript compilation catches it |
+| Auth (AUTH-06) | Dead Firebase packages in bundle | `npm uninstall firebase` after all imports removed |
+| DB (DB-02) | Missing SQLAlchemy models for 5 Firestore collections | Enumerate ALL collections before writing schema |
+| DB (DB-03) | Schema creation misses indexes | Use `create_all()` which creates indexes from model definitions |
+| DB (DB-04) | Nested Firestore docs flattened wrong | Explicit per-collection handlers with count verification |
+| DB (DB-04) | Naive datetimes shift timezone | Normalize to UTC-aware before insert |
+| DB (DB-05) | Session leaks in background worker | Separate sync Session factory for threads |
+| DB (DB-05) | Connection pool exhaustion | Explicit pool settings, health check monitoring |
+| AI (AI-01) | JSON parsing failures from local models | Multi-layer fallback parser, graceful degradation |
+| AI (AI-01) | Slow local model timeouts | Configurable timeout, smaller batch sizes |
+| AI (AI-02) | Token counting differs between providers | Graceful handling of missing usage data |
+| Storage (STOR-01) | Docker volume not mounted, data lost on restart | Named volume in docker-compose, startup write test |
+| Cross-cutting | Tests break incrementally during migration | Update tests per-phase, not at the end |
+
+## Integration Pitfalls (Cross-Area)
+
+These pitfalls emerge from the interaction between multiple migration areas.
+
+### Integration 1: Auth + DB -- User ID Format Changes
+
+**What goes wrong:** Firebase UIDs are strings like `"abc123def456"`. The new JWT auth uses auto-increment integer IDs or UUIDs for the users table. If the `jobs` table still has a `user_id` foreign key expecting the old Firebase UID format, existing jobs become orphaned (no matching user). New jobs use the new ID format but old jobs reference a non-existent user.
+
+**Prevention:** Use the user's email as the stable identifier (already the case for allowlist checks). The `user_id` in jobs should be the email, not a Firebase UID. Or: migrate user IDs to UUIDs in the users table and update all FK references in the migration script.
+
+**Phase:** Must be coordinated between AUTH-01 (user table) and DB-04 (migration script).
+
+### Integration 2: Auth + AI -- Pipeline Disconnect Detection After Auth Change
+
+**What goes wrong:** The pipeline's disconnect detection uses `request.is_disconnected()` which works independently of auth. But if the JWT token expires mid-pipeline (a 5-minute cleanup operation), the subsequent batch results POST fails with 401. The existing Firebase auth context had a token refresh handler; the new JWT auth needs an equivalent.
+
+**Prevention:** Issue JWT tokens with a sufficiently long expiry (24 hours for this internal tool). Add a `/api/auth/refresh` endpoint. The frontend's 401 handler should call refresh before retrying.
+
+**Phase:** AUTH-02 (backend endpoints) must include a refresh endpoint. AUTH-05 (frontend context) must wire up the refresh handler.
+
+### Integration 3: DB + Storage -- Job Records Reference GCS Paths
+
+**What goes wrong:** Existing job records in Firestore may contain `storage_path` or file references as `gs://bucket-name/path`. After migration to local storage, these paths are invalid. The app tries to load files from GCS paths that don't exist locally.
+
+**Prevention:** The current codebase doesn't store GCS paths in job documents (uploads are processed in-memory and results are returned directly). But `UploadStorage.save_upload()` returns a GCS path string. If any service stores this path in Firestore, the migration script must rewrite `gs://` paths to local paths. Audit all `upload_storage.save_upload()` call sites.
+
+**Phase:** DB migration (DB-04) and storage (STOR-01) should be coordinated.
 
 ## Sources
 
-### PDF Parsing Research
-- [A Comparative Study of PDF Parsing Tools](https://arxiv.org/html/2410.09871v1) — Layout and multi-column challenges
-- [How to Parse PDFs Effectively: Tools, Methods & Use Cases](https://parabola.io/blog/best-methods-pdf-parsing) — Best practices for 2026
-- [Challenges When Parsing PDFs With Python](https://www.theseattledataguy.com/challenges-you-will-face-when-parsing-pdfs-with-python-how-to-parse-pdfs-with-python/) — Multi-line text extraction issues
-
-### CSV/Excel Data Quality
-- [5 CSV File Import Errors (and How to Fix Them)](https://ingestro.com/blog/5-csv-file-import-errors-and-how-to-fix-them-quickly) — Column matching, encoding issues
-- [Excel Import Errors and Fixes](https://flatfile.com/blog/the-top-excel-import-errors-and-how-to-fix-them/) — Data type coercion problems
-- [How to Match and Merge Data in Excel](https://www.thebricks.com/resources/guide-how-to-match-and-merge-data-in-excel) — Merging strategies
-
-### ZIP Code Handling
-- [Working with Leading Zeros in Northeast ZIP Codes](https://help.littlegreenlight.com/article/53-working-with-leading-zeros-in-northeast-zip-codes) — Leading zero loss
-- [Keeping Leading Zeros in Excel](https://support.microsoft.com/en-us/office/keeping-leading-zeros-and-large-numbers-1bf7b935-36e1-4985-842f-5dfa51f85fe7) — Microsoft official guidance
-- [Excel ZIP Code Tricks](https://blog.batchgeo.com/excel-zip-code-tricks-leading-zeros-shorten-to-five-digits/) — Text formatting solutions
-
-### Fuzzy String Matching
-- [Fuzzy String Matching in Python Tutorial](https://www.datacamp.com/tutorial/fuzzy-string-python) — Algorithm overview
-- [Deep Dive into String Similarity](https://medium.com/data-science-collective/deep-dive-into-string-similarity-from-edit-distance-to-fuzzy-matching-theory-and-practice-in-68e214c0cb1d) — Levenshtein, Jaro-Winkler
-- [Fuzzy Matching 101: Complete Guide](https://dataladder.com/fuzzy-matching-101/) — False positive prevention
-
-### Name Parsing Edge Cases
-- [First and Last Name Validation for Forms](https://a-tokyo.medium.com/first-and-last-name-validation-for-forms-and-databases-d3edf29ad29d) — Special character handling
-- [Why Mac and Mc Surnames Contain Second Capital Letter](https://www.todayifoundout.com/index.php/2014/02/mac-mc-surnames-often-contain-second-capital-letter/) — Celtic name patterns
-- [HumanName Class Documentation](https://nameparser.readthedocs.io/en/latest/modules.html) — Nameparser library prefix handling
-
-### Legal Entity Types
-- [Estate vs. Trust: What's the Difference?](https://smartasset.com/estate-planning/estate-vs-trust) — Entity classification
-- [Is a Trust a Legal Entity?](https://www.esapllc.com/is-a-trust-a-legal-entity-2024/) — Trust entity status
-
----
-*Pitfalls research for: ECF PDF parsing and Convey 640 CSV/Excel merge*
-*Researched: 2026-03-11*
+- Direct codebase analysis of `firestore_service.py` (1003 lines, 14 collections)
+- Direct analysis of `auth.py` (Firebase token verification, allowlist management)
+- Direct analysis of `AuthContext.tsx` (Firebase User type dependencies)
+- Direct analysis of `rrc_background.py` (threading + asyncio.run() pattern)
+- Direct analysis of `gemini_service.py` (structured output, rate limiting, token tracking)
+- Direct analysis of `storage_service.py` (GCS/local fallback pattern)
+- Direct analysis of `db_models.py` (existing SQLAlchemy models -- 5 collections missing)
+- Direct analysis of `connection_service.py` (encrypted GHL token storage in Firestore)
+- SQLAlchemy async documentation: session lifecycle and connection pooling
+- Python 3.12 deprecation of `datetime.utcnow()` (PEP 705)
