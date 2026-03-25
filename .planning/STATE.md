@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Full On-Prem Migration
-status: Phase complete — ready for verification
+status: Ready to plan
 stopped_at: Completed 24-02-PLAN.md
-last_updated: "2026-03-25T21:08:21.632Z"
+last_updated: "2026-03-25T21:14:02.360Z"
 progress:
   total_phases: 6
   completed_phases: 3
@@ -23,8 +23,8 @@ See: .planning/PROJECT.md (updated 2026-03-25)
 
 ## Current Position
 
-Phase: 24 (Auth Frontend & Firebase Removal) — EXECUTING
-Plan: 2 of 2
+Phase: 25
+Plan: Not started
 
 ## Performance Metrics
 
