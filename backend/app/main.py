@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.auth import require_auth
+from app.api.auth import router as auth_router
 from app.api.extract import router as extract_router
 from app.api.title import router as title_router
 from app.api.proration import router as proration_router
@@ -69,6 +70,9 @@ async def health_check() -> dict:
         "tools": ["extract", "title", "proration", "revenue", "ghl_prep", "ghl", "etl"],
     }
 
+
+# Auth router (no auth dependency -- login must be unauthenticated)
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 
 # Include tool-specific routers with auth enforcement
 app.include_router(extract_router, prefix="/api/extract", tags=["extract"], dependencies=[Depends(require_auth)])
