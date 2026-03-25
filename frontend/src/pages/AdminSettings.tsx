@@ -84,13 +84,13 @@ export default function AdminSettings() {
   const [passwordCopied, setPasswordCopied] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
 
-  // Google Cloud API state
-  const [googleCloud, setGoogleCloud] = useState<GoogleCloudSettings>({
+  // API settings state
+  const [apiSettings, setApiSettings] = useState<ApiSettings>({
     has_key: false, ai_enabled: false, ai_model: 'qwen3.5-35b-a3b',
     maps_enabled: false, places_enabled: false,
     batch_size: 25, batch_max_concurrency: 2, batch_max_retries: 1,
   })
-  const [googleCloudApiKey, setGoogleCloudApiKey] = useState('')
+  const [apiSettingsApiKey, setApiSettingsApiKey] = useState('')
   const [aiEnabled, setAiEnabled] = useState(false)
   const [aiModel, setAiModel] = useState('qwen3.5-35b-a3b')
   const [mapsEnabled, setMapsEnabled] = useState(false)
@@ -218,7 +218,7 @@ export default function AdminSettings() {
       const res = await fetch(`${API_BASE}/admin/settings/api-config`, { headers: authHeaders() })
       if (res.ok) {
         const data = await res.json()
-        setGoogleCloud(data)
+        setApiSettings(data)
         setAiEnabled(data.ai_enabled)
         setAiModel(data.ai_model)
         setMapsEnabled(data.maps_enabled)
@@ -636,9 +636,9 @@ export default function AdminSettings() {
               {apiSettings.has_key
                 ? (() => {
                     const active = [
-                      googleCloud.ai_enabled && 'AI Provider',
-                      googleCloud.maps_enabled && 'Address Validation',
-                      googleCloud.places_enabled && 'Places',
+                      apiSettings.ai_enabled && 'AI Provider',
+                      apiSettings.maps_enabled && 'Address Validation',
+                      apiSettings.places_enabled && 'Places',
                     ].filter(Boolean)
                     return active.length > 0
                       ? `Key configured — ${active.join(', ')} active`

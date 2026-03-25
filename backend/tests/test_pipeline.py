@@ -496,9 +496,9 @@ class TestBatchConfig:
             runtime_settings.batch_max_concurrency = original_concurrency
             runtime_settings.batch_max_retries = original_retries
 
-    def test_google_cloud_settings_response_has_batch_fields(self):
-        """GoogleCloudSettingsResponse model accepts batch config fields."""
-        from app.api.admin import GoogleCloudSettingsResponse
+    def test_api_settings_response_has_batch_fields(self):
+        """ApiSettingsResponse model accepts batch config fields."""
+        from app.api.admin import ApiSettingsResponse
 
         resp = ApiSettingsResponse(
             has_key=True,
