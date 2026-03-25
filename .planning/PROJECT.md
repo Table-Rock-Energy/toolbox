@@ -85,8 +85,8 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - [x] **AUTH-02**: Backend /api/auth/login and /api/auth/me endpoints returning JWT tokens — Phase 23
 - [x] **AUTH-03**: Replace Firebase token verification middleware with JWT verification — Phase 23
 - [x] **AUTH-04**: CLI/startup script to create initial admin user (james@tablerocktx.com) — Phase 23
-- [ ] **AUTH-05**: Frontend local auth context replacing Firebase Auth context
-- [ ] **AUTH-06**: Remove firebase.ts, Firebase npm packages, and all Firebase imports
+- [x] **AUTH-05**: Frontend local auth context replacing Firebase Auth context — Phase 24
+- [x] **AUTH-06**: Remove firebase.ts, Firebase npm packages, and all Firebase imports — Phase 24 (backend deps deferred to Phase 27)
 - [ ] **DB-01**: Remove Firestore entirely — PostgreSQL as only database via SQLAlchemy
 - [x] **DB-02**: Extend SQLAlchemy models to cover all Firestore collections — Phase 22
 - [x] **DB-03**: Alembic initialized with async template, initial migration generated — Phase 22
@@ -169,4 +169,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Local variable threading in runAllSteps (not React state) | Avoids stale closure between sequential async steps | ✓ Good — v1.6 |
 
 ---
-*Last updated: 2026-03-25 — Phase 23 complete (JWT auth backend)*
+*Last updated: 2026-03-25 — Phase 24 complete (frontend JWT auth, Firebase removed from frontend)*
