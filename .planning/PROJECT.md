@@ -87,11 +87,11 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - [x] **AUTH-04**: CLI/startup script to create initial admin user (james@tablerocktx.com) — Phase 23
 - [x] **AUTH-05**: Frontend local auth context replacing Firebase Auth context — Phase 24
 - [x] **AUTH-06**: Remove firebase.ts, Firebase npm packages, and all Firebase imports — Phase 24 (backend deps deferred to Phase 27)
-- [ ] **DB-01**: Remove Firestore entirely — PostgreSQL as only database via SQLAlchemy
+- [x] **DB-01**: Remove Firestore entirely — PostgreSQL as only database via SQLAlchemy — Phase 25
 - [x] **DB-02**: Extend SQLAlchemy models to cover all Firestore collections — Phase 22
 - [x] **DB-03**: Alembic initialized with async template, initial migration generated — Phase 22
 - [ ] **DB-04**: One-time Firestore→PostgreSQL migration script
-- [ ] **DB-05**: Ensure every service using firestore_service.py has a PostgreSQL equivalent
+- [x] **DB-05**: Every firestore_service.py function has PostgreSQL equivalent in db_service.py — Phase 25
 - [ ] **AI-01**: OpenAI-compatible provider for LM Studio alongside Gemini
 - [ ] **AI-02**: Provider abstraction routing all AI calls through configurable backend
 - [ ] **AI-03**: New env vars: AI_PROVIDER, LLM_API_BASE, LLM_MODEL
@@ -169,4 +169,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Local variable threading in runAllSteps (not React state) | Avoids stale closure between sequential async steps | ✓ Good — v1.6 |
 
 ---
-*Last updated: 2026-03-25 — Phase 24 complete (frontend JWT auth, Firebase removed from frontend)*
+*Last updated: 2026-03-25 — Phase 25 complete (Firestore removed, PostgreSQL is sole DB)*
