@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Full On-Prem Migration
-status: Ready to execute
-stopped_at: Completed 23-01-PLAN.md
-last_updated: "2026-03-25T20:09:58.652Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 23-02-PLAN.md
+last_updated: "2026-03-25T20:25:51.969Z"
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State
@@ -45,6 +45,7 @@ Plan: 2 of 2
 | Phase 22-01 P01 | 2min | 1 tasks | 2 files |
 | Phase 22 P02 | 2min | 2 tasks | 5 files |
 | Phase 23 P01 | 20min | 2 tasks | 8 files |
+| Phase 23 P02 | 13min | 2 tasks | 6 files |
 
 ### Decisions
 
@@ -62,6 +63,8 @@ Plan: 2 of 2
 - [Phase 23]: BcryptHasher explicit instantiation (PasswordHash.recommended() requires argon2)
 - [Phase 23]: is_user_admin keeps JSON allowlist check (dual-path until Phase 25)
 - [Phase 23]: require_admin checks user dict role with james@ email fallback
+- [Phase 23]: Auth router mounted without router-level auth (login is public)
+- [Phase 23]: LoginResponse includes full UserProfile with is_admin flag
 
 ### Pending Todos
 
@@ -74,6 +77,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-25T20:09:58.649Z
-Stopped at: Completed 23-01-PLAN.md
+Last session: 2026-03-25T20:25:51.966Z
+Stopped at: Completed 23-02-PLAN.md
 Resume file: None
