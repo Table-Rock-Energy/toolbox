@@ -80,30 +80,30 @@ class TestJsonParsing:
 class TestProviderFactory:
     """Test get_llm_provider factory routing."""
 
-    @patch("app.services.llm.openai_provider.settings")
-    @patch("app.core.config.settings")
-    def test_factory_returns_openai_when_lmstudio(self, mock_config_settings, mock_provider_settings):
+    def test_factory_returns_openai_when_lmstudio(self):
         """get_llm_provider returns OpenAIProvider when ai_provider='lmstudio'."""
         from app.services.llm.openai_provider import OpenAIProvider
 
-        mock_config_settings.ai_provider = "lmstudio"
-        mock_provider_settings.ai_provider = "lmstudio"
+        with patch("app.services.llm.settings") as mock_factory_settings, \
+             patch("app.services.llm.openai_provider.settings") as mock_provider_settings:
+            mock_factory_settings.ai_provider = "lmstudio"
+            mock_provider_settings.ai_provider = "lmstudio"
 
-        from app.services.llm import get_llm_provider
+            from app.services.llm import get_llm_provider
 
-        provider = get_llm_provider()
-        assert provider is not None
-        assert isinstance(provider, OpenAIProvider)
+            provider = get_llm_provider()
+            assert provider is not None
+            assert isinstance(provider, OpenAIProvider)
 
-    @patch("app.core.config.settings")
-    def test_factory_returns_none_when_none(self, mock_settings):
+    def test_factory_returns_none_when_none(self):
         """get_llm_provider returns None when ai_provider='none'."""
-        mock_settings.ai_provider = "none"
+        with patch("app.services.llm.settings") as mock_settings:
+            mock_settings.ai_provider = "none"
 
-        from app.services.llm import get_llm_provider
+            from app.services.llm import get_llm_provider
 
-        provider = get_llm_provider()
-        assert provider is None
+            provider = get_llm_provider()
+            assert provider is None
 
 
 class TestOpenAIProviderCleanup:

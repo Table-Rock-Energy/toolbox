@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-2.5-flash"
     gemini_monthly_budget: float = 15.00  # Maximum monthly spend in USD
 
+    # AI provider settings (lmstudio or none)
+    ai_provider: str = "none"
+    llm_api_base: str = "http://localhost:1234/v1"
+    llm_model: str = "qwen3.5-35b-a3b"
+    llm_api_key: Optional[str] = None
+
     # Batch processing settings
     batch_size: int = 25
     batch_max_concurrency: int = 2
@@ -94,6 +100,11 @@ class Settings(BaseSettings):
         if self.environment == "production":
             return ["https://tools.tablerocktx.com"]
         return ["http://localhost:5173"]
+
+    @property
+    def use_ai(self) -> bool:
+        """Check if any AI provider is configured."""
+        return self.ai_provider != "none"
 
     @property
     def use_gcs(self) -> bool:

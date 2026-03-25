@@ -1,8 +1,10 @@
-"""Cleanup prompt constants for LLM-based data correction.
+"""Prompt constants for LLM-based data validation and correction.
 
-These are DISTINCT from the TOOL_PROMPTS in gemini_service.py:
-- gemini_service TOOL_PROMPTS: flag/validate existing data (passive review)
-- These CLEANUP_PROMPTS: actively correct and clean data (name casing, abbreviations, etc.)
+Two distinct prompt sets:
+- TOOL_PROMPTS: flag/validate existing data (passive review)
+- CLEANUP_PROMPTS: actively correct and clean data (name casing, abbreviations, etc.)
+
+Plus REVENUE_VERIFY_PROMPT for revenue-specific gap-filling and math verification.
 """
 
 CLEANUP_PROMPTS: dict[str, str] = {
@@ -107,6 +109,112 @@ If all entries look correct and CSV matches merged data, return {"suggestions": 
 
 # Response schema for structured JSON output from LLM
 CLEANUP_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "suggestions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "entry_index": {"type": "integer"},
+                    "field": {"type": "string"},
+                    "current_value": {"type": "string"},
+                    "suggested_value": {"type": "string"},
+                    "reason": {"type": "string"},
+                    "confidence": {
+                        "type": "string",
+                        "enum": ["high", "medium", "low"],
+                    },
+                },
+                "required": [
+                    "entry_index",
+                    "field",
+                    "current_value",
+                    "suggested_value",
+                    "reason",
+                    "confidence",
+                ],
+            },
+        }
+    },
+    "required": ["suggestions"],
+}
+
+# Validation prompts -- flag/review existing data (passive review)
+# Originally from gemini_service.py, moved here so all LLM providers can use them.
+TOOL_PROMPTS: dict[str, str] = {
+    "extract": """You are a data quality reviewer for oil and gas party extraction data from OCC Exhibit A PDFs.
+Review each entry and suggest corrections for:
+- Name casing: Convert ALL CAPS names to proper Title Case (e.g., "JOHN SMITH" -> "John Smith"). Keep entity abbreviations uppercase (LLC, LP, INC, CO).
+- Entity type vs name mismatch: If the name contains "Trust", "Estate", "LLC", "Corp", "Inc", "Foundation" etc. but the entity_type doesn't match, suggest the correct entity_type.
+- Address completeness: Flag entries missing city, state, or zip_code when a mailing_address is present.
+- State abbreviation: Ensure state is a valid 2-letter US state code.
+- ZIP code format: Should be 5 digits or 5+4 format (XXXXX or XXXXX-XXXX).
+
+Only suggest changes where you are confident there is an actual error. Do NOT suggest changes for entries that look correct.""",
+
+    "title": """You are a data quality reviewer for title opinion owner data from Oklahoma county records.
+Review each entry and suggest corrections for:
+- Name casing: Convert ALL CAPS names to proper Title Case. Keep entity abbreviations uppercase (LLC, LP, INC, CO).
+- Entity type accuracy: Check if entity_type matches the name (e.g., name with "Trust" should be entity_type "TRUST", "Estate" should be "ESTATE").
+- Duplicate detection: Flag entries with very similar names that may be duplicates (same person, different formatting).
+- First/last name parsing: If full_name is present, verify first_name and last_name are correctly split.
+- Address completeness: Flag entries with partial addresses.
+- State abbreviation: Ensure state is a valid 2-letter US state code.
+
+Only suggest changes where you are confident there is an actual error.""",
+
+    "proration": """You are a data quality reviewer for mineral holder proration data used in NRA calculations with Texas RRC data.
+Review each entry and suggest corrections for:
+- County spelling: Verify Texas county names are spelled correctly.
+- Interest range: Interest values should be between 0 and 1 (decimal format). Flag values that seem unreasonably high or zero.
+- Legal description format: Should follow standard Texas format (e.g., "A-123" for abstracts, block/section notation).
+- Owner name formatting: Convert ALL CAPS to Title Case. Keep entity abbreviations uppercase.
+- RRC lease number: If present, should be numeric.
+- Well type: Should be "oil", "gas", or "both" if specified.
+
+Only suggest changes where you are confident there is an actual error.""",
+
+    "revenue": """You are a data quality reviewer for revenue statement data extracted from EnergyLink and Energy Transfer PDFs.
+Review each entry and suggest corrections for:
+- Product code validity: Common codes include OIL, GAS, NGL, COND. Flag unusual or empty product codes.
+- Interest sanity: decimal_interest should be between 0 and 1. Flag values outside this range.
+- Financial math: owner_value should approximately equal owner_volume x avg_price. Flag large discrepancies.
+- Date consistency: sales_date should be a valid date format (MM/YYYY or similar).
+- Net revenue check: owner_net_revenue should approximately equal owner_value - owner_tax_amount - owner_deduct_amount.
+
+Only suggest changes where you are confident there is an actual error.""",
+
+    "ecf": """You are a data quality reviewer for ECF (Exhibit C Filing / Convey 640) data from Oklahoma OCC filings.
+This data was merged from two sources: a PDF filing and a Convey 640 CSV spreadsheet.
+
+Review each entry and suggest corrections for:
+- Name casing: Convert ALL CAPS names to proper Title Case. Keep entity abbreviations uppercase (LLC, LP, INC, CO).
+- Entity type vs name mismatch: If name contains "Trust", "Estate", "LLC", etc. but entity_type doesn't match, suggest correction.
+- Address completeness: Flag entries missing city, state, or zip_code when mailing_address is present.
+- State abbreviation: Ensure state is a valid 2-letter US state code.
+- ZIP code format: Should be 5 digits or 5+4 format.
+- Suffix format: Verify suffixes are standardized (Jr, Sr, I, II, III, IV -- not spelled out).
+- Duplicate detection: Flag entries with very similar names that may be duplicates.
+
+Only suggest changes where you are confident there is an actual error.""",
+}
+
+REVENUE_VERIFY_PROMPT = """You are verifying revenue statement data that has already been extracted from PDFs.
+Your job is to find and fix gaps, NOT re-extract. The data has already been parsed.
+
+Focus on:
+1. Missing product_code: Infer from context (property name containing "oil"/"gas", adjacent rows, operator type). Common codes: OIL, GAS, NGL, COND.
+2. Missing interest_type: Infer from decimal_interest magnitude (RI typically 0.001-0.25, WI typically 0.25-1.0, ORRI typically 0.001-0.05).
+3. Financial math verification: owner_value should approximately equal owner_volume * avg_price (within 10%). Flag large discrepancies.
+4. Net revenue check: owner_net_revenue should approximately equal owner_value - owner_tax_amount - owner_deduct_amount. Calculate if missing.
+5. Suspicious values: Flag zero or negative owner_value when volume exists, or unreasonably large values (>$1M per row).
+
+Only suggest changes where you are confident. For math verification, use "medium" confidence.
+Return suggestions as JSON with: entry_index, field, current_value, suggested_value, reason, confidence (high/medium/low)."""
+
+# Response schema for validation prompts (same structure as CLEANUP_RESPONSE_SCHEMA)
+VALIDATION_RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
         "suggestions": {
