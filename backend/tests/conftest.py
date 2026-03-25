@@ -13,7 +13,7 @@ from app.main import app
 @pytest.fixture
 def mock_user() -> dict:
     """Return a synthetic authenticated user."""
-    return {"email": "test@example.com", "uid": "test-uid"}
+    return {"email": "test@example.com", "uid": "test-uid", "role": "user", "scope": "all", "tools": ["extract", "title", "proration", "revenue"]}
 
 
 @pytest_asyncio.fixture
@@ -34,7 +34,7 @@ async def authenticated_client(mock_user: dict):
 @pytest.fixture
 def mock_admin_user() -> dict:
     """Return a synthetic authenticated admin user."""
-    return {"email": "james@tablerocktx.com", "uid": "admin-uid"}
+    return {"email": "james@tablerocktx.com", "uid": "admin-uid", "role": "admin", "scope": "all", "tools": ["extract", "title", "proration", "revenue"]}
 
 
 @pytest_asyncio.fixture
