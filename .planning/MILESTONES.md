@@ -2,8 +2,9 @@
 
 ## v1.8 Preview System Overhaul (Shipped: 2026-03-24)
 
-**Phases completed:** 4 phases, 4 commits
-**Commits:** 4 (00fafd1..148265a)
+**Phases completed:** 4 phases, 6 commits
+**Commits:** 00fafd1..f1ea148
+**Files changed:** 23 (+565 / -282)
 **Timeline:** 1 day (2026-03-24)
 
 **Key accomplishments:**
