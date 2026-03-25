@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Full On-Prem Migration
-status: Ready to plan
-stopped_at: Completed 22-02-PLAN.md
-last_updated: "2026-03-25T19:29:37.509Z"
+status: Ready to execute
+stopped_at: Completed 23-01-PLAN.md
+last_updated: "2026-03-25T20:09:58.652Z"
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Phase 22 — Database Models & Schema
+**Current focus:** Phase 23 — Auth Backend
 
 ## Current Position
 
-Phase: 23
-Plan: Not started
+Phase: 23 (Auth Backend) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -44,6 +44,7 @@ Plan: Not started
 
 | Phase 22-01 P01 | 2min | 1 tasks | 2 files |
 | Phase 22 P02 | 2min | 2 tasks | 5 files |
+| Phase 23 P01 | 20min | 2 tasks | 8 files |
 
 ### Decisions
 
@@ -58,6 +59,9 @@ Plan: Not started
 - [Phase 22-01]: User.id gets uuid4 default callable for local auth
 - [Phase 22]: env.py overrides sqlalchemy.url from app settings (single source of truth for DB URL)
 - [Phase 22]: init_db() guarded by alembic_version table check (safe coexistence with Alembic)
+- [Phase 23]: BcryptHasher explicit instantiation (PasswordHash.recommended() requires argon2)
+- [Phase 23]: is_user_admin keeps JSON allowlist check (dual-path until Phase 25)
+- [Phase 23]: require_admin checks user dict role with james@ email fallback
 
 ### Pending Todos
 
@@ -70,6 +74,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-25T19:23:37.523Z
-Stopped at: Completed 22-02-PLAN.md
+Last session: 2026-03-25T20:09:58.649Z
+Stopped at: Completed 23-01-PLAN.md
 Resume file: None

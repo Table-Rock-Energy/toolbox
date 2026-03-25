@@ -11,7 +11,7 @@ Requirements for on-prem migration. Each maps to roadmap phases.
 
 - [ ] **AUTH-01**: User can log in with email and password against local PostgreSQL users table
 - [ ] **AUTH-02**: Backend provides /api/auth/login returning JWT access token and /api/auth/me returning user profile
-- [ ] **AUTH-03**: Backend verifies JWT tokens in require_auth/require_admin dependencies (replacing Firebase token verification)
+- [x] **AUTH-03**: Backend verifies JWT tokens in require_auth/require_admin dependencies (replacing Firebase token verification)
 - [ ] **AUTH-04**: Admin can create initial admin user via CLI seed script (james@tablerocktx.com)
 - [ ] **AUTH-05**: Frontend uses local auth context with JWT storage, 401 refresh, and logout (replacing Firebase AuthContext)
 - [ ] **AUTH-06**: All Firebase imports, packages (frontend firebase npm + backend firebase-admin), and firebase.ts are removed
@@ -73,7 +73,7 @@ Deferred to a later milestone. Tracked but not in current roadmap.
 |-------------|-------|--------|
 | AUTH-01 | Phase 23 | Pending |
 | AUTH-02 | Phase 23 | Pending |
-| AUTH-03 | Phase 23 | Pending |
+| AUTH-03 | Phase 23 | Complete |
 | AUTH-04 | Phase 23 | Pending |
 | AUTH-05 | Phase 24 | Pending |
 | AUTH-06 | Phase 24 | Pending |

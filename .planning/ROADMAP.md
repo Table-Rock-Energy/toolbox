@@ -120,7 +120,7 @@ Plans:
   5. App fails fast at startup if JWT_SECRET_KEY is missing in production
 **Plans**: 2 plans
 Plans:
-- [ ] 23-01-PLAN.md -- Security module, JWT config, auth.py rewrite, SSE/admin fixes, startup check
+- [x] 23-01-PLAN.md -- Security module, JWT config, auth.py rewrite, SSE/admin fixes, startup check
 - [ ] 23-02-PLAN.md -- Auth API endpoints (login/me), seed script, tests
 
 ### Phase 24: Auth Frontend & Firebase Removal
@@ -179,7 +179,7 @@ Phases 22 -> 23 -> 24 -> 25 -> 26 -> 27
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 22. Database Models & Schema | v2.0 | 2/2 | Complete    | 2026-03-25 |
-| 23. Auth Backend | v2.0 | 0/2 | Not started | - |
+| 23. Auth Backend | v2.0 | 1/2 | In Progress|  |
 | 24. Auth Frontend & Firebase Removal | v2.0 | 0/0 | Not started | - |
 | 25. Database Service Port | v2.0 | 0/0 | Not started | - |
 | 26. AI Provider Swap | v2.0 | 0/0 | Not started | - |
