@@ -55,14 +55,14 @@ interface GoogleCloudSettings {
 }
 
 export default function AdminSettings() {
-  const { getIdToken } = useAuth()
+  const { getToken } = useAuth()
 
-  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
-    const token = await getIdToken()
+  const authHeaders = useCallback((): Record<string, string> => {
+    const token = getToken()
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
-  }, [getIdToken])
+  }, [getToken])
 
   // Users state
   const [users, setUsers] = useState<UserEntry[]>([])
@@ -191,7 +191,7 @@ export default function AdminSettings() {
 
   const fetchUsers = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/users`, { headers: await authHeaders() })
+      const res = await fetch(`${API_BASE}/admin/users`, { headers: authHeaders() })
       if (res.ok) {
         const data = await res.json()
         setUsers(data.users)
@@ -205,7 +205,7 @@ export default function AdminSettings() {
 
   const fetchOptions = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/options`, { headers: await authHeaders() })
+      const res = await fetch(`${API_BASE}/admin/options`, { headers: authHeaders() })
       if (res.ok) {
         const data = await res.json()
         setOptions(data)
@@ -217,7 +217,7 @@ export default function AdminSettings() {
 
   const fetchGoogleCloudSettings = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/settings/google-cloud`, { headers: await authHeaders() })
+      const res = await fetch(`${API_BASE}/admin/settings/google-cloud`, { headers: authHeaders() })
       if (res.ok) {
         const data = await res.json()
         setGoogleCloud(data)
@@ -263,7 +263,7 @@ export default function AdminSettings() {
       }
       const res = await fetch(`${API_BASE}/admin/settings/google-cloud`, {
         method: 'PUT',
-        headers: await authHeaders(),
+        headers: authHeaders(),
         body: JSON.stringify(body),
       })
       if (!res.ok) throw new Error('Failed to update Google Cloud settings')
@@ -400,7 +400,7 @@ export default function AdminSettings() {
 
         const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(editingUser.email)}`, {
           method: 'PUT',
-          headers: await authHeaders(),
+          headers: authHeaders(),
           body: JSON.stringify(updateBody),
         })
 
@@ -430,7 +430,7 @@ export default function AdminSettings() {
 
         const res = await fetch(`${API_BASE}/admin/users`, {
           method: 'POST',
-          headers: await authHeaders(),
+          headers: authHeaders(),
           body: JSON.stringify(addBody),
         })
 
@@ -458,7 +458,7 @@ export default function AdminSettings() {
     try {
       const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(email)}`, {
         method: 'DELETE',
-        headers: await authHeaders(),
+        headers: authHeaders(),
       })
 
       if (!res.ok) {
@@ -1313,7 +1313,7 @@ export default function AdminSettings() {
                   <p className="text-xs text-gray-500 mt-1">
                     {editingUser
                       ? 'Sets a new password for email/password sign-in. Leave blank to keep unchanged.'
-                      : 'Creates a Firebase account with email/password sign-in. Leave blank for Google Sign-In only.'}
+                      : 'Sets an initial password for the account. Required for login.'}
                   </p>
                 </div>
 

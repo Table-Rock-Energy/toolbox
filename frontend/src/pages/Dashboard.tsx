@@ -99,14 +99,14 @@ const toolPaths: Record<string, string> = {
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { getIdToken } = useAuth()
+  const { getToken } = useAuth()
 
-  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
-    const token = await getIdToken()
+  const authHeaders = useCallback((): Record<string, string> => {
+    const token = getToken()
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
-  }, [getIdToken])
+  }, [getToken])
 
   const [recentJobs, setRecentJobs] = useState<RecentJob[]>([])
   const [toolCounts, setToolCounts] = useState<Record<string, number>>({})
@@ -115,7 +115,7 @@ export default function Dashboard() {
     const fetchJobs = async () => {
       try {
         const response = await fetch(`${API_BASE}/history/jobs?limit=50`, {
-          headers: await authHeaders(),
+          headers: authHeaders(),
         })
         if (!response.ok) return
         const data = await response.json()

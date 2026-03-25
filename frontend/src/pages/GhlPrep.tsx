@@ -46,15 +46,15 @@ interface GhlPrepJob {
 type ViewMode = 'normal' | 'flagged' | 'failed-contacts'
 
 export default function GhlPrep() {
-  const { user, userName, getIdToken } = useAuth()
-  const { panelCollapsed, setPanelCollapsed, togglePanel } = useToolLayout('ghl-prep', user?.uid, STORAGE_KEY_PREFIX)
+  const { user, userName, getToken } = useAuth()
+  const { panelCollapsed, setPanelCollapsed, togglePanel } = useToolLayout('ghl-prep', user?.id, STORAGE_KEY_PREFIX)
 
-  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
-    const token = await getIdToken()
+  const authHeaders = useCallback((): Record<string, string> => {
+    const token = getToken()
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
-  }, [getIdToken])
+  }, [getToken])
 
   const [jobs, setJobs] = useState<GhlPrepJob[]>([])
   const [activeJob, setActiveJob] = useState<GhlPrepJob | null>(null)
@@ -96,7 +96,7 @@ export default function GhlPrep() {
     const loadJobs = async () => {
       setIsLoadingJobs(true)
       try {
-        const hdrs = await authHeaders()
+        const hdrs = authHeaders()
         const response = await fetch(`${API_BASE}/history/jobs?tool=ghl-prep&limit=20`, { headers: hdrs })
         if (!response.ok) return
         const data = await response.json()
@@ -188,7 +188,7 @@ export default function GhlPrep() {
       return
     }
     try {
-      const hdrs = await authHeaders()
+      const hdrs = authHeaders()
       const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}`, { method: 'DELETE', headers: hdrs })
       if (response.status === 403) {
         setDeleteError('You can only delete jobs you created. Contact an admin if this job needs to be removed.')
@@ -346,7 +346,7 @@ export default function GhlPrep() {
       const formData = new FormData()
       formData.append('file', file)
 
-      const hdrs = await authHeaders()
+      const hdrs = authHeaders()
       const response = await fetch(`${API_BASE}/ghl-prep/upload`, {
         method: 'POST',
         headers: {
@@ -408,7 +408,7 @@ export default function GhlPrep() {
       )
 
     try {
-      const hdrs = await authHeaders()
+      const hdrs = authHeaders()
       const response = await fetch(`${API_BASE}/ghl-prep/export/csv`, {
         method: 'POST',
         headers: {
@@ -446,7 +446,7 @@ export default function GhlPrep() {
     }
 
     try {
-      const hdrs = await authHeaders()
+      const hdrs = authHeaders()
       const response = await fetch(`${API_BASE}/ghl-prep/export/flagged-csv`, {
         method: 'POST',
         headers: { ...hdrs, 'Content-Type': 'application/json' },

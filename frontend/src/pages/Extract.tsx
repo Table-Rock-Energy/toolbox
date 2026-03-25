@@ -107,15 +107,15 @@ const STORAGE_KEY_PREFIX = 'extract-visible-columns'
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Extract() {
-  const { user, userName, getIdToken } = useAuth()
+  const { user, userName, getToken } = useAuth()
 
-  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
-    const token = await getIdToken()
+  const authHeaders = useCallback((): Record<string, string> => {
+    const token = getToken()
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
-  }, [getIdToken])
-  const { panelCollapsed, setPanelCollapsed, togglePanel, activeStorageKey } = useToolLayout('extract', user?.uid, STORAGE_KEY_PREFIX)
+  }, [getToken])
+  const { panelCollapsed, setPanelCollapsed, togglePanel, activeStorageKey } = useToolLayout('extract', user?.id, STORAGE_KEY_PREFIX)
   const [jobs, setJobs] = useState<ExtractJob[]>([])
   const [activeJob, setActiveJob] = useState<ExtractJob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -194,7 +194,7 @@ export default function Extract() {
   useEffect(() => {
     const loadJobs = async () => {
       try {
-        const hdrs = await authHeaders()
+        const hdrs = authHeaders()
         const response = await fetch(`${API_BASE}/history/jobs?tool=extract&limit=20`, { headers: hdrs })
         if (!response.ok) return
         const data = await response.json()
@@ -237,7 +237,7 @@ export default function Extract() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const headers = await authHeaders()
+      const headers = authHeaders()
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 15000)
       const response = await fetch(`${API_BASE}/extract/detect-format`, {
@@ -293,7 +293,7 @@ export default function Extract() {
       }
 
       const uploadUrl = `${API_BASE}/extract/upload${formatHint ? `?format_hint=${formatHint}` : ''}`
-      const uploadHeaders = await authHeaders()
+      const uploadHeaders = authHeaders()
       const response = await fetch(uploadUrl, {
         method: 'POST',
         headers: {
@@ -343,7 +343,7 @@ export default function Extract() {
     }
 
     try {
-      const exportHeaders = await authHeaders()
+      const exportHeaders = authHeaders()
       const response = await fetch(`${API_BASE}/extract/export/csv`, {
         method: 'POST',
         headers: {
@@ -383,7 +383,7 @@ export default function Extract() {
     if (!job.result && job.job_id) {
       setIsLoadingEntries(true)
       try {
-        const entryHeaders = await authHeaders()
+        const entryHeaders = authHeaders()
         const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}/entries`, { headers: entryHeaders })
         if (response.ok) {
           const data = await response.json()
@@ -415,7 +415,7 @@ export default function Extract() {
       return
     }
     try {
-      const delHeaders = await authHeaders()
+      const delHeaders = authHeaders()
       const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}`, { method: 'DELETE', headers: delHeaders })
       if (response.status === 403) {
         setDeleteError('You can only delete jobs you created. Contact an admin if this job needs to be removed.')

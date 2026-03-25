@@ -118,15 +118,15 @@ const ENTITY_TYPE_OPTIONS = [
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Title() {
-  const { user, userName, getIdToken } = useAuth()
-  const { panelCollapsed, setPanelCollapsed, togglePanel, activeStorageKey } = useToolLayout('title', user?.uid, STORAGE_KEY_PREFIX)
+  const { user, userName, getToken } = useAuth()
+  const { panelCollapsed, setPanelCollapsed, togglePanel, activeStorageKey } = useToolLayout('title', user?.id, STORAGE_KEY_PREFIX)
 
-  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
-    const token = await getIdToken()
+  const authHeaders = useCallback((): Record<string, string> => {
+    const token = getToken()
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
-  }, [getIdToken])
+  }, [getToken])
   const [jobs, setJobs] = useState<TitleJob[]>([])
   const [activeJob, setActiveJob] = useState<TitleJob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -209,7 +209,7 @@ export default function Title() {
   useEffect(() => {
     const loadRecentJobs = async () => {
       try {
-        const response = await fetch(`${API_BASE}/history/jobs?tool=title&limit=20`, { headers: await authHeaders() })
+        const response = await fetch(`${API_BASE}/history/jobs?tool=title&limit=20`, { headers: authHeaders() })
         if (!response.ok) return
         const data = await response.json()
         const jobsArray = data.jobs || (Array.isArray(data) ? data : [])
@@ -425,7 +425,7 @@ export default function Title() {
       const formData = new FormData()
       formData.append('file', file)
 
-      const hdrs = await authHeaders()
+      const hdrs = authHeaders()
       const response = await fetch(`${API_BASE}/title/upload`, {
         method: 'POST',
         headers: {
@@ -473,7 +473,7 @@ export default function Title() {
         ? `${API_BASE}/title/export/csv`
         : `${API_BASE}/title/export/${format}`
 
-      const hdrs = await authHeaders()
+      const hdrs = authHeaders()
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -520,7 +520,7 @@ export default function Title() {
     if (job.job_id && (!job.result?.entries || job.result.entries.length === 0)) {
       setIsLoadingEntries(true)
       try {
-        const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}/entries`, { headers: await authHeaders() })
+        const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}/entries`, { headers: authHeaders() })
         if (response.ok) {
           const data = await response.json()
           const entries = Array.isArray(data) ? data : data.entries || []
@@ -554,7 +554,7 @@ export default function Title() {
       return
     }
     try {
-      const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}`, { method: 'DELETE', headers: await authHeaders() })
+      const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}`, { method: 'DELETE', headers: authHeaders() })
       if (response.status === 403) {
         setDeleteError('You can only delete jobs you created. Contact an admin if this job needs to be removed.')
         return

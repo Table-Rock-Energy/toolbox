@@ -155,15 +155,15 @@ const STORAGE_KEY_PREFIX = 'revenue-visible-columns'
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export default function Revenue() {
-  const { user, userName, getIdToken } = useAuth()
-  const { panelCollapsed, setPanelCollapsed, togglePanel, activeStorageKey } = useToolLayout('revenue', user?.uid, STORAGE_KEY_PREFIX)
+  const { user, userName, getToken } = useAuth()
+  const { panelCollapsed, setPanelCollapsed, togglePanel, activeStorageKey } = useToolLayout('revenue', user?.id, STORAGE_KEY_PREFIX)
 
-  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
-    const token = await getIdToken()
+  const authHeaders = useCallback((): Record<string, string> => {
+    const token = getToken()
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
-  }, [getIdToken])
+  }, [getToken])
 
   const [jobs, setJobs] = useState<RevenueJob[]>([])
   const [activeJob, setActiveJob] = useState<RevenueJob | null>(null)
@@ -237,7 +237,7 @@ export default function Revenue() {
     const loadJobs = async () => {
       try {
         const response = await fetch(`${API_BASE}/history/jobs?tool=revenue&limit=20`, {
-          headers: await authHeaders(),
+          headers: authHeaders(),
         })
         if (!response.ok) return
         const data = await response.json()
@@ -393,7 +393,7 @@ export default function Revenue() {
       const formData = new FormData()
       files.forEach(f => formData.append('files', f))
 
-      const hdrs = await authHeaders()
+      const hdrs = authHeaders()
       const response = await fetch(`${API_BASE}/revenue/upload-stream`, {
         method: 'POST',
         headers: {
@@ -463,7 +463,7 @@ export default function Revenue() {
     }
 
     try {
-      const hdrs = await authHeaders()
+      const hdrs = authHeaders()
       const response = await fetch(`${API_BASE}/revenue/export/csv`, {
         method: 'POST',
         headers: {
@@ -501,7 +501,7 @@ export default function Revenue() {
       setIsLoadingEntries(true)
       try {
         const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}/entries`, {
-          headers: await authHeaders(),
+          headers: authHeaders(),
         })
         if (response.ok) {
           const data = await response.json()
@@ -535,7 +535,7 @@ export default function Revenue() {
     try {
       const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}`, {
         method: 'DELETE',
-        headers: await authHeaders(),
+        headers: authHeaders(),
       })
       if (response.status === 403) {
         setDeleteError('You can only delete jobs you created. Contact an admin if this job needs to be removed.')

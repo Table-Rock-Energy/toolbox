@@ -157,15 +157,15 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
 
 export default function Proration() {
-  const { user, userName, getIdToken } = useAuth()
+  const { user, userName, getToken } = useAuth()
 
-  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
-    const token = await getIdToken()
+  const authHeaders = useCallback((): Record<string, string> => {
+    const token = getToken()
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
-  }, [getIdToken])
-  const { panelCollapsed, setPanelCollapsed, togglePanel, activeStorageKey } = useToolLayout('proration', user?.uid, STORAGE_KEY_PREFIX)
+  }, [getToken])
+  const { panelCollapsed, setPanelCollapsed, togglePanel, activeStorageKey } = useToolLayout('proration', user?.id, STORAGE_KEY_PREFIX)
   const [jobs, setJobs] = useState<ProrationJob[]>([])
   const [jobsLoading, setJobsLoading] = useState(true)
   const [activeJob, setActiveJob] = useState<ProrationJob | null>(null)
@@ -285,7 +285,7 @@ export default function Proration() {
     const checkActiveJob = async () => {
       try {
         const response = await fetch(`${API_BASE}/proration/rrc/download/active`, {
-          headers: await authHeaders(),
+          headers: authHeaders(),
         })
         if (response.ok) {
           const data = await response.json()
@@ -321,7 +321,7 @@ export default function Proration() {
     const loadRecentJobs = async () => {
       try {
         const response = await fetch(`${API_BASE}/history/jobs?tool=proration&limit=20`, {
-          headers: await authHeaders(),
+          headers: authHeaders(),
         })
         if (response.ok) {
           const data = await response.json()
@@ -471,7 +471,7 @@ export default function Proration() {
     rrcPollRef.current = setInterval(async () => {
       try {
         const response = await fetch(`${API_BASE}/proration/rrc/download/${jobId}/status`, {
-          headers: await authHeaders(),
+          headers: authHeaders(),
         })
         if (response.ok) {
           const job: RRCSyncJob = await response.json()
@@ -506,7 +506,7 @@ export default function Proration() {
   const checkRRCStatus = async () => {
     try {
       const response = await fetch(`${API_BASE}/proration/rrc/status`, {
-        headers: await authHeaders(),
+        headers: authHeaders(),
       })
       if (response.ok) {
         const data = await response.json()
@@ -554,7 +554,7 @@ export default function Proration() {
       formData.append('min_appraisal_value', String(minAppraisalValue))
       formData.append('well_type_override', wellTypeOverride)
 
-      const hdrs = await authHeaders()
+      const hdrs = authHeaders()
       const response = await fetch(`${API_BASE}/proration/upload`, {
         method: 'POST',
         headers: {
@@ -601,7 +601,7 @@ export default function Proration() {
     if (preview.entriesToExport.length === 0 || !activeJob) return
 
     try {
-      const hdrs = await authHeaders()
+      const hdrs = authHeaders()
       const response = await fetch(`${API_BASE}/proration/export/${format}`, {
         method: 'POST',
         headers: {
@@ -641,7 +641,7 @@ export default function Proration() {
       setIsLoadingEntries(true)
       try {
         const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}/entries`, {
-          headers: await authHeaders(),
+          headers: authHeaders(),
         })
         if (response.ok) {
           const data = await response.json()
@@ -676,7 +676,7 @@ export default function Proration() {
     try {
       const response = await fetch(`${API_BASE}/history/jobs/${job.job_id}`, {
         method: 'DELETE',
-        headers: await authHeaders(),
+        headers: authHeaders(),
       })
       if (response.status === 403) {
         setDeleteError('You can only delete jobs you created. Contact an admin if this job needs to be removed.')
@@ -723,7 +723,7 @@ export default function Proration() {
     if (!editingRow || !editingRow.district || !editingRow.lease_number) return
     setIsRetryingRrc(true)
     try {
-      const hdrs = await authHeaders()
+      const hdrs = authHeaders()
       const response = await fetch(`${API_BASE}/proration/rrc/fetch-missing`, {
         method: 'POST',
         headers: { ...hdrs, 'Content-Type': 'application/json' },
@@ -762,7 +762,7 @@ export default function Proration() {
     setFetchProgress({ event: 'started', total: unmatchedRows.length })
 
     try {
-      const hdrs = await authHeaders()
+      const hdrs = authHeaders()
       const response = await fetch(`${API_BASE}/proration/rrc/fetch-missing`, {
         method: 'POST',
         headers: { ...hdrs, 'Content-Type': 'application/json' },

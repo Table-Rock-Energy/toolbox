@@ -91,15 +91,16 @@ export default function GhlSendModal({
   const [activeJobId, setActiveJobId] = useState<string | null>(propActiveJobId)
 
   // Auth token for SSE connection
-  const { getIdToken } = useAuth()
+  const { getToken } = useAuth()
   const [authToken, setAuthToken] = useState<string | null>(null)
 
-  // Fetch auth token when activeJobId is set
+  // Set auth token when activeJobId is set
   useEffect(() => {
     if (activeJobId) {
-      getIdToken().then(token => setAuthToken(token))
+      const token = getToken()
+      if (token) setAuthToken(token)
     }
-  }, [activeJobId, getIdToken])
+  }, [activeJobId, getToken])
 
   // SSE progress hook
   const { progress, completionData, isComplete, error: sseError, disconnect } = useSSEProgress(activeJobId, authToken)

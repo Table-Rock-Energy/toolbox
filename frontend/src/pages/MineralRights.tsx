@@ -99,14 +99,14 @@ const verificationBadge = (status: string) => {
 }
 
 export default function MineralRights() {
-  const { getIdToken } = useAuth()
+  const { getToken } = useAuth()
 
-  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
-    const token = await getIdToken()
+  const authHeaders = useCallback((): Record<string, string> => {
+    const token = getToken()
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
     return headers
-  }, [getIdToken])
+  }, [getToken])
 
   const [status, setStatus] = useState<PipelineStatus | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -120,7 +120,7 @@ export default function MineralRights() {
   const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/etl/status`, {
-        headers: await authHeaders(),
+        headers: authHeaders(),
       })
       if (res.ok) {
         setStatus(await res.json())
@@ -139,7 +139,7 @@ export default function MineralRights() {
     if (!searchQuery.trim()) return
     setSearchLoading(true)
     try {
-      const hdrs = await authHeaders()
+      const hdrs = authHeaders()
       const res = await fetch(`${API_BASE}/etl/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...hdrs },
@@ -161,7 +161,7 @@ export default function MineralRights() {
     setLoading(true)
     try {
       const res = await fetch(`${API_BASE}/etl/entities/${entityId}`, {
-        headers: await authHeaders(),
+        headers: authHeaders(),
       })
       if (res.ok) {
         const data = await res.json()
