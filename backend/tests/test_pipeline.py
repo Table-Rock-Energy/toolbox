@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import pytest
-import pytest_asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from app.models.pipeline import ProposedChange
 
@@ -497,23 +496,14 @@ class TestBatchConfig:
             runtime_settings.batch_max_concurrency = original_concurrency
             runtime_settings.batch_max_retries = original_retries
 
-    def test_rate_lock_exists(self):
-        """gemini_service has a threading.Lock for rate-limit state."""
-        import threading
-        from app.services import gemini_service
-
-        assert hasattr(gemini_service, "_rate_lock")
-        assert isinstance(gemini_service._rate_lock, threading.Lock)
-
     def test_google_cloud_settings_response_has_batch_fields(self):
         """GoogleCloudSettingsResponse model accepts batch config fields."""
         from app.api.admin import GoogleCloudSettingsResponse
 
         resp = GoogleCloudSettingsResponse(
             has_key=True,
-            gemini_enabled=True,
-            gemini_model="gemini-2.5-flash",
-            gemini_monthly_budget=15.0,
+            ai_enabled=True,
+            ai_model="qwen3.5-35b-a3b",
             maps_enabled=False,
             places_enabled=False,
             batch_size=50,
@@ -525,173 +515,8 @@ class TestBatchConfig:
         assert resp.batch_max_retries == 2
 
 
-class TestBatchConcurrency:
-    """Test concurrent batch execution in GeminiProvider."""
-
-    @pytest.mark.asyncio
-    async def test_provider_uses_semaphore_with_settings(self):
-        """GeminiProvider.cleanup_entries uses asyncio.Semaphore from settings."""
-        from app.services.llm.gemini_provider import GeminiProvider
-        from app.core.config import settings as runtime_settings
-
-        original_batch_size = runtime_settings.batch_size
-        original_concurrency = runtime_settings.batch_max_concurrency
-
-        try:
-            runtime_settings.batch_size = 20
-            runtime_settings.batch_max_concurrency = 2
-
-            provider = GeminiProvider()
-            entries = [{"name": f"Person {i}"} for i in range(60)]
-
-            # Mock _cleanup_batch_sync to return empty suggestions
-            with patch(
-                "app.services.llm.gemini_provider._cleanup_batch_sync",
-                return_value=[],
-            ), patch(
-                "app.services.gemini_service._get_client",
-                return_value=MagicMock(),
-            ):
-                changes = await provider.cleanup_entries("extract", entries)
-
-            assert isinstance(changes, list)
-        finally:
-            runtime_settings.batch_size = original_batch_size
-            runtime_settings.batch_max_concurrency = original_concurrency
-
-    @pytest.mark.asyncio
-    async def test_provider_creates_correct_number_of_batches(self):
-        """With 60 entries and batch_size=25, creates 3 batches."""
-        from app.services.llm.gemini_provider import GeminiProvider
-        from app.core.config import settings as runtime_settings
-
-        original_batch_size = runtime_settings.batch_size
-        original_concurrency = runtime_settings.batch_max_concurrency
-
-        try:
-            runtime_settings.batch_size = 25
-            runtime_settings.batch_max_concurrency = 2
-
-            provider = GeminiProvider()
-            entries = [{"name": f"Person {i}"} for i in range(60)]
-            call_count = 0
-
-            def mock_batch_sync(client, tool, batch, offset, source_data=None):
-                nonlocal call_count
-                call_count += 1
-                return []
-
-            with patch(
-                "app.services.llm.gemini_provider._cleanup_batch_sync",
-                side_effect=mock_batch_sync,
-            ), patch(
-                "app.services.gemini_service._get_client",
-                return_value=MagicMock(),
-            ):
-                await provider.cleanup_entries("extract", entries)
-
-            assert call_count == 3  # ceil(60/25) = 3
-        finally:
-            runtime_settings.batch_size = original_batch_size
-            runtime_settings.batch_max_concurrency = original_concurrency
-
-    @pytest.mark.asyncio
-    async def test_provider_reads_batch_size_from_settings(self):
-        """Provider reads batch_size from runtime settings, not hardcoded constant."""
-        from app.services.llm.gemini_provider import GeminiProvider
-        from app.core.config import settings as runtime_settings
-
-        original_batch_size = runtime_settings.batch_size
-        original_concurrency = runtime_settings.batch_max_concurrency
-
-        try:
-            runtime_settings.batch_size = 10
-            runtime_settings.batch_max_concurrency = 1
-
-            provider = GeminiProvider()
-            entries = [{"name": f"Person {i}"} for i in range(30)]
-            call_count = 0
-
-            def mock_batch_sync(client, tool, batch, offset, source_data=None):
-                nonlocal call_count
-                call_count += 1
-                return []
-
-            with patch(
-                "app.services.llm.gemini_provider._cleanup_batch_sync",
-                side_effect=mock_batch_sync,
-            ), patch(
-                "app.services.gemini_service._get_client",
-                return_value=MagicMock(),
-            ):
-                await provider.cleanup_entries("extract", entries)
-
-            assert call_count == 3  # ceil(30/10) = 3
-        finally:
-            runtime_settings.batch_size = original_batch_size
-            runtime_settings.batch_max_concurrency = original_concurrency
-
-
 class TestDisconnectDetection:
     """Test disconnect detection in pipeline cleanup."""
-
-    @pytest.mark.asyncio
-    async def test_provider_stops_on_disconnect(self):
-        """When disconnect_check returns True, provider stops and returns partial results."""
-        from app.services.llm.gemini_provider import GeminiProvider
-        from app.core.config import settings as runtime_settings
-        from app.models.ai_validation import AiSuggestion, ConfidenceLevel
-
-        original_batch_size = runtime_settings.batch_size
-        original_concurrency = runtime_settings.batch_max_concurrency
-
-        try:
-            runtime_settings.batch_size = 10
-            runtime_settings.batch_max_concurrency = 1  # Sequential for predictability
-
-            provider = GeminiProvider()
-            entries = [{"name": f"Person {i}"} for i in range(30)]
-            call_count = 0
-
-            def mock_batch_sync(client, tool, batch, offset, source_data=None):
-                nonlocal call_count
-                call_count += 1
-                return [
-                    AiSuggestion(
-                        entry_index=offset,
-                        field="name",
-                        current_value="OLD",
-                        suggested_value="New",
-                        reason="test",
-                        confidence=ConfidenceLevel.HIGH,
-                    )
-                ]
-
-            # Disconnect after first batch
-            disconnect_calls = 0
-
-            def disconnect_check():
-                nonlocal disconnect_calls
-                disconnect_calls += 1
-                return disconnect_calls > 1  # Allow first batch, block rest
-
-            with patch(
-                "app.services.llm.gemini_provider._cleanup_batch_sync",
-                side_effect=mock_batch_sync,
-            ), patch(
-                "app.services.gemini_service._get_client",
-                return_value=MagicMock(),
-            ):
-                changes = await provider.cleanup_entries(
-                    "extract", entries, disconnect_check=disconnect_check
-                )
-
-            # Should have partial results (only first batch completed)
-            assert call_count == 1
-            assert len(changes) >= 1
-        finally:
-            runtime_settings.batch_size = original_batch_size
-            runtime_settings.batch_max_concurrency = original_concurrency
 
     def test_protocol_includes_disconnect_check(self):
         """LLMProvider protocol includes disconnect_check parameter."""

@@ -290,16 +290,11 @@ export interface PostProcessResult {
 export interface AiStatusResponse {
   enabled: boolean
   model: string
-  requests_remaining_minute: number
-  requests_remaining_day: number
-  monthly_budget: number
-  monthly_spend: number
-  monthly_budget_remaining: number
 }
 
 export interface PipelineStatusResponse {
   google_maps_enabled: boolean
-  gemini_enabled: boolean
+  ai_enabled: boolean
 }
 
 export const aiApi = {

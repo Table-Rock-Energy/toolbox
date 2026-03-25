@@ -141,7 +141,7 @@ CLEANUP_RESPONSE_SCHEMA = {
 }
 
 # Validation prompts -- flag/review existing data (passive review)
-# Originally from gemini_service.py, moved here so all LLM providers can use them.
+# Centralized validation prompts for all LLM providers.
 TOOL_PROMPTS: dict[str, str] = {
     "extract": """You are a data quality reviewer for oil and gas party extraction data from OCC Exhibit A PDFs.
 Review each entry and suggest corrections for:

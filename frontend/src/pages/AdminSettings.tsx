@@ -44,9 +44,8 @@ interface AdminOptions {
 
 interface GoogleCloudSettings {
   has_key: boolean
-  gemini_enabled: boolean
-  gemini_model: string
-  gemini_monthly_budget: number
+  ai_enabled: boolean
+  ai_model: string
   maps_enabled: boolean
   places_enabled: boolean
   batch_size: number
@@ -87,14 +86,13 @@ export default function AdminSettings() {
 
   // Google Cloud API state
   const [googleCloud, setGoogleCloud] = useState<GoogleCloudSettings>({
-    has_key: false, gemini_enabled: false, gemini_model: 'gemini-2.5-flash',
-    gemini_monthly_budget: 15.0, maps_enabled: false, places_enabled: false,
+    has_key: false, ai_enabled: false, ai_model: 'qwen3.5-35b-a3b',
+    maps_enabled: false, places_enabled: false,
     batch_size: 25, batch_max_concurrency: 2, batch_max_retries: 1,
   })
   const [googleCloudApiKey, setGoogleCloudApiKey] = useState('')
-  const [geminiEnabled, setGeminiEnabled] = useState(false)
-  const [geminiModel, setGeminiModel] = useState('gemini-2.5-flash')
-  const [geminiBudget, setGeminiBudget] = useState(15.0)
+  const [aiEnabled, setAiEnabled] = useState(false)
+  const [aiModel, setAiModel] = useState('qwen3.5-35b-a3b')
   const [mapsEnabled, setMapsEnabled] = useState(false)
   const [placesEnabled, setPlacesEnabled] = useState(false)
   const [batchSize, setBatchSize] = useState(25)
@@ -221,9 +219,8 @@ export default function AdminSettings() {
       if (res.ok) {
         const data = await res.json()
         setGoogleCloud(data)
-        setGeminiEnabled(data.gemini_enabled)
-        setGeminiModel(data.gemini_model)
-        setGeminiBudget(data.gemini_monthly_budget)
+        setAiEnabled(data.ai_enabled)
+        setAiModel(data.ai_model)
         setMapsEnabled(data.maps_enabled)
         setPlacesEnabled(data.places_enabled)
         setBatchSize(data.batch_size ?? 25)
@@ -249,9 +246,8 @@ export default function AdminSettings() {
     setGoogleCloudSuccess('')
     try {
       const body: Record<string, unknown> = {
-        gemini_enabled: geminiEnabled,
-        gemini_model: geminiModel,
-        gemini_monthly_budget: geminiBudget,
+        ai_enabled: aiEnabled,
+        ai_model: aiModel,
         maps_enabled: mapsEnabled,
         places_enabled: placesEnabled,
         batch_size: batchSize,
@@ -640,7 +636,7 @@ export default function AdminSettings() {
               {googleCloud.has_key
                 ? (() => {
                     const active = [
-                      googleCloud.gemini_enabled && 'Gemini AI',
+                      googleCloud.ai_enabled && 'AI Provider',
                       googleCloud.maps_enabled && 'Address Validation',
                       googleCloud.places_enabled && 'Places',
                     ].filter(Boolean)
@@ -676,21 +672,21 @@ export default function AdminSettings() {
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Services</p>
             </div>
             <div className="divide-y divide-gray-100">
-              {/* Gemini AI toggle */}
+              {/* AI Provider toggle */}
               <div className="flex items-center justify-between px-4 py-3">
                 <div>
-                  <p className="font-medium text-gray-900 text-sm">Generative AI (Gemini)</p>
-                  <p className="text-xs text-gray-500">AI-powered data validation and revenue parsing</p>
+                  <p className="font-medium text-gray-900 text-sm">AI Provider (LM Studio)</p>
+                  <p className="text-xs text-gray-500">AI-powered data validation via local LM Studio</p>
                 </div>
                 <button
-                  onClick={() => setGeminiEnabled(!geminiEnabled)}
+                  onClick={() => setAiEnabled(!aiEnabled)}
                   className={`relative w-12 h-6 rounded-full transition-colors ${
-                    geminiEnabled ? 'bg-tre-teal' : 'bg-gray-300'
+                    aiEnabled ? 'bg-tre-teal' : 'bg-gray-300'
                   }`}
                 >
                   <span
                     className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                      geminiEnabled ? 'left-7' : 'left-1'
+                      aiEnabled ? 'left-7' : 'left-1'
                     }`}
                   />
                 </button>
@@ -738,38 +734,22 @@ export default function AdminSettings() {
             </div>
           </div>
 
-          {/* Gemini-specific settings — only visible when Gemini is enabled */}
-          {geminiEnabled && (
+          {/* AI model settings — only visible when AI is enabled */}
+          {aiEnabled && (
             <div className="space-y-4 pl-4 border-l-2 border-tre-teal/30">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Model
-                </label>
-                <select
-                  value={geminiModel}
-                  onChange={(e) => setGeminiModel(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal bg-white"
-                >
-                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (fast, affordable)</option>
-                  <option value="gemini-2.5-pro">Gemini 2.5 Pro (advanced)</option>
-                  <option value="gemini-2.0-flash">Gemini 2.0 Flash (legacy)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Monthly Budget (USD)
+                  Model Name
                 </label>
                 <input
-                  type="number"
-                  value={geminiBudget}
-                  onChange={(e) => setGeminiBudget(parseFloat(e.target.value) || 0)}
-                  min={0}
-                  step={5}
+                  type="text"
+                  value={aiModel}
+                  onChange={(e) => setAiModel(e.target.value)}
+                  placeholder="qwen3.5-35b-a3b"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  AI requests will stop when the monthly budget is reached
+                  Model name as shown in LM Studio (e.g., qwen3.5-35b-a3b)
                 </p>
               </div>
             </div>
@@ -801,7 +781,7 @@ export default function AdminSettings() {
                   onChange={e => setBatchMaxConcurrency(Math.max(1, Math.min(5, parseInt(e.target.value) || 2)))}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
                 />
-                <p className="text-xs text-gray-400 mt-0.5">Parallel Gemini calls (1-5)</p>
+                <p className="text-xs text-gray-400 mt-0.5">Parallel AI calls (1-5)</p>
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Max Retries</label>

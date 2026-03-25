@@ -193,7 +193,6 @@ class OpenAIProvider:
         """Validate entries using the OpenAI-compatible API.
 
         Uses TOOL_PROMPTS (validation prompts) from prompts.py.
-        Replaces gemini_service.validate_entries().
         """
         if not self.is_available():
             return AiValidationResult(
@@ -285,10 +284,7 @@ class OpenAIProvider:
         entries: list[dict],
         context: dict | None = None,
     ) -> AiValidationResult:
-        """Verify revenue entries using the revenue-specific prompt.
-
-        Replaces gemini_service.verify_revenue_entries().
-        """
+        """Verify revenue entries using the revenue-specific prompt."""
         if not self.is_available():
             return AiValidationResult(
                 success=False,

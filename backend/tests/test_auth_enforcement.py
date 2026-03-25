@@ -163,9 +163,9 @@ async def test_unauthenticated_admin_delete_user_returns_401(unauthenticated_cli
 
 
 @pytest.mark.asyncio
-async def test_unauthenticated_admin_update_gemini_settings_returns_401(unauthenticated_client: AsyncClient):
-    """Admin update gemini settings requires auth."""
-    response = await unauthenticated_client.put("/api/admin/settings/gemini")
+async def test_unauthenticated_admin_update_ai_settings_returns_401(unauthenticated_client: AsyncClient):
+    """Admin update AI settings requires auth."""
+    response = await unauthenticated_client.put("/api/admin/settings/ai")
     assert response.status_code == 401
 
 
@@ -191,9 +191,9 @@ async def test_unauthenticated_admin_users_list_returns_401(unauthenticated_clie
 
 
 @pytest.mark.asyncio
-async def test_unauthenticated_admin_settings_gemini_returns_401(unauthenticated_client: AsyncClient):
-    """Admin gemini settings GET requires auth."""
-    response = await unauthenticated_client.get("/api/admin/settings/gemini")
+async def test_unauthenticated_admin_settings_ai_returns_401(unauthenticated_client: AsyncClient):
+    """Admin AI settings GET requires auth."""
+    response = await unauthenticated_client.get("/api/admin/settings/ai")
     assert response.status_code == 401
 
 
@@ -241,9 +241,9 @@ async def test_authenticated_nonadmin_users_list_returns_403(authenticated_clien
 
 
 @pytest.mark.asyncio
-async def test_authenticated_nonadmin_settings_gemini_returns_403(authenticated_client: AsyncClient):
-    """Authenticated non-admin gets 403 on admin gemini settings."""
-    response = await authenticated_client.get("/api/admin/settings/gemini")
+async def test_authenticated_nonadmin_settings_ai_returns_403(authenticated_client: AsyncClient):
+    """Authenticated non-admin gets 403 on admin AI settings."""
+    response = await authenticated_client.get("/api/admin/settings/ai")
     assert response.status_code == 403
 
 

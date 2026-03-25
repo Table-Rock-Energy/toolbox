@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.services.llm.prompts import CLEANUP_PROMPTS
-from app.services.gemini_service import TOOL_PROMPTS
+from app.services.llm.prompts import TOOL_PROMPTS
 
 
 class TestEcfPrompts:

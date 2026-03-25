@@ -263,9 +263,9 @@ class TestPostProcessResult:
 
 @pytest.fixture()
 def _disable_external_services(monkeypatch):
-    """Disable Gemini and Google Maps for isolated testing."""
+    """Disable AI and Google Maps for isolated testing."""
     from app.core.config import settings
-    monkeypatch.setattr(settings, "gemini_enabled", False)
+    monkeypatch.setattr(settings, "ai_provider", "none")
     monkeypatch.setattr(settings, "google_maps_enabled", False)
 
 
@@ -275,7 +275,7 @@ class TestAutoEnrichIntegration:
     """Integration tests for auto_enrich pipeline."""
 
     async def test_extract_pipeline_no_ai(self):
-        """Test extract pipeline with Gemini disabled."""
+        """Test extract pipeline with AI disabled."""
         from app.services.data_enrichment_pipeline import auto_enrich
 
         entries = [
@@ -298,7 +298,7 @@ class TestAutoEnrichIntegration:
         assert entries[0]["primary_name"] == "John Smith"
 
     async def test_revenue_pipeline_no_ai(self):
-        """Test revenue pipeline with Gemini disabled."""
+        """Test revenue pipeline with AI disabled."""
         from app.services.data_enrichment_pipeline import auto_enrich
 
         entries = [
@@ -328,8 +328,8 @@ class TestAutoEnrichIntegration:
         assert "entity_type" in result.steps_skipped
         assert entries[0]["owner"] == "Mary Jones LLC"
 
-    async def test_graceful_when_gemini_disabled(self):
-        """Pipeline returns programmatic fixes only when Gemini is off."""
+    async def test_graceful_when_ai_disabled(self):
+        """Pipeline returns programmatic fixes only when AI is off."""
         from app.services.data_enrichment_pipeline import auto_enrich
 
         entries = [{"primary_name": "TEST NAME", "entity_type": "Individual"}]

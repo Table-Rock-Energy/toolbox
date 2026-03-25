@@ -78,7 +78,7 @@ FIELD_MAPS = {
     },
 }
 
-# Gemini prompt specifically for name correction
+# AI prompt specifically for name correction
 NAME_VALIDATION_PROMPT = """You are validating person and entity names from legal documents (OCC Exhibit A filings, title opinions).
 
 For each entry, check:
@@ -323,7 +323,7 @@ async def auto_enrich(
     """Fast post-processing pipeline run during upload.
 
     Only runs instant programmatic fixes. External API calls (Google Maps,
-    Places, PDL/SearchBug, Gemini) are deferred to the user-triggered
+    Places, PDL/SearchBug, AI) are deferred to the user-triggered
     Clean Up / Validate / Enrich buttons in the pipeline API.
 
     Args:
