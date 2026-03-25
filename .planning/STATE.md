@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Full On-Prem Migration
-status: Ready to plan
-stopped_at: Completed 23-02-PLAN.md
-last_updated: "2026-03-25T20:45:25.923Z"
+status: Ready to execute
+stopped_at: Completed 24-01-PLAN.md
+last_updated: "2026-03-25T21:02:44.498Z"
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 6
+  completed_plans: 5
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Phase 23 — Auth Backend
+**Current focus:** Phase 24 — Auth Frontend & Firebase Removal
 
 ## Current Position
 
-Phase: 24
-Plan: Not started
+Phase: 24 (Auth Frontend & Firebase Removal) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -46,6 +46,7 @@ Plan: Not started
 | Phase 22 P02 | 2min | 2 tasks | 5 files |
 | Phase 23 P01 | 20min | 2 tasks | 8 files |
 | Phase 23 P02 | 13min | 2 tasks | 6 files |
+| Phase 24 P01 | 3min | 2 tasks | 4 files |
 
 ### Decisions
 
@@ -65,6 +66,9 @@ Plan: Not started
 - [Phase 23]: require_admin checks user dict role with james@ email fallback
 - [Phase 23]: Auth router mounted without router-level auth (login is public)
 - [Phase 23]: LoginResponse includes full UserProfile with is_admin flag
+- [Phase 24]: getToken is synchronous (localStorage read) -- no async for token access
+- [Phase 24]: 401 handler clears session immediately, no retry (no refresh tokens)
+- [Phase 24]: LocalUser keeps photoURL/displayName for Sidebar compatibility
 
 ### Pending Todos
 
@@ -77,6 +81,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-25T20:25:51.966Z
-Stopped at: Completed 23-02-PLAN.md
+Last session: 2026-03-25T21:02:44.494Z
+Stopped at: Completed 24-01-PLAN.md
 Resume file: None

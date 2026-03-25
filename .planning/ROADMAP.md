@@ -135,7 +135,7 @@ Plans:
   5. `npx tsc --noEmit` passes cleanly after all Firebase removal
 **Plans**: 2 plans
 Plans:
-- [ ] 24-01-PLAN.md -- AuthContext rewrite with LocalUser + JWT, backend change-password endpoint, Login Google removal
+- [x] 24-01-PLAN.md -- AuthContext rewrite with LocalUser + JWT, backend change-password endpoint, Login Google removal
 - [ ] 24-02-PLAN.md -- Settings.tsx Firebase removal, all consumer file updates, firebase.ts deletion, npm uninstall
 
 ### Phase 25: Database Service Port
@@ -183,7 +183,7 @@ Phases 22 -> 23 -> 24 -> 25 -> 26 -> 27
 |-------|-----------|----------------|--------|-----------|
 | 22. Database Models & Schema | v2.0 | 2/2 | Complete    | 2026-03-25 |
 | 23. Auth Backend | v2.0 | 2/2 | Complete    | 2026-03-25 |
-| 24. Auth Frontend & Firebase Removal | v2.0 | 0/2 | Not started | - |
+| 24. Auth Frontend & Firebase Removal | v2.0 | 1/2 | In Progress|  |
 | 25. Database Service Port | v2.0 | 0/0 | Not started | - |
 | 26. AI Provider Swap | v2.0 | 0/0 | Not started | - |
 | 27. Storage & Dependency Cleanup | v2.0 | 0/0 | Not started | - |
