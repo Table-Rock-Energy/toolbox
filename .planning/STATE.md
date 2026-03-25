@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Full On-Prem Migration
-status: Ready to execute
-stopped_at: Completed 27-02-PLAN.md
-last_updated: "2026-03-25T22:53:16.314Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 27-01-PLAN.md
+last_updated: "2026-03-25T22:56:46.955Z"
 progress:
   total_phases: 6
   completed_phases: 5
@@ -54,6 +54,7 @@ Plan: 2 of 2
 | Phase 26-ai-provider-swap P01 | 3min | 1 tasks | 6 files |
 | Phase 26-ai-provider-swap P02 | 12min | 2 tasks | 21 files |
 | Phase 27 P02 | 2min | 1 tasks | 1 files |
+| Phase 27 P01 | 6min | 2 tasks | 11 files |
 
 ### Decisions
 
@@ -92,6 +93,7 @@ Plan: 2 of 2
 - [Phase 26]: Clean break for /settings/ai (no backward compat with /settings/gemini)
 - [Phase 26]: LM Studio model as text input (not dropdown)
 - [Phase 27]: firebase-admin and google-cloud-firestore are one-time migration deps, not in requirements.txt
+- [Phase 27]: Renamed gcs_project_id to gcp_project_id (Firestore client still needs it)
 
 ### Pending Todos
 
@@ -104,6 +106,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-25T22:53:16.311Z
-Stopped at: Completed 27-02-PLAN.md
+Last session: 2026-03-25T22:56:46.952Z
+Stopped at: Completed 27-01-PLAN.md
 Resume file: None

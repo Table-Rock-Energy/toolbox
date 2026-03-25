@@ -215,8 +215,8 @@ class AllowlistResponse(BaseModel):
     count: int
 
 
-class GoogleCloudSettingsRequest(BaseModel):
-    """Request to update unified Google Cloud API settings."""
+class ApiSettingsRequest(BaseModel):
+    """Request to update unified API settings (AI, Maps, batch config)."""
     api_key: Optional[str] = None
     ai_enabled: bool = False
     ai_model: str = "qwen3.5-35b-a3b"
@@ -227,8 +227,8 @@ class GoogleCloudSettingsRequest(BaseModel):
     batch_max_retries: int = 1
 
 
-class GoogleCloudSettingsResponse(BaseModel):
-    """Response with Google Cloud settings (key masked)."""
+class ApiSettingsResponse(BaseModel):
+    """Response with API settings (key masked)."""
     has_key: bool
     ai_enabled: bool
     ai_model: str
@@ -440,16 +440,16 @@ async def update_ai_settings(request: AiSettingsRequest, user: dict = Depends(re
     )
 
 
-@router.get("/settings/google-cloud", response_model=GoogleCloudSettingsResponse)
-async def get_google_cloud_settings(user: dict = Depends(require_admin)):
-    """Get current unified Google Cloud API settings (key masked)."""
+@router.get("/settings/api-config", response_model=ApiSettingsResponse)
+async def get_api_config_settings(user: dict = Depends(require_admin)):
+    """Get current API settings (AI, Maps, batch config)."""
     from app.core.config import settings as runtime_settings
 
     app_settings = load_app_settings()
     gc = app_settings.get("google_cloud", {})
     bc = app_settings.get("batch_config", {})
 
-    return GoogleCloudSettingsResponse(
+    return ApiSettingsResponse(
         has_key=bool(gc.get("api_key")),
         ai_enabled=runtime_settings.use_ai,
         ai_model=runtime_settings.llm_model,
@@ -461,12 +461,12 @@ async def get_google_cloud_settings(user: dict = Depends(require_admin)):
     )
 
 
-@router.put("/settings/google-cloud", response_model=GoogleCloudSettingsResponse)
-async def update_google_cloud_settings(
-    request: GoogleCloudSettingsRequest,
+@router.put("/settings/api-config", response_model=ApiSettingsResponse)
+async def update_api_settings(
+    request: ApiSettingsRequest,
     user: dict = Depends(require_admin),
 ):
-    """Update unified Google Cloud API settings."""
+    """Update API settings (AI, Maps, batch config)."""
     app_settings = load_app_settings()
 
     gc = app_settings.get("google_cloud", {})
@@ -504,9 +504,9 @@ async def update_google_cloud_settings(
     runtime_settings.batch_max_concurrency = max(1, min(5, request.batch_max_concurrency))
     runtime_settings.batch_max_retries = max(0, min(3, request.batch_max_retries))
 
-    logger.info("Google Cloud API settings updated")
+    logger.info("API settings updated")
 
-    return GoogleCloudSettingsResponse(
+    return ApiSettingsResponse(
         has_key=bool(gc.get("api_key")),
         ai_enabled=request.ai_enabled,
         ai_model=request.ai_model,
@@ -647,7 +647,7 @@ async def get_profile_image(user_id: str, user: dict = Depends(require_auth)):
 
     # Try each extension
     for ext in ["jpg", "jpeg", "png", "gif"]:
-        path = f"{settings.gcs_profiles_folder}/{user_id}/avatar.{ext}"
+        path = f"{settings.storage_profiles_folder}/{user_id}/avatar.{ext}"
         content = storage_service.download_file(path)
         if content:
             media_types = {

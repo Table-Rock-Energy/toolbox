@@ -34,12 +34,12 @@ Requirements for on-prem migration. Each maps to roadmap phases.
 
 ### Storage
 
-- [ ] **STOR-01**: Local filesystem is default storage -- no GCS warnings or errors when GCS_BUCKET_NAME is empty/unset
-- [ ] **STOR-02**: google-cloud-storage dependency and GCS-specific code paths removed from codebase
+- [x] **STOR-01**: Local filesystem is default storage -- no GCS warnings or errors when GCS_BUCKET_NAME is empty/unset
+- [x] **STOR-02**: google-cloud-storage dependency and GCS-specific code paths removed from codebase
 
 ### Cleanup
 
-- [ ] **CLEAN-01**: All Google dependencies removed from requirements.txt (firebase-admin, google-cloud-firestore, google-cloud-storage, google-genai)
+- [x] **CLEAN-01**: All Google dependencies removed from requirements.txt (firebase-admin, google-cloud-firestore, google-cloud-storage, google-genai)
 
 ## Future Requirements
 
@@ -87,9 +87,9 @@ Deferred to a later milestone. Tracked but not in current roadmap.
 | AI-01 | Phase 26 | Complete |
 | AI-02 | Phase 26 | Complete |
 | AI-03 | Phase 26 | Complete |
-| STOR-01 | Phase 27 | Pending |
-| STOR-02 | Phase 27 | Pending |
-| CLEAN-01 | Phase 27 | Pending |
+| STOR-01 | Phase 27 | Complete |
+| STOR-02 | Phase 27 | Complete |
+| CLEAN-01 | Phase 27 | Complete |
 
 **Coverage:**
 - v2.0 requirements: 19 total

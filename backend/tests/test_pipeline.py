@@ -500,7 +500,7 @@ class TestBatchConfig:
         """GoogleCloudSettingsResponse model accepts batch config fields."""
         from app.api.admin import GoogleCloudSettingsResponse
 
-        resp = GoogleCloudSettingsResponse(
+        resp = ApiSettingsResponse(
             has_key=True,
             ai_enabled=True,
             ai_model="qwen3.5-35b-a3b",
