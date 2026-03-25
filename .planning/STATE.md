@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Full On-Prem Migration
 status: Ready to execute
-stopped_at: Completed 25-01-PLAN.md
-last_updated: "2026-03-25T21:38:26.225Z"
+stopped_at: Completed 25-02-PLAN.md
+last_updated: "2026-03-25T21:56:42.550Z"
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 9
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-25)
 ## Current Position
 
 Phase: 25 (Database Service Port) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -49,6 +49,7 @@ Plan: 2 of 3
 | Phase 24 P01 | 3min | 2 tasks | 4 files |
 | Phase 24 P02 | 4min | 2 tasks | 12 files |
 | Phase 25 P01 | 13min | 2 tasks | 2 files |
+| Phase 25 P02 | 16 | 2 tasks | 18 files |
 
 ### Decisions
 
@@ -75,6 +76,9 @@ Plan: 2 of 3
 - [Phase 24]: Password minimum raised from 6 to 8 chars in Settings UI to match backend
 - [Phase 25]: lookup_rrc_acres returns dict (not tuple) matching Firestore shape for drop-in replacement
 - [Phase 25]: Sync engine pool_size=2 for conservative background thread usage
+- [Phase 25]: ETL entity_registry uses AppConfig table as key-value store with prefixed keys
+- [Phase 25]: bulk_send_service stores progress in Job.options JSONB field
+- [Phase 25]: database_enabled defaults to True, FIRESTORE_ENABLED removed from config
 
 ### Pending Todos
 
@@ -87,6 +91,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-25T21:38:26.222Z
-Stopped at: Completed 25-01-PLAN.md
+Last session: 2026-03-25T21:56:42.548Z
+Stopped at: Completed 25-02-PLAN.md
 Resume file: None

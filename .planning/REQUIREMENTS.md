@@ -19,12 +19,12 @@ Requirements for on-prem migration. Each maps to roadmap phases.
 
 ### Database
 
-- [ ] **DB-01**: PostgreSQL is the sole database -- no Firestore code in any request path
+- [x] **DB-01**: PostgreSQL is the sole database -- no Firestore code in any request path
 - [x] **DB-02**: SQLAlchemy models cover all 13 Firestore collections (3 new models + auth columns on users table)
 - [x] **DB-03**: Alembic initialized with async template and initial migration generated from models
 - [ ] **DB-04**: One-time migration script exports all Firestore collections and imports into PostgreSQL (service account JSON as CLI arg)
 - [x] **DB-05**: Every firestore_service.py function has a working PostgreSQL equivalent in db_service.py
-- [ ] **DB-06**: firestore_service.py deleted and all Firestore imports/dependencies removed from codebase
+- [x] **DB-06**: firestore_service.py deleted and all Firestore imports/dependencies removed from codebase
 
 ### AI Provider
 
@@ -78,12 +78,12 @@ Deferred to a later milestone. Tracked but not in current roadmap.
 | AUTH-05 | Phase 24 | Complete |
 | AUTH-06 | Phase 24 | Complete |
 | AUTH-07 | Phase 24 | Complete |
-| DB-01 | Phase 25 | Pending |
+| DB-01 | Phase 25 | Complete |
 | DB-02 | Phase 22 | Complete |
 | DB-03 | Phase 22 | Complete |
 | DB-04 | Phase 27 | Pending |
 | DB-05 | Phase 25 | Complete |
-| DB-06 | Phase 25 | Pending |
+| DB-06 | Phase 25 | Complete |
 | AI-01 | Phase 26 | Pending |
 | AI-02 | Phase 26 | Pending |
 | AI-03 | Phase 26 | Pending |
