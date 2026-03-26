@@ -42,13 +42,13 @@ logger = logging.getLogger(__name__)
 
 async def get_or_create_user(
     db: AsyncSession,
-    firebase_uid: str,
+    user_id: str,
     email: str,
     display_name: Optional[str] = None,
     photo_url: Optional[str] = None,
 ) -> User:
-    """Get existing user or create new one from Firebase auth."""
-    result = await db.execute(select(User).where(User.id == firebase_uid))
+    """Get existing user or create new one."""
+    result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
 
     if user:
@@ -63,7 +63,7 @@ async def get_or_create_user(
 
     # Create new user
     user = User(
-        id=firebase_uid,
+        id=user_id,
         email=email,
         display_name=display_name,
         photo_url=photo_url,
