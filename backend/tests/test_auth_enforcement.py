@@ -441,4 +441,4 @@ async def test_admin_delete_other_user_job_succeeds(admin_client: AsyncClient):
     with patch("app.api.history.db_service") as mock_db:
         mock_db.get_job = AsyncMock(return_value=mock_job)
         mock_db.delete_job = AsyncMock(return_value=True)
-        response = await admin_client.delete("/api/history/jobs/j1")
+        await admin_client.delete("/api/history/jobs/j1")

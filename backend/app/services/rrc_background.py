@@ -272,8 +272,6 @@ def _run_rrc_download(job_id: str) -> None:
 
         # Update RRC metadata cache with final counts
         try:
-            from app.core.database import async_session_maker
-            from app.services import db_service
             asyncio.run(_update_rrc_metadata(oil_count, gas_count))
             logger.info(f"Job {job_id}: Updated RRC metadata cache ({oil_count:,} oil, {gas_count:,} gas)")
         except Exception as e:
@@ -378,7 +376,7 @@ async def get_active_rrc_sync_job() -> Optional[dict]:
     Returns:
         Most recent active/recent job or None
     """
-    from sqlalchemy import select, text
+    from sqlalchemy import select
     from app.core.database import async_session_maker
     from app.models.db_models import AppConfig
 

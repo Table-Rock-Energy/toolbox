@@ -106,7 +106,6 @@ async def test_batch_database_reads():
     import asyncio
 
     from app.services.proration.csv_processor import (
-        _lookup_from_database,
         update_cache,
     )
 
@@ -181,7 +180,6 @@ def test_cache_invalidation_after_sync():
 
 def test_rrc_data_service_caches_cleared_after_sync():
     """After sync, rrc_data_service DataFrame caches are set to None (PERF-04)."""
-    from app.services.proration import rrc_data_service as rds_module
 
     mock_service = MagicMock()
     mock_service._combined_lookup = {"some": "data"}

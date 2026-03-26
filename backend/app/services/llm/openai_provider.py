@@ -14,7 +14,6 @@ from app.services.llm.prompts import (
     CLEANUP_PROMPTS,
     TOOL_PROMPTS,
     REVENUE_VERIFY_PROMPT,
-    VALIDATION_RESPONSE_SCHEMA,
 )
 
 if TYPE_CHECKING:

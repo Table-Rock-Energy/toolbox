@@ -14,7 +14,6 @@ from app.core.ingestion import file_response, persist_job_result, validate_uploa
 from app.models.proration import (
     ExportRequest,
     FetchMissingRequest,
-    FetchMissingResult,
     MineralHolderRow,
     ProcessingOptions,
     RRCBackgroundDownloadResponse,

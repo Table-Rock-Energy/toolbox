@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from app.models.pipeline import ProposedChange, PipelineRequest, PipelineResponse
 from app.services.llm.protocol import LLMProvider
 from app.services.llm.prompts import CLEANUP_PROMPTS
-from app.models.ai_validation import AiSuggestion, AiValidationResult, ConfidenceLevel
 
 
 class TestLLMProtocol:

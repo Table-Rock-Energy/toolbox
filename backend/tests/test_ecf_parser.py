@@ -450,7 +450,6 @@ class TestECFPageHeaders:
         # The sample has a page header block inserted between entries 6 and 7.
         # MULTIUNIT HORIZONTAL WELL, EXHIBIT "A", applicant name, page number
         # These should NOT appear as entries.
-        entry_numbers = [e.entry_number for e in result.entries]
         assert "MULTIUNIT" not in " ".join(e.primary_name for e in result.entries)
 
     def test_page_footer_stripped(self):

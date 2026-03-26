@@ -58,7 +58,7 @@ async def _set_doc(key: str, data: dict) -> None:
 
 async def _delete_doc(key: str) -> bool:
     """Delete a document from AppConfig by key."""
-    from sqlalchemy import select, delete as sql_delete
+    from sqlalchemy import select
     from app.models.db_models import AppConfig
     session_maker = _get_session_maker()
     async with session_maker() as session:

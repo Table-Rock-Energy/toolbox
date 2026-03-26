@@ -5,12 +5,14 @@ Covers MRG-01 through MRG-04 behaviors and edge cases.
 
 from __future__ import annotations
 
-import pytest
+import csv as csv_mod
+import io
 
 from app.models.extract import CaseMetadata, EntityType, PartyEntry
 from app.services.extract.ecf_parser import ECFParseResult
 from app.services.extract.convey640_parser import Convey640ParseResult
-from app.services.extract.merge_service import MergeResult, merge_entries
+from app.services.extract.merge_service import merge_entries
+from app.services.extract.export_service import to_csv, to_excel
 
 
 # ---------------------------------------------------------------------------
@@ -299,11 +301,6 @@ class TestEdgeCases:
 # ---------------------------------------------------------------------------
 # Export tests: case_metadata -> Notes/Comments
 # ---------------------------------------------------------------------------
-
-import csv as csv_mod
-import io
-
-from app.services.extract.export_service import to_csv, to_excel
 
 
 def _parse_csv_rows(csv_bytes: bytes) -> list[dict[str, str]]:
