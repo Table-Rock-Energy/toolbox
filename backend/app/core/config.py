@@ -28,9 +28,6 @@ class Settings(BaseSettings):
     # Local data directory
     data_dir: Path = Path(__file__).parent.parent.parent / "data"
 
-    # GCP project ID (used by Firestore client)
-    gcp_project_id: Optional[str] = "tablerockenergy"
-
     # Storage folder paths
     storage_rrc_data_folder: str = "rrc-data"
     storage_uploads_folder: str = "uploads"

@@ -309,12 +309,40 @@ async def add_user(request: AddUserRequest, user: dict = Depends(require_admin))
             detail=f"User {request.email} already in allowlist"
         )
 
-    # Set password in DB if provided
-    if request.password:
-        try:
-            await set_user_password(request.email, request.password)
-        except Exception as e:
-            logger.warning(f"Added user to allowlist but failed to set password: {e}")
+    # Create user in PostgreSQL and set password
+    try:
+        from app.core.database import async_session_maker
+        from app.models.db_models import User as UserModel
+        from app.core.security import hash_password
+        from sqlalchemy import select as sa_select
+
+        async with async_session_maker() as session:
+            # Check if user already exists in DB
+            result = await session.execute(
+                sa_select(UserModel).where(UserModel.email == request.email.lower())
+            )
+            db_user = result.scalar_one_or_none()
+
+            if db_user is None:
+                # Create new DB user
+                db_user = UserModel(
+                    email=request.email.lower(),
+                    display_name=f"{request.first_name} {request.last_name}".strip() or None,
+                    role=request.role or "user",
+                    scope=request.scope,
+                    tools=request.tools,
+                    is_active=True,
+                    added_by="admin",
+                )
+                session.add(db_user)
+
+            # Set password if provided
+            if request.password:
+                db_user.password_hash = hash_password(request.password)
+
+            await session.commit()
+    except Exception as e:
+        logger.warning(f"Added user to allowlist but failed to create DB record: {e}")
 
     logger.info(f"Added user to allowlist: {request.email}")
     return UserResponse(
