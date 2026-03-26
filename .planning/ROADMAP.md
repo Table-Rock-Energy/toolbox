@@ -8,7 +8,7 @@
 - ✅ **v1.6 Pipeline Fixes & Unified Enrichment** -- Phases 10-12 (shipped 2026-03-19)
 - ✅ **v1.7 Batch Processing & Resilience** -- Phases 13-17 (shipped 2026-03-20)
 - ✅ **v1.8 Preview System Overhaul** -- Phases 18-21 (shipped 2026-03-24)
-- 🚧 **v2.0 Full On-Prem Migration** -- Phases 22-27 (in progress)
+- ✅ **v2.0 Full On-Prem Migration** -- Phases 22-27 (shipped 2026-03-25)
 
 ## Phases
 
@@ -84,14 +84,19 @@ See: `.planning/milestones/v1.8-ROADMAP.md` for full details
 
 </details>
 
-### v2.0 Full On-Prem Migration
+<details>
+<summary>v2.0 Full On-Prem Migration (Phases 22-27) -- SHIPPED 2026-03-25</summary>
 
-- [x] **Phase 22: Database Models & Schema** - Extend SQLAlchemy models for all Firestore collections and initialize Alembic (completed 2026-03-25)
-- [x] **Phase 23: Auth Backend** - JWT login/me endpoints, token verification middleware, admin seed script (completed 2026-03-25)
-- [x] **Phase 24: Auth Frontend & Firebase Removal** - Local auth context with JWT, remove all Firebase packages and imports (completed 2026-03-25)
-- [x] **Phase 25: Database Service Port** - Replace every Firestore service function with PostgreSQL equivalent (completed 2026-03-25)
-- [x] **Phase 26: AI Provider Swap** - LM Studio via OpenAI-compatible API, remove Gemini dependency (completed 2026-03-25)
-- [x] **Phase 27: Storage & Dependency Cleanup** - Local filesystem default, GCS removal, migration script, final purge (completed 2026-03-25)
+- [x] Phase 22: Database Models & Schema (2/2 plans) -- completed 2026-03-25
+- [x] Phase 23: Auth Backend (2/2 plans) -- completed 2026-03-25
+- [x] Phase 24: Auth Frontend & Firebase Removal (2/2 plans) -- completed 2026-03-25
+- [x] Phase 25: Database Service Port (3/3 plans) -- completed 2026-03-25
+- [x] Phase 26: AI Provider Swap (2/2 plans) -- completed 2026-03-25
+- [x] Phase 27: Storage & Dependency Cleanup (2/2 plans) -- completed 2026-03-25
+
+See: `.planning/milestones/v2.0-ROADMAP.md` for full details
+
+</details>
 
 ## Phase Details
 

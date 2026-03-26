@@ -1,5 +1,30 @@
 # Milestones
 
+## v2.0 Full On-Prem Migration (Shipped: 2026-03-25)
+
+**Phases completed:** 6 phases, 13 plans
+**Commits:** 78 (8230083..bc3a739)
+**Files changed:** 140 (+15,532 / -6,476)
+**Timeline:** 1 day (2026-03-25)
+
+**Key accomplishments:**
+
+- Replaced Firebase Auth with local JWT auth (PyJWT + pwdlib[bcrypt]) against PostgreSQL users table
+- Removed Firestore entirely — PostgreSQL is sole database via SQLAlchemy async sessions with Alembic migrations
+- Created OpenAI-compatible provider for LM Studio replacing Gemini AI
+- Stripped all Google Cloud dependencies (Firebase, Firestore, GCS, Gemini) from code and requirements.txt
+- Created one-time Firestore→PostgreSQL migration script with 16 collection handlers
+- Disabled GitHub Actions CI/CD (no more auto-deploy to Cloud Run)
+- 78+ backend tests passing, TypeScript compiles clean
+
+**Tech debt carried forward:**
+
+- VITE_FIREBASE_* ARGs in Dockerfile (user chose not to modify Dockerfile)
+- JSON allowlist dual-path with PostgreSQL users table
+- check_user endpoint unauthenticated (by design)
+
+---
+
 ## v1.8 Preview System Overhaul (Shipped: 2026-03-24)
 
 **Phases completed:** 4 phases, 6 commits
