@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     batch_max_concurrency: int = 2
     batch_max_retries: int = 1
 
-    # Shared secret for cron/CI auth (bypasses Firebase token verification)
+    # Shared secret for cron/CI auth (bypasses JWT verification)
     cron_secret: Optional[str] = None
 
     # JWT settings (local auth)

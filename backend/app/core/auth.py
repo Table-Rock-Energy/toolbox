@@ -1,9 +1,9 @@
 """Authentication and Authorization for Table Rock Tools.
 
 This module provides:
-- JWT token verification (replacing Firebase)
-- User allowlist management (JSON file -- still used by admin.py during migration)
-- Protected route middleware
+- JWT token verification via PyJWT
+- User management against PostgreSQL (users table)
+- Protected route middleware (require_auth, require_admin)
 """
 
 from __future__ import annotations
@@ -219,15 +219,12 @@ def is_user_allowed(email: str) -> bool:
 
 
 # ============================================================================
-# Password management (DB-based, replaces Firebase set_user_password)
+# Password management
 # ============================================================================
 
 
 async def set_user_password(email: str, password: str) -> dict:
-    """Set or update a user's password hash in PostgreSQL.
-
-    Replaces the old Firebase-based set_user_password.
-    """
+    """Set or update a user's password hash in PostgreSQL."""
     from app.core.database import async_session_maker
     from app.core.security import get_password_hash
     from app.models.db_models import User
@@ -248,7 +245,7 @@ async def set_user_password(email: str, password: str) -> dict:
 
 
 # ============================================================================
-# JWT-based authentication (replaces Firebase token verification)
+# JWT-based authentication
 # ============================================================================
 
 

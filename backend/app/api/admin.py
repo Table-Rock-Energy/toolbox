@@ -143,7 +143,7 @@ def _apply_settings_to_runtime(settings_data: dict) -> None:
     """Apply loaded settings to the runtime config object."""
     from app.core.config import settings as runtime_settings
 
-    # --- Google Cloud section (Maps/Places API key) ---
+    # --- Maps/Places API key (stored under "google_cloud" key for backward compat) ---
     gc = settings_data.get("google_cloud", {})
     if gc.get("api_key"):
         runtime_settings.google_api_key = gc["api_key"]
