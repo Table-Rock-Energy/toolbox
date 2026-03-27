@@ -6,15 +6,6 @@ FROM node:20-slim AS frontend-builder
 
 WORKDIR /app/frontend
 
-# Firebase config (public client-side values, not secrets)
-ARG VITE_FIREBASE_API_KEY=AIzaSyDGTk6hpc4dk2MPGCBoky_kegUrg7dUuYk
-ARG VITE_FIREBASE_AUTH_DOMAIN=tablerockenergy.firebaseapp.com
-ARG VITE_FIREBASE_PROJECT_ID=tablerockenergy
-ARG VITE_FIREBASE_STORAGE_BUCKET=tablerockenergy.firebasestorage.app
-ARG VITE_FIREBASE_MESSAGING_SENDER_ID=781074525174
-ARG VITE_FIREBASE_APP_ID=1:781074525174:web:f00b83c5401fe4b00d35d7
-ARG VITE_FIREBASE_MEASUREMENT_ID=G-YZYXTHXBV9
-
 # Copy package files for dependency caching
 COPY frontend/package*.json ./
 
@@ -24,15 +15,8 @@ RUN npm ci --only=production=false
 # Copy frontend source
 COPY frontend/ ./
 
-# Build production bundle (Vite picks up ARGs as env vars)
-RUN VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY \
-    VITE_FIREBASE_AUTH_DOMAIN=$VITE_FIREBASE_AUTH_DOMAIN \
-    VITE_FIREBASE_PROJECT_ID=$VITE_FIREBASE_PROJECT_ID \
-    VITE_FIREBASE_STORAGE_BUCKET=$VITE_FIREBASE_STORAGE_BUCKET \
-    VITE_FIREBASE_MESSAGING_SENDER_ID=$VITE_FIREBASE_MESSAGING_SENDER_ID \
-    VITE_FIREBASE_APP_ID=$VITE_FIREBASE_APP_ID \
-    VITE_FIREBASE_MEASUREMENT_ID=$VITE_FIREBASE_MEASUREMENT_ID \
-    npm run build
+# Build production bundle
+RUN npm run build
 
 # Stage 2: Production backend with built frontend
 FROM python:3.11-slim
