@@ -77,9 +77,12 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - ✓ RRC lease-only search first with district+lease fallback — v1.8
 - ✓ Fetch-missing stop button with AbortController and partial results — v1.8
 
+- ✓ Security headers middleware (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy) on every API response — v2.1
+- ✓ Pytest tests for all 6 security headers — v2.1
+
 ### Active
 
-<!-- v2.0 Full On-Prem Migration -->
+<!-- v2.1 Security Headers & Cleanup -->
 
 - [x] **AUTH-01**: Replace Firebase Auth with local JWT auth (bcrypt + PostgreSQL users table) — Phase 23
 - [x] **AUTH-02**: Backend /api/auth/login and /api/auth/me endpoints returning JWT tokens — Phase 23
@@ -170,4 +173,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Local variable threading in runAllSteps (not React state) | Avoids stale closure between sequential async steps | ✓ Good — v1.6 |
 
 ---
-*Last updated: 2026-03-27 — v2.1 Security Headers & Cleanup milestone started*
+*Last updated: 2026-03-27 — Phase 28 (Security Headers Middleware) complete*
