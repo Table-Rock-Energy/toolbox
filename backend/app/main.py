@@ -34,6 +34,7 @@ from app.api.etl import router as etl_router
 from app.api.features import router as features_router
 from app.api.pipeline import router as pipeline_router
 from app.core.config import settings
+from app.core.security_headers import SecurityHeadersMiddleware
 
 # Configure logging
 logging.basicConfig(
@@ -48,6 +49,9 @@ app = FastAPI(
     description="Consolidated backend for Table Rock Energy tools",
     version=settings.version,
 )
+
+# Security headers on all responses (added before CORS -- LIFO means it runs after)
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Configure CORS with explicit origin allowlist
 app.add_middleware(
