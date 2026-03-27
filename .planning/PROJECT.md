@@ -111,16 +111,15 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - Rate limiting — defer
 - Structured logging / request tracing — defer
 
-## Current Milestone: v2.0 Full On-Prem Migration
+## Current Milestone: v2.1 Security Headers & Cleanup
 
-**Goal:** Remove all Google cloud dependencies (Firebase Auth, Firestore, GCS) and run fully on-prem with PostgreSQL, local filesystem storage, and LM Studio for AI.
+**Goal:** Address all findings from BrandPod security scan — add missing security headers, clean up dead Firebase config, and harden admin email handling.
 
 **Target features:**
-- Replace Firebase Auth with local JWT auth (bcrypt passwords, PostgreSQL users table, admin-only creation)
-- Remove Firestore entirely — PostgreSQL becomes the only database via SQLAlchemy
-- One-time Firestore→PostgreSQL migration script
-- LM Studio as AI provider via OpenAI-compatible API with provider abstraction
-- Local filesystem storage with no GCS warnings when unconfigured
+- Security headers middleware (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy)
+- Remove dead VITE_FIREBASE_* ARGs from Dockerfile
+- Extract hardcoded admin email to environment variable
+- Tests for security headers
 
 ## Context
 
@@ -171,4 +170,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Local variable threading in runAllSteps (not React state) | Avoids stale closure between sequential async steps | ✓ Good — v1.6 |
 
 ---
-*Last updated: 2026-03-27 — v2.0 archived, preparing security audit milestone*
+*Last updated: 2026-03-27 — v2.1 Security Headers & Cleanup milestone started*
