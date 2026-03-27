@@ -317,7 +317,8 @@ async def test_health_check_returns_200(unauthenticated_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_admin_check_no_auth_required(unauthenticated_client: AsyncClient):
     """Admin user-check endpoint does NOT require auth."""
-    response = await unauthenticated_client.get("/api/admin/users/test@example.com/check")
+    with patch("app.api.admin.get_user_by_email", return_value=None):
+        response = await unauthenticated_client.get("/api/admin/users/test@example.com/check")
     assert response.status_code != 401
 
 
