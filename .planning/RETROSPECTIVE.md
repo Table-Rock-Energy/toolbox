@@ -210,6 +210,41 @@
 
 ---
 
+## Milestone: v2.1 — Security Headers & Cleanup
+
+**Shipped:** 2026-03-27
+**Phases:** 2 | **Plans:** 2 | **Tasks:** 4
+
+### What Was Built
+- SecurityHeadersMiddleware adding 6 BrandPod-required security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy)
+- 7 pytest tests for all security headers on both authenticated and unauthenticated endpoints
+- Dead VITE_FIREBASE_* ARGs removed from Dockerfile (16 lines eliminated)
+- Hardcoded admin email extracted to configurable DEFAULT_ADMIN_EMAIL env var across auth.py, admin.py, create_admin.py
+
+### What Worked
+- Simple, well-scoped milestone — 2 independent phases, no inter-phase dependencies
+- Research skipped for both phases (pure infrastructure) — saved time without quality loss
+- Both phases completed in a single session with zero deviations from plan
+- Verification passed on first attempt for both phases — clean execution
+
+### What Was Inefficient
+- Nothing notable — milestone was appropriately scoped for quick turnaround
+
+### Patterns Established
+- Security middleware pattern: `BaseHTTPMiddleware` subclass in `core/` with `dispatch` adding response headers
+- Admin email as Pydantic Settings field (not module-level constant) — configurable via env var with sensible fallback
+
+### Key Lessons
+1. Small, focused milestones (2 phases) execute cleanly with minimal overhead
+2. Infrastructure-only phases can safely skip research and discuss — the ROADMAP success criteria are sufficient spec
+
+### Cost Observations
+- Model mix: ~70% opus, ~30% sonnet
+- Sessions: 1
+- Notable: Smallest milestone yet — 2 phases, 4 tasks, completed in one session
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -223,6 +258,7 @@
 | v1.7 | ~3 | 5 | 9 | Batch processing engine, operation persistence, multi-PDF streaming |
 | v1.8 | ~2 | 4 | 6 | Key-based tracking, filter correctness, minimal-touch milestone |
 | v2.0 | ~4 | 6 | 13 | Full infra migration (Firebase→JWT, Firestore→PG, Gemini→LM Studio) |
+| v2.1 | 1 | 2 | 2 | Security headers middleware, Dockerfile/config cleanup |
 
 ### Cumulative Quality
 
@@ -235,6 +271,7 @@
 | v1.7 | 60+ | + batch/pipeline | Batch engine tests, disconnect detection |
 | v1.8 | 60+ | + filter/highlight | Filter correctness, key-based tracking |
 | v2.0 | 78+ | + JWT auth + DB port | JWT auth tests, migration script verification |
+| v2.1 | 380+ | + security headers | 7 security header tests (CSP, HSTS, X-Frame, etc.) |
 
 ### Top Lessons (Verified Across Milestones)
 
