@@ -79,6 +79,8 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 
 - ✓ Security headers middleware (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy) on every API response — v2.1
 - ✓ Pytest tests for all 6 security headers — v2.1
+- ✓ Dead VITE_FIREBASE_* ARGs removed from Dockerfile — v2.1
+- ✓ Hardcoded admin email extracted to DEFAULT_ADMIN_EMAIL env var with fallback — v2.1
 
 ### Active
 
@@ -173,4 +175,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Local variable threading in runAllSteps (not React state) | Avoids stale closure between sequential async steps | ✓ Good — v1.6 |
 
 ---
-*Last updated: 2026-03-27 — Phase 28 (Security Headers Middleware) complete*
+*Last updated: 2026-03-27 — v2.1 milestone complete (Phases 28-29)*
