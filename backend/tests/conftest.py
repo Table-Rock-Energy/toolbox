@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import pytest_asyncio
@@ -16,6 +16,21 @@ from app.main import app
 async def _mock_db_session():
     """Yield a mock AsyncSession so tests never hit PostgreSQL."""
     yield MagicMock()
+
+
+def _mock_sync_session():
+    """Return a mock sync session whose queries return None."""
+    session = MagicMock()
+    session.execute.return_value.scalar_one_or_none.return_value = None
+    session.execute.return_value.scalars.return_value.all.return_value = []
+    return session
+
+
+@pytest.fixture(autouse=True)
+def _patch_sync_db():
+    """Prevent all sync PostgreSQL access (used by auth helpers like is_user_admin)."""
+    with patch("app.core.auth._get_sync_session", _mock_sync_session):
+        yield
 
 
 @pytest.fixture
