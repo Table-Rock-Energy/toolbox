@@ -128,7 +128,9 @@ Plans:
   1. `grep -r VITE_FIREBASE Dockerfile` returns zero matches -- no VITE_FIREBASE_* ARGs or ENV references remain
   2. `grep -rn "james@tablerocktx.com" backend/` returns zero matches in auth.py and admin.py -- all references use `settings.default_admin_email` or `DEFAULT_ADMIN_EMAIL` env var
   3. App starts correctly with DEFAULT_ADMIN_EMAIL unset (falls back to james@tablerocktx.com as default in config.py)
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 29-01-PLAN.md -- Remove Dockerfile Firebase ARGs + extract admin email to config
 
 ## Progress
 
@@ -145,4 +147,4 @@ Phases 28 -> 29
 | 26. AI Provider Swap | v2.0 | 2/2 | Complete | 2026-03-25 |
 | 27. Storage & Dependency Cleanup | v2.0 | 2/2 | Complete | 2026-03-25 |
 | 28. Security Headers Middleware | v2.1 | 1/1 | Complete    | 2026-03-27 |
-| 29. Firebase & Config Cleanup | v2.1 | 0/0 | Not started | - |
+| 29. Firebase & Config Cleanup | v2.1 | 0/1 | Not started | - |
