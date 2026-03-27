@@ -1,5 +1,15 @@
 # Milestones
 
+## v2.1 Security Headers & Cleanup (Shipped: 2026-03-27)
+
+**Phases completed:** 2 phases, 2 plans, 4 tasks
+
+**Key accomplishments:**
+
+- Starlette BaseHTTPMiddleware adding CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy to all API responses with 7 pytest tests
+
+---
+
 ## v2.0 Full On-Prem Migration (Shipped: 2026-03-25)
 
 **Phases completed:** 6 phases, 13 plans

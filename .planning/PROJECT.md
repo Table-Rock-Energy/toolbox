@@ -82,27 +82,27 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - ✓ Dead VITE_FIREBASE_* ARGs removed from Dockerfile — v2.1
 - ✓ Hardcoded admin email extracted to DEFAULT_ADMIN_EMAIL env var with fallback — v2.1
 
+- ✓ Replace Firebase Auth with local JWT auth (bcrypt + PostgreSQL users table) — v2.0
+- ✓ Backend /api/auth/login and /api/auth/me endpoints returning JWT tokens — v2.0
+- ✓ Replace Firebase token verification middleware with JWT verification — v2.0
+- ✓ CLI/startup script to create initial admin user — v2.0
+- ✓ Frontend local auth context replacing Firebase Auth context — v2.0
+- ✓ Remove firebase.ts, Firebase npm packages, and all Firebase imports — v2.0
+- ✓ Remove Firestore entirely — PostgreSQL as only database via SQLAlchemy — v2.0
+- ✓ Extend SQLAlchemy models to cover all Firestore collections — v2.0
+- ✓ Alembic initialized with async template, initial migration generated — v2.0
+- ✓ One-time Firestore to PostgreSQL migration script — v2.0
+- ✓ Every firestore_service.py function has PostgreSQL equivalent in db_service.py — v2.0
+- ✓ OpenAI-compatible provider for LM Studio — v2.0
+- ✓ Provider factory routing AI calls based on AI_PROVIDER config — v2.0
+- ✓ Gemini removed, LM Studio is only AI backend — v2.0
+- ✓ Local filesystem default, no GCS warnings — v2.0
+- ✓ google-cloud-storage removed — v2.0
+- ✓ All Google dependencies removed from requirements.txt — v2.0
+
 ### Active
 
-<!-- v2.1 Security Headers & Cleanup -->
-
-- [x] **AUTH-01**: Replace Firebase Auth with local JWT auth (bcrypt + PostgreSQL users table) — Phase 23
-- [x] **AUTH-02**: Backend /api/auth/login and /api/auth/me endpoints returning JWT tokens — Phase 23
-- [x] **AUTH-03**: Replace Firebase token verification middleware with JWT verification — Phase 23
-- [x] **AUTH-04**: CLI/startup script to create initial admin user (james@tablerocktx.com) — Phase 23
-- [x] **AUTH-05**: Frontend local auth context replacing Firebase Auth context — Phase 24
-- [x] **AUTH-06**: Remove firebase.ts, Firebase npm packages, and all Firebase imports — Phase 24 (backend deps deferred to Phase 27)
-- [x] **DB-01**: Remove Firestore entirely — PostgreSQL as only database via SQLAlchemy — Phase 25
-- [x] **DB-02**: Extend SQLAlchemy models to cover all Firestore collections — Phase 22
-- [x] **DB-03**: Alembic initialized with async template, initial migration generated — Phase 22
-- [x] **DB-04**: One-time Firestore→PostgreSQL migration script — Phase 27
-- [x] **DB-05**: Every firestore_service.py function has PostgreSQL equivalent in db_service.py — Phase 25
-- [x] **AI-01**: OpenAI-compatible provider for LM Studio — Phase 26
-- [x] **AI-02**: Provider factory routing AI calls based on AI_PROVIDER config — Phase 26
-- [x] **AI-03**: Gemini removed, LM Studio is only AI backend — Phase 26
-- [x] **STOR-01**: Local filesystem default, no GCS warnings — Phase 27
-- [x] **STOR-02**: google-cloud-storage removed — Phase 27
-- [x] **CLEAN-01**: All Google dependencies removed from requirements.txt — Phase 27
+<!-- No active requirements — define next milestone -->
 
 ### Out of Scope
 
@@ -116,15 +116,13 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - Rate limiting — defer
 - Structured logging / request tracing — defer
 
-## Current Milestone: v2.1 Security Headers & Cleanup
+## Current State
 
-**Goal:** Address all findings from BrandPod security scan — add missing security headers, clean up dead Firebase config, and harden admin email handling.
-
-**Target features:**
-- Security headers middleware (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy)
-- Remove dead VITE_FIREBASE_* ARGs from Dockerfile
-- Extract hardcoded admin email to environment variable
-- Tests for security headers
+**Shipped:** v2.1 Security Headers & Cleanup (2026-03-27)
+- All 6 BrandPod security headers in place via middleware
+- Dead Firebase Dockerfile references removed
+- Admin email configurable via DEFAULT_ADMIN_EMAIL env var
+- 7 new pytest tests for security headers (388+ total suite)
 
 ## Context
 
@@ -132,18 +130,18 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - **Users:** Small internal team at Table Rock Energy (land and revenue departments)
 - **Deployment:** Google Cloud Run (current), migrating to on-prem Ubuntu server with Docker
 - **Primary admin:** james@tablerocktx.com
-- **Auth model:** Firebase Auth (current), migrating to local JWT + PostgreSQL users table
-- **Codebase:** ~476K LOC (TypeScript + Python), React 19 + FastAPI + Firestore
-- **Test suite:** 50+ pytest tests (auth smoke, CORS, extract parsers, revenue parser), CI via GitHub Actions
+- **Auth model:** Local JWT + PostgreSQL users table (migrated from Firebase Auth in v2.0)
+- **Codebase:** ~476K LOC (TypeScript + Python), React 19 + FastAPI + PostgreSQL
+- **Test suite:** 380+ pytest tests (auth, CORS, security headers, extract parsers, revenue parser), CI via GitHub Actions
 - **Extract formats:** Standard OCC Exhibit A, ECF multiunit well filings (with optional Convey 640 CSV/Excel)
 - **Shipped:** v1.3 Security Hardening (2026-03-11), v1.4 ECF Extraction (2026-03-12), v1.5 Enrichment Pipeline (2026-03-17), v1.6 Pipeline Fixes & Unified Enrichment (2026-03-19)
 - **Shipped:** v1.7 Batch Processing & Resilience (2026-03-20)
 - **Shipped:** v1.8 Preview System Overhaul (2026-03-24)
-- **Shipped:** v2.0 Full On-Prem Migration (2026-03-25)
+- **Shipped:** v2.0 Full On-Prem Migration (2026-03-25), v2.1 Security Headers & Cleanup (2026-03-27)
 
 ## Constraints
 
-- **Stack:** React 19 + FastAPI + PostgreSQL + local JWT auth (migrating from Firestore + Firebase Auth)
+- **Stack:** React 19 + FastAPI + PostgreSQL + local JWT auth
 - **No new dependencies (parsing):** Use existing PyMuPDF for PDF text extraction, pandas for CSV/Excel processing
 - **New dependencies (infra):** bcrypt, python-jose (JWT), openai (LM Studio client)
 - **Mineral export format:** Output must match existing MINERAL_EXPORT_COLUMNS (shared across Extract/Title tools)
@@ -173,6 +171,9 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Compound lease splitting with district inheritance | Handles "02-12345/12346" by splitting and inheriting district prefix | ✓ Good — v1.6 |
 | Unified enrichment as single-button modal (not improving 3-button toolbar) | Users want fewer clicks; modal contains all progress; undo is more discoverable | Pending live verification — v1.6 |
 | Local variable threading in runAllSteps (not React state) | Avoids stale closure between sequential async steps | ✓ Good — v1.6 |
+| SecurityHeadersMiddleware registered before CORS (LIFO) | Starlette LIFO ordering ensures headers applied after CORS processing | ✓ Good — v2.1 |
+| CSP allows unsafe-inline for style-src | React injects inline styles that would be blocked otherwise | ✓ Good — v2.1 |
+| Admin email as Pydantic Settings field (not module constant) | Configurable via DEFAULT_ADMIN_EMAIL env var with sensible fallback | ✓ Good — v2.1 |
 
 ---
-*Last updated: 2026-03-27 — v2.1 milestone complete (Phases 28-29)*
+*Last updated: 2026-03-27 after v2.1 milestone*
