@@ -101,7 +101,7 @@ See: `.planning/milestones/v2.0-ROADMAP.md` for full details
 
 **v2.1 Security Headers & Cleanup (Phases 28-29)**
 
-- [ ] **Phase 28: Security Headers Middleware** - Add all 6 security headers via FastAPI middleware with test coverage
+- [x] **Phase 28: Security Headers Middleware** - Add all 6 security headers via FastAPI middleware with test coverage (completed 2026-03-27)
 - [ ] **Phase 29: Firebase & Config Cleanup** - Remove dead Dockerfile Firebase ARGs and extract admin email to env var
 
 ## Phase Details
@@ -118,7 +118,7 @@ See: `.planning/milestones/v2.0-ROADMAP.md` for full details
   5. Pytest tests assert all 6 headers present with expected values on a test client response -- tests pass in CI
 **Plans**: 1 plan
 Plans:
-- [ ] 28-01-PLAN.md -- SecurityHeadersMiddleware + pytest tests for all 6 headers
+- [x] 28-01-PLAN.md -- SecurityHeadersMiddleware + pytest tests for all 6 headers
 
 ### Phase 29: Firebase & Config Cleanup
 **Goal**: Dead Firebase references removed from Dockerfile and hardcoded admin email extracted to configuration
@@ -144,5 +144,5 @@ Phases 28 -> 29
 | 25. Database Service Port | v2.0 | 3/3 | Complete | 2026-03-25 |
 | 26. AI Provider Swap | v2.0 | 2/2 | Complete | 2026-03-25 |
 | 27. Storage & Dependency Cleanup | v2.0 | 2/2 | Complete | 2026-03-25 |
-| 28. Security Headers Middleware | v2.1 | 0/1 | In progress | - |
+| 28. Security Headers Middleware | v2.1 | 1/1 | Complete   | 2026-03-27 |
 | 29. Firebase & Config Cleanup | v2.1 | 0/0 | Not started | - |

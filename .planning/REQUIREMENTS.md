@@ -9,12 +9,12 @@ Requirements for v2.1 Security Headers & Cleanup. Each maps to roadmap phases.
 
 ### Security Headers
 
-- [ ] **SEC-01**: Server returns Content-Security-Policy header restricting script/style/font/img sources to self and trusted CDNs
-- [ ] **SEC-02**: Server returns Strict-Transport-Security header with max-age >= 31536000 and includeSubDomains
-- [ ] **SEC-03**: Server returns X-Frame-Options: DENY header preventing iframe embedding
-- [ ] **SEC-04**: Server returns X-Content-Type-Options: nosniff header preventing MIME sniffing
-- [ ] **SEC-05**: Server returns Referrer-Policy: strict-origin-when-cross-origin header
-- [ ] **SEC-06**: Server returns Permissions-Policy header restricting camera, microphone, geolocation
+- [x] **SEC-01**: Server returns Content-Security-Policy header restricting script/style/font/img sources to self and trusted CDNs
+- [x] **SEC-02**: Server returns Strict-Transport-Security header with max-age >= 31536000 and includeSubDomains
+- [x] **SEC-03**: Server returns X-Frame-Options: DENY header preventing iframe embedding
+- [x] **SEC-04**: Server returns X-Content-Type-Options: nosniff header preventing MIME sniffing
+- [x] **SEC-05**: Server returns Referrer-Policy: strict-origin-when-cross-origin header
+- [x] **SEC-06**: Server returns Permissions-Policy header restricting camera, microphone, geolocation
 
 ### Cleanup
 
@@ -23,7 +23,7 @@ Requirements for v2.1 Security Headers & Cleanup. Each maps to roadmap phases.
 
 ### Testing
 
-- [ ] **TEST-01**: Pytest tests verify all 6 security headers present on API responses with correct values
+- [x] **TEST-01**: Pytest tests verify all 6 security headers present on API responses with correct values
 
 ## Future Requirements
 
@@ -44,15 +44,15 @@ Requirements for v2.1 Security Headers & Cleanup. Each maps to roadmap phases.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEC-01 | Phase 28 | Pending |
-| SEC-02 | Phase 28 | Pending |
-| SEC-03 | Phase 28 | Pending |
-| SEC-04 | Phase 28 | Pending |
-| SEC-05 | Phase 28 | Pending |
-| SEC-06 | Phase 28 | Pending |
+| SEC-01 | Phase 28 | Complete |
+| SEC-02 | Phase 28 | Complete |
+| SEC-03 | Phase 28 | Complete |
+| SEC-04 | Phase 28 | Complete |
+| SEC-05 | Phase 28 | Complete |
+| SEC-06 | Phase 28 | Complete |
 | CLEAN-02 | Phase 29 | Pending |
 | CLEAN-03 | Phase 29 | Pending |
-| TEST-01 | Phase 28 | Pending |
+| TEST-01 | Phase 28 | Complete |
 
 **Coverage:**
 - v1 requirements: 9 total
