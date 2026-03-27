@@ -20,9 +20,6 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Default admin email (fallback when DB has no admin user yet)
-DEFAULT_ADMIN_EMAIL = "james@tablerocktx.com"
-
 security = HTTPBearer(auto_error=False)
 
 
@@ -188,7 +185,7 @@ def is_user_admin(email: str) -> bool:
     """Check if a user has admin role via PostgreSQL."""
     user = get_user_by_email(email)
     if user is None:
-        return email.lower() == DEFAULT_ADMIN_EMAIL
+        return email.lower() == settings.default_admin_email
     return user.get("role", "user") == "admin"
 
 
@@ -324,7 +321,7 @@ async def require_admin(
     Chains on require_auth, then checks if the user has admin role.
     Uses DB-based role from JWT-decoded user dict, with james@ fallback.
     """
-    if user.get("role") == "admin" or user.get("email", "").lower() == "james@tablerocktx.com":
+    if user.get("role") == "admin" or user.get("email", "").lower() == settings.default_admin_email:
         return user
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,

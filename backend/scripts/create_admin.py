@@ -12,6 +12,8 @@ from getpass import getpass
 
 from sqlalchemy import select
 
+from app.core.config import settings
+
 
 async def main():
     from app.core.database import async_session_maker
@@ -30,7 +32,7 @@ async def main():
 
     async with async_session_maker() as session:
         result = await session.execute(
-            select(User).where(User.email == "james@tablerocktx.com")
+            select(User).where(User.email == settings.default_admin_email)
         )
         existing = result.scalar_one_or_none()
         if existing:
@@ -39,10 +41,10 @@ async def main():
             existing.is_admin = True
             existing.is_active = True
             await session.commit()
-            print("Admin user password updated: james@tablerocktx.com")
+            print(f"Admin user password updated: {settings.default_admin_email}")
         else:
             user = User(
-                email="james@tablerocktx.com",
+                email=settings.default_admin_email,
                 password_hash=get_password_hash(password),
                 role="admin",
                 is_admin=True,
@@ -51,7 +53,7 @@ async def main():
             )
             session.add(user)
             await session.commit()
-            print("Admin user created: james@tablerocktx.com")
+            print(f"Admin user created: {settings.default_admin_email}")
 
 
 if __name__ == "__main__":

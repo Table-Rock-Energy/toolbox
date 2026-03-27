@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     # Entity matching threshold (0.0 - 1.0)
     entity_match_threshold: float = 0.85
 
+    # Default admin email (fallback when no admin exists in DB)
+    default_admin_email: str = "james@tablerocktx.com"
+
     # Environment and CORS settings
     environment: str = "development"
     cors_allowed_origins: str = ""

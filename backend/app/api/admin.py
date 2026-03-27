@@ -27,6 +27,7 @@ from app.core.auth import (
     require_auth,
     set_user_password,
 )
+from app.core.config import settings
 from app.services.shared.encryption import encrypt_value, decrypt_value
 from app.services.storage_service import profile_storage, storage_service
 
@@ -393,7 +394,7 @@ async def update_user(email: str, request: UpdateUserRequest, user: dict = Depen
 async def remove_user(email: str, user: dict = Depends(require_admin)):
     """Remove a user from the allowlist."""
     # Prevent removing the primary admin
-    if email.lower() == "james@tablerocktx.com":
+    if email.lower() == settings.default_admin_email:
         raise HTTPException(
             status_code=400,
             detail="Cannot remove primary admin user"
