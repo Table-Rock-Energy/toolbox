@@ -102,7 +102,7 @@ See: `.planning/milestones/v2.0-ROADMAP.md` for full details
 **v2.1 Security Headers & Cleanup (Phases 28-29)**
 
 - [x] **Phase 28: Security Headers Middleware** - Add all 6 security headers via FastAPI middleware with test coverage (completed 2026-03-27)
-- [ ] **Phase 29: Firebase & Config Cleanup** - Remove dead Dockerfile Firebase ARGs and extract admin email to env var
+- [x] **Phase 29: Firebase & Config Cleanup** - Remove dead Dockerfile Firebase ARGs and extract admin email to env var (completed 2026-03-27)
 
 ## Phase Details
 
@@ -130,7 +130,7 @@ Plans:
   3. App starts correctly with DEFAULT_ADMIN_EMAIL unset (falls back to james@tablerocktx.com as default in config.py)
 **Plans**: 1 plan
 Plans:
-- [ ] 29-01-PLAN.md -- Remove Dockerfile Firebase ARGs + extract admin email to config
+- [x] 29-01-PLAN.md -- Remove Dockerfile Firebase ARGs + extract admin email to config
 
 ## Progress
 
@@ -147,4 +147,4 @@ Phases 28 -> 29
 | 26. AI Provider Swap | v2.0 | 2/2 | Complete | 2026-03-25 |
 | 27. Storage & Dependency Cleanup | v2.0 | 2/2 | Complete | 2026-03-25 |
 | 28. Security Headers Middleware | v2.1 | 1/1 | Complete    | 2026-03-27 |
-| 29. Firebase & Config Cleanup | v2.1 | 0/1 | Not started | - |
+| 29. Firebase & Config Cleanup | v2.1 | 1/1 | Complete   | 2026-03-27 |

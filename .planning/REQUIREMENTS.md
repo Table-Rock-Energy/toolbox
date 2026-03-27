@@ -18,8 +18,8 @@ Requirements for v2.1 Security Headers & Cleanup. Each maps to roadmap phases.
 
 ### Cleanup
 
-- [ ] **CLEAN-02**: Dockerfile contains zero VITE_FIREBASE_* ARGs or references
-- [ ] **CLEAN-03**: Hardcoded admin email replaced with DEFAULT_ADMIN_EMAIL env var across auth.py and admin.py
+- [x] **CLEAN-02**: Dockerfile contains zero VITE_FIREBASE_* ARGs or references
+- [x] **CLEAN-03**: Hardcoded admin email replaced with DEFAULT_ADMIN_EMAIL env var across auth.py and admin.py
 
 ### Testing
 
@@ -50,8 +50,8 @@ Requirements for v2.1 Security Headers & Cleanup. Each maps to roadmap phases.
 | SEC-04 | Phase 28 | Complete |
 | SEC-05 | Phase 28 | Complete |
 | SEC-06 | Phase 28 | Complete |
-| CLEAN-02 | Phase 29 | Pending |
-| CLEAN-03 | Phase 29 | Pending |
+| CLEAN-02 | Phase 29 | Complete |
+| CLEAN-03 | Phase 29 | Complete |
 | TEST-01 | Phase 28 | Complete |
 
 **Coverage:**
