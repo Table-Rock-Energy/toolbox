@@ -6,7 +6,7 @@ status: active
 stopped_at: null
 last_updated: "2026-03-27"
 progress:
-  total_phases: 0
+  total_phases: 2
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,14 +19,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-27)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** v2.1 Security Headers & Cleanup — BrandPod scan remediation
+**Current focus:** v2.1 Security Headers & Cleanup -- Phase 28: Security Headers Middleware
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-27 — Milestone v2.1 started
+Phase: 28 of 29 (Security Headers Middleware)
+Plan: 0 of 0 in current phase (not yet planned)
+Status: Ready to plan
+Last activity: 2026-03-27 -- Roadmap created for v2.1
 
 Progress: [----------] 0%
 
@@ -34,7 +34,7 @@ Progress: [----------] 0%
 
 ### Decisions
 
-(None yet)
+(None yet for v2.1)
 
 ### Pending Todos
 
@@ -42,11 +42,10 @@ None.
 
 ### Blockers/Concerns
 
-- [v2.0]: VITE_FIREBASE_* ARGs in Dockerfile (user chose not to modify — now scheduled for removal in v2.1)
 - [v2.0]: JSON allowlist dual-path with PostgreSQL users table
 
 ## Session Continuity
 
 Last session: 2026-03-27
-Stopped at: Defining requirements
+Stopped at: Roadmap created, ready to plan Phase 28
 Resume file: None

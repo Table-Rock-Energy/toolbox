@@ -35,7 +35,7 @@ Requirements for v2.1 Security Headers & Cleanup. Each maps to roadmap phases.
 
 | Feature | Reason |
 |---------|--------|
-| WAF / DDoS protection | Infrastructure-level, not app-level — handled by Cloud Run / reverse proxy |
+| WAF / DDoS protection | Infrastructure-level, not app-level -- handled by Cloud Run / reverse proxy |
 | CSRF tokens | SPA with JWT Bearer auth, no cookie-based sessions |
 | Subresource Integrity (SRI) | Vite bundles are self-hosted, no CDN scripts |
 | Certificate pinning | Cloud Run manages TLS certificates |
@@ -44,21 +44,21 @@ Requirements for v2.1 Security Headers & Cleanup. Each maps to roadmap phases.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEC-01 | — | Pending |
-| SEC-02 | — | Pending |
-| SEC-03 | — | Pending |
-| SEC-04 | — | Pending |
-| SEC-05 | — | Pending |
-| SEC-06 | — | Pending |
-| CLEAN-02 | — | Pending |
-| CLEAN-03 | — | Pending |
-| TEST-01 | — | Pending |
+| SEC-01 | Phase 28 | Pending |
+| SEC-02 | Phase 28 | Pending |
+| SEC-03 | Phase 28 | Pending |
+| SEC-04 | Phase 28 | Pending |
+| SEC-05 | Phase 28 | Pending |
+| SEC-06 | Phase 28 | Pending |
+| CLEAN-02 | Phase 29 | Pending |
+| CLEAN-03 | Phase 29 | Pending |
+| TEST-01 | Phase 28 | Pending |
 
 **Coverage:**
 - v1 requirements: 9 total
-- Mapped to phases: 0
-- Unmapped: 9 (pending roadmap)
+- Mapped to phases: 9
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-27*
-*Last updated: 2026-03-27 after initial definition*
+*Last updated: 2026-03-27 after roadmap creation*
