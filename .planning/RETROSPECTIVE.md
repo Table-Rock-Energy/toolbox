@@ -169,6 +169,47 @@
 
 ---
 
+## Milestone: v2.0 — Full On-Prem Migration
+
+**Shipped:** 2026-03-25
+**Phases:** 6 | **Plans:** 13
+
+### What Was Built
+- Local JWT auth replacing Firebase Auth (PyJWT + pwdlib[bcrypt] + PostgreSQL users table)
+- Full Firestore→PostgreSQL migration with SQLAlchemy async sessions and Alembic
+- OpenAI-compatible AI provider for LM Studio replacing Gemini
+- Stripped all Google Cloud dependencies (Firebase, Firestore, GCS, google-genai)
+- One-time migration script with 16 collection handlers and per-table verification
+- Disabled Cloud Run CI/CD — app runs fully on-prem
+
+### What Worked
+- Phase ordering: models→auth backend→auth frontend→DB port→AI swap→cleanup avoided circular dependencies
+- AI provider swap was cleanly independent of auth/DB work — could have parallelized
+- Incremental Firestore removal (service-by-service swap) prevented big-bang breakage
+- 78+ tests passing throughout migration gave confidence at each step
+
+### What Was Inefficient
+- 27-01 plan checkbox left unchecked in ROADMAP despite being complete — caused confusion at milestone completion
+- Some tech debt accepted (VITE_FIREBASE_* Dockerfile ARGs, JSON allowlist dual-path) that could have been cleaned inline
+
+### Patterns Established
+- Local auth pattern: PyJWT + pwdlib[bcrypt] + SQLAlchemy users table
+- Provider abstraction: LLMProvider protocol with factory routing
+- Sync session factory for background threads outside asyncio event loop
+- Migration script pattern: per-collection handlers with count verification
+
+### Key Lessons
+1. Plan checkbox state in ROADMAP.md must be maintained — stale state causes confusion at milestone boundary
+2. "Full removal" milestones benefit from a final grep sweep phase to catch stragglers
+3. Accepting tech debt items should be explicitly tracked in STATE.md blockers (which was done correctly)
+
+### Cost Observations
+- Model mix: ~70% opus, ~30% sonnet
+- Sessions: ~4
+- Notable: Largest infrastructure change (6 phases, 13 plans) completed in 1 day
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -179,6 +220,9 @@
 | v1.4 | ~4 | 4 | 7 | TDD carried forward, parallel phases, audit caught integration gap |
 | v1.5 | ~7 | 5 | 12 | Largest milestone, preview state unification, pipeline API pattern |
 | v1.6 | ~3 | 3 | 6 | Tightest timeline (2 days), wave-based parallel execution |
+| v1.7 | ~3 | 5 | 9 | Batch processing engine, operation persistence, multi-PDF streaming |
+| v1.8 | ~2 | 4 | 6 | Key-based tracking, filter correctness, minimal-touch milestone |
+| v2.0 | ~4 | 6 | 13 | Full infra migration (Firebase→JWT, Firestore→PG, Gemini→LM Studio) |
 
 ### Cumulative Quality
 
@@ -188,6 +232,9 @@
 | v1.4 | 60+ | + ECF/Convey640/merge parsers | ECF parser tests, merge service tests, Convey 640 tests |
 | v1.5 | 60+ | + pipeline integration | Pipeline API smoke tests |
 | v1.6 | 60+ | + admin auth | Admin endpoint auth tests, history scoping tests |
+| v1.7 | 60+ | + batch/pipeline | Batch engine tests, disconnect detection |
+| v1.8 | 60+ | + filter/highlight | Filter correctness, key-based tracking |
+| v2.0 | 78+ | + JWT auth + DB port | JWT auth tests, migration script verification |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -196,3 +243,5 @@
 3. Milestone audits catch integration boundary bugs that per-phase TDD misses — run before completing
 4. Preview state unification pays dividends across all downstream features
 5. Local variable threading is essential for sequential async React operations
+6. "Full removal" milestones need a final grep sweep to catch stragglers
+7. Plan checkbox state must stay current — stale ROADMAP state causes confusion at milestone boundary

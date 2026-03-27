@@ -135,7 +135,7 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - **Shipped:** v1.3 Security Hardening (2026-03-11), v1.4 ECF Extraction (2026-03-12), v1.5 Enrichment Pipeline (2026-03-17), v1.6 Pipeline Fixes & Unified Enrichment (2026-03-19)
 - **Shipped:** v1.7 Batch Processing & Resilience (2026-03-20)
 - **Shipped:** v1.8 Preview System Overhaul (2026-03-24)
-- **In progress:** v2.0 Full On-Prem Migration
+- **Shipped:** v2.0 Full On-Prem Migration (2026-03-25)
 
 ## Constraints
 
@@ -171,4 +171,4 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | Local variable threading in runAllSteps (not React state) | Avoids stale closure between sequential async steps | ✓ Good — v1.6 |
 
 ---
-*Last updated: 2026-03-25 — v2.0 milestone complete (full on-prem migration)*
+*Last updated: 2026-03-27 — v2.0 archived, preparing security audit milestone*
