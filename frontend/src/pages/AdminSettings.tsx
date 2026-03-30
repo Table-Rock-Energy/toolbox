@@ -98,6 +98,8 @@ export default function AdminSettings() {
   const [batchSize, setBatchSize] = useState(25)
   const [batchMaxConcurrency, setBatchMaxConcurrency] = useState(2)
   const [batchMaxRetries, setBatchMaxRetries] = useState(1)
+  const [availableModels, setAvailableModels] = useState<{id: string}[]>([])
+  const [lmStudioConnected, setLmStudioConnected] = useState(false)
   const [isSavingApiSettings, setIsSavingApiSettings] = useState(false)
   const [apiSettingsSuccess, setApiSettingsSuccess] = useState('')
   const [apiSettingsError, setApiSettingsError] = useState('')
@@ -239,6 +241,19 @@ export default function AdminSettings() {
     loadEnrichmentConfig()
     fetchConnections()
   }, [fetchUsers, fetchOptions, fetchApiSettings])
+
+  // Fetch available LM Studio models when AI is enabled
+  useEffect(() => {
+    if (aiEnabled) {
+      fetch('/api/admin/settings/available-models', { headers: authHeaders() })
+        .then(r => r.json())
+        .then(data => {
+          setAvailableModels(data.models || [])
+          setLmStudioConnected(data.connected || false)
+        })
+        .catch(() => setLmStudioConnected(false))
+    }
+  }, [aiEnabled, authHeaders])
 
   const handleSaveApiSettings = async () => {
     setIsSavingApiSettings(true)
@@ -741,15 +756,29 @@ export default function AdminSettings() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Model Name
                 </label>
-                <input
-                  type="text"
-                  value={aiModel}
-                  onChange={(e) => setAiModel(e.target.value)}
-                  placeholder="qwen3.5-35b-a3b"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
-                />
+                {availableModels.length > 0 ? (
+                  <select
+                    value={aiModel}
+                    onChange={(e) => setAiModel(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal bg-white"
+                  >
+                    {availableModels.map(m => (
+                      <option key={m.id} value={m.id}>{m.id}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={aiModel}
+                    onChange={(e) => setAiModel(e.target.value)}
+                    placeholder="qwen3.5-35b-a3b"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
+                  />
+                )}
                 <p className="text-xs text-gray-500 mt-1">
-                  Model name as shown in LM Studio (e.g., qwen3.5-35b-a3b)
+                  {lmStudioConnected
+                    ? `Connected to LM Studio — ${availableModels.length} model(s) available`
+                    : 'Could not connect to LM Studio. Enter model name manually.'}
                 </p>
               </div>
             </div>

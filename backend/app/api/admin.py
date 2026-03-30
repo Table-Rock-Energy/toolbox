@@ -469,6 +469,34 @@ async def update_ai_settings(request: AiSettingsRequest, user: dict = Depends(re
     )
 
 
+@router.get("/settings/available-models")
+async def get_available_models(user: dict = Depends(require_admin)):
+    """Query LM Studio for loaded/available models."""
+    from app.core.config import settings as runtime_settings
+    import httpx
+
+    base_url = runtime_settings.llm_api_base or "http://host.docker.internal:1234/v1"
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{base_url}/models")
+            response.raise_for_status()
+            data = response.json()
+
+            models = []
+            for model in data.get("data", []):
+                models.append({
+                    "id": model.get("id", ""),
+                    "object": model.get("object", "model"),
+                    "owned_by": model.get("owned_by", ""),
+                })
+
+            return {"models": models, "connected": True}
+    except Exception as e:
+        logger.warning(f"Could not connect to LM Studio: {e}")
+        return {"models": [], "connected": False, "error": str(e)}
+
+
 @router.get("/settings/api-config", response_model=ApiSettingsResponse)
 async def get_api_config_settings(user: dict = Depends(require_admin)):
     """Get current API settings (AI, Maps, batch config)."""

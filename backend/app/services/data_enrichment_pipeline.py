@@ -710,35 +710,39 @@ async def _validate_names_step(
     }
 
     try:
-        result = await provider.validate_entries(tool, entries)
+        changes = await provider.cleanup_entries(tool, entries)
 
-        if result.success and result.suggestions:
-            applied = 0
-            for suggestion in result.suggestions:
-                idx = suggestion.entry_index
-                if 0 <= idx < len(entries) and suggestion.confidence in ("high", "medium"):
-                    field_name = suggestion.field
-                    if field_name in entries[idx]:
-                        entries[idx][field_name] = suggestion.suggested_value
-                        applied += 1
+        applied = 0
+        entity_type_changes = 0
+        for change in changes:
+            idx = change.entry_index
+            if 0 <= idx < len(entries) and change.confidence in ("high", "medium"):
+                field_name = change.field
+                if field_name in entries[idx]:
+                    entries[idx][field_name] = change.proposed_value
+                    applied += 1
+                    if field_name == "entity_type":
+                        entries[idx]["entity_type_changed"] = True
+                        entity_type_changes += 1
 
-            yield {
-                "step": "names",
-                "status": "completed",
-                "suggestions": len(result.suggestions),
-                "applied": applied,
-                "total": total,
-                "message": f"Name validation complete: {applied} corrections applied",
-            }
-        else:
-            yield {
-                "step": "names",
-                "status": "completed",
-                "suggestions": 0,
-                "applied": 0,
-                "total": total,
-                "message": "Name validation complete: no corrections needed",
-            }
+        # Re-run entity type detection after AI name corrections
+        if tool in ("extract", "title"):
+            name_field = "primary_name" if tool == "extract" else "full_name"
+            entity_fixes = _fix_entity_type(entries, name_field, "entity_type", tool=tool)
+            for fix in entity_fixes:
+                entries[fix.entry_index]["entity_type_changed"] = True
+                entity_type_changes += 1
+            applied += len(entity_fixes)
+
+        yield {
+            "step": "names",
+            "status": "completed",
+            "suggestions": len(changes),
+            "applied": applied,
+            "entity_type_changes": entity_type_changes,
+            "total": total,
+            "message": f"AI cleanup complete: {applied} corrections applied ({entity_type_changes} entity type changes)",
+        }
 
     except Exception as e:
         logger.exception(f"Error in name validation: {e}")

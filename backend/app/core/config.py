@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     # AI provider settings (lmstudio or none)
     ai_provider: str = "none"
-    llm_api_base: str = "http://localhost:1234/v1"
+    llm_api_base: str = "http://host.docker.internal:1234/v1"
     llm_model: str = "qwen3.5-35b-a3b"
     llm_api_key: Optional[str] = None
 

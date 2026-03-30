@@ -75,6 +75,7 @@ class OpenAIProvider:
             self._client = AsyncOpenAI(
                 base_url=settings.llm_api_base,
                 api_key=settings.llm_api_key or "not-needed",
+                timeout=300.0,  # 5 minutes — local inference on large models is slow
             )
         return self._client
 
