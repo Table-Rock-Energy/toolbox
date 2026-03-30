@@ -81,8 +81,11 @@ def parse_date(date_str: str) -> Optional[date]:
     return None
 
 
-def parse_decimal(value_str: str) -> Optional[Decimal]:
-    """Parse decimal from string, handling parentheses for negatives."""
+def parse_decimal(value_str: str) -> Optional[float]:
+    """Parse decimal from string, handling parentheses for negatives.
+
+    Returns float (not Decimal) for DB Float column compatibility.
+    """
     if not value_str:
         return None
 
@@ -99,7 +102,7 @@ def parse_decimal(value_str: str) -> Optional[Decimal]:
     value_str = value_str.replace("$", "")
 
     try:
-        return Decimal(value_str)
+        return float(Decimal(value_str))
     except InvalidOperation:
         return None
 

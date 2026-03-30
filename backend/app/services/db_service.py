@@ -363,7 +363,7 @@ async def save_revenue_statement(
         payor=statement_data.get("payor"),
         operator_name=statement_data.get("operator_name"),
         check_number=statement_data.get("check_number"),
-        check_amount=statement_data.get("check_amount"),
+        check_amount=float(statement_data["check_amount"]) if statement_data.get("check_amount") is not None else None,
         check_date=statement_data.get("check_date"),
         owner_number=statement_data.get("owner_number"),
         owner_name=statement_data.get("owner_name"),
