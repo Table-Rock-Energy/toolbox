@@ -314,7 +314,7 @@ async def add_user(request: AddUserRequest, user: dict = Depends(require_admin))
     try:
         from app.core.database import async_session_maker
         from app.models.db_models import User as UserModel
-        from app.core.security import hash_password
+        from app.core.security import get_password_hash
         from sqlalchemy import select as sa_select
 
         async with async_session_maker() as session:
@@ -339,7 +339,7 @@ async def add_user(request: AddUserRequest, user: dict = Depends(require_admin))
 
             # Set password if provided
             if request.password:
-                db_user.password_hash = hash_password(request.password)
+                db_user.password_hash = get_password_hash(request.password)
 
             await session.commit()
     except Exception as e:
