@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     llm_api_base: str = "http://host.docker.internal:1234/v1"
     llm_model: str = "qwen3.5-35b-a3b"
     llm_api_key: Optional[str] = None
+    llm_models_dir: str = "/mnt/array/lm-studio/models"
 
     # Batch processing settings
     batch_size: int = 25

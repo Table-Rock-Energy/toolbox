@@ -27,6 +27,7 @@ from app.services.proration.rrc_county_download_service import (
     fetch_individual_leases,
 )
 from app.services.proration.rrc_data_service import rrc_data_service
+from app.services.storage_service import rrc_storage
 from app.services.rrc_background import (
     get_active_rrc_sync_job,
     get_rrc_sync_job,
@@ -278,7 +279,7 @@ async def refresh_tracked_counties() -> dict:
 
 @router.post("/rrc/sync")
 async def sync_rrc_to_database() -> dict:
-    """Manually sync existing CSV data to the database."""
+    """Manually sync existing CSV data to the database (row-by-row upsert)."""
     try:
         result = await rrc_data_service.sync_to_database("both")
         return result
@@ -288,6 +289,104 @@ async def sync_rrc_to_database() -> dict:
             status_code=500,
             detail=f"Database sync failed: {e!s}",
         ) from e
+
+
+@router.post("/rrc/import-csv")
+async def import_csv_to_database() -> dict:
+    """Bulk-import existing RRC CSV files from disk into PostgreSQL.
+
+    Uses INSERT ON CONFLICT for fast batch upserts (~220K records).
+    After import, invalidates and re-prewarms the in-memory cache.
+    """
+    from datetime import timezone
+
+    from app.core.database import async_session_maker
+    from app.services import db_service
+    from app.services.proration.rrc_cache import invalidate_cache, prewarm_rrc_cache
+    from app.services.proration.rrc_data_service import _csv_bytes_to_upsert_rows
+
+    oil_count = 0
+    gas_count = 0
+    errors = []
+
+    # Import oil CSV
+    try:
+        oil_bytes = rrc_storage.get_oil_data()
+        if oil_bytes:
+            oil_rows = _csv_bytes_to_upsert_rows(oil_bytes)
+            if oil_rows:
+                async with async_session_maker() as session:
+                    oil_count, _ = await db_service.bulk_upsert_rrc_oil(session, oil_rows)
+                    await session.commit()
+                logger.info("Imported %d oil records to PostgreSQL", oil_count)
+        else:
+            errors.append("Oil CSV not found on disk")
+    except Exception as e:
+        logger.exception("Oil CSV import failed: %s", e)
+        errors.append(f"Oil import error: {e!s}")
+
+    # Import gas CSV
+    try:
+        gas_bytes = rrc_storage.get_gas_data()
+        if gas_bytes:
+            gas_rows = _csv_bytes_to_upsert_rows(gas_bytes)
+            if gas_rows:
+                async with async_session_maker() as session:
+                    gas_count, _ = await db_service.bulk_upsert_rrc_gas(session, gas_rows)
+                    await session.commit()
+                logger.info("Imported %d gas records to PostgreSQL", gas_count)
+        else:
+            errors.append("Gas CSV not found on disk")
+    except Exception as e:
+        logger.exception("Gas CSV import failed: %s", e)
+        errors.append(f"Gas import error: {e!s}")
+
+    # Record sync entry
+    try:
+        now = datetime.now(timezone.utc)
+        async with async_session_maker() as session:
+            sync = await db_service.start_rrc_sync(session, "both")
+            await db_service.complete_rrc_sync(
+                session,
+                sync_id=sync.id,
+                total_records=oil_count + gas_count,
+                new_records=oil_count + gas_count,
+                updated_records=0,
+                unchanged_records=0,
+                success=not errors,
+                error_message="; ".join(errors) if errors else None,
+            )
+            # Update metadata cache
+            await db_service.update_rrc_metadata_counts(
+                session,
+                oil_rows=oil_count,
+                gas_rows=gas_count,
+                last_sync_at=now,
+                new_records=oil_count + gas_count,
+            )
+            await session.commit()
+    except Exception as e:
+        logger.warning("Could not record sync entry: %s", e)
+
+    # Invalidate and re-prewarm cache from database
+    invalidate_cache()
+    rrc_data_service._combined_lookup = None
+    rrc_data_service._oil_lookup = None
+    rrc_data_service._gas_lookup = None
+    try:
+        await prewarm_rrc_cache()
+    except Exception as e:
+        logger.warning("Cache re-prewarm failed: %s", e)
+
+    total = oil_count + gas_count
+    return {
+        "success": not errors,
+        "message": f"Imported {total:,} records ({oil_count:,} oil, {gas_count:,} gas)",
+        "oil_records": oil_count,
+        "gas_records": gas_count,
+        "total_records": total,
+        "errors": errors or None,
+    }
 
 
 @router.post("/upload", response_model=UploadResponse)
@@ -414,155 +513,163 @@ async def fetch_missing_rrc_data(request: FetchMissingRequest, background_tasks:
         total = len(request.rows)
         yield json.dumps({"event": "started", "total": total}) + "\n"
 
-        # Step 1: Parse district/lease from each row and check database first
-        updated_rows = []
-        matched = 0
-        missing_leases: list[tuple[int, str, str, str]] = []
+        try:
+            # Step 1: Parse district/lease from each row and check database first
+            updated_rows = []
+            matched = 0
+            missing_leases: list[tuple[int, str, str, str]] = []
 
-        for i, row in enumerate(request.rows):
-            district = row.district
-            lease_number = row.lease_number
+            for i, row in enumerate(request.rows):
+                district = row.district
+                lease_number = row.lease_number
 
-            if not district or not lease_number:
-                if row.rrc_lease and "-" in row.rrc_lease:
-                    parts = row.rrc_lease.split("-", 1)
-                    district = district or parts[0].strip()
-                    lease_number = lease_number or parts[1].strip()
-                elif row.raw_rrc:
-                    numbers = re.findall(r"\d+", str(row.raw_rrc))
-                    if len(numbers) >= 2:
-                        district = district or numbers[0].zfill(2)
-                        lease_number = lease_number or numbers[1]
+                if not district or not lease_number:
+                    if row.rrc_lease and "-" in row.rrc_lease:
+                        parts = row.rrc_lease.split("-", 1)
+                        district = district or parts[0].strip()
+                        lease_number = lease_number or parts[1].strip()
+                    elif row.raw_rrc:
+                        numbers = re.findall(r"\d+", str(row.raw_rrc))
+                        if len(numbers) >= 2:
+                            district = district or numbers[0].zfill(2)
+                            lease_number = lease_number or numbers[1]
 
-            county_code = ""
-            if row.county:
-                county_result = lookup_county(row.county)
-                if county_result:
-                    county_code = county_result[0]
+                county_code = ""
+                if row.county:
+                    county_result = lookup_county(row.county)
+                    if county_result:
+                        county_code = county_result[0]
 
-            is_compound = False
-            sub_parts: list[tuple[str, str]] = []
-            if row.rrc_lease and ("/" in row.rrc_lease or "," in row.rrc_lease):
-                sub_parts = split_compound_lease(row.rrc_lease, district or "")
-                is_compound = bool(sub_parts)
+                is_compound = False
+                sub_parts: list[tuple[str, str]] = []
+                if row.rrc_lease and ("/" in row.rrc_lease or "," in row.rrc_lease):
+                    sub_parts = split_compound_lease(row.rrc_lease, district or "")
+                    is_compound = bool(sub_parts)
 
-            if is_compound:
-                for sub_d, sub_ln in sub_parts:
-                    missing_leases.append((len(updated_rows), sub_d, sub_ln, county_code))
+                if is_compound:
+                    for sub_d, sub_ln in sub_parts:
+                        missing_leases.append((len(updated_rows), sub_d, sub_ln, county_code))
+                    updated_rows.append(row)
+                    if (i + 1) % 5 == 0:
+                        yield json.dumps({"event": "progress", "phase": "db_lookup", "checked": i + 1, "total": total, "matched": matched}) + "\n"
+                    continue
+
+                rrc_info = None
+                # Try district+lease first (fast doc lookup), then lease-only fallback (collection scan)
+                if district and lease_number:
+                    rrc_info = await lookup_rrc_acres(district, lease_number)
+                if rrc_info is None and lease_number:
+                    rrc_info = await lookup_rrc_by_lease_number(lease_number)
+
+                if rrc_info:
+                    _apply_rrc_info(row, rrc_info, WellType)
+                    row.fetch_status = "found"
+                    matched += 1
+                elif district and lease_number:
+                    missing_leases.append((len(updated_rows), district, lease_number, county_code))
+
                 updated_rows.append(row)
+
                 if (i + 1) % 5 == 0:
                     yield json.dumps({"event": "progress", "phase": "db_lookup", "checked": i + 1, "total": total, "matched": matched}) + "\n"
-                continue
 
-            rrc_info = None
-            # Try district+lease first (fast doc lookup), then lease-only fallback (collection scan)
-            if district and lease_number:
-                rrc_info = await lookup_rrc_acres(district, lease_number)
-            if rrc_info is None and lease_number:
-                rrc_info = await lookup_rrc_by_lease_number(lease_number)
+            # Final db_lookup progress
+            yield json.dumps({"event": "progress", "phase": "db_lookup", "checked": total, "total": total, "matched": matched}) + "\n"
 
-            if rrc_info:
-                _apply_rrc_info(row, rrc_info, WellType)
-                row.fetch_status = "found"
-                matched += 1
-            elif district and lease_number:
-                missing_leases.append((len(updated_rows), district, lease_number, county_code))
+            # Step 2: Individual RRC queries for missing leases
+            if missing_leases:
+                unique_leases = list({(d, ln, cc) for _, d, ln, cc in missing_leases})
+                logger.info("fetch-missing: querying RRC for %d individual leases", len(unique_leases))
 
-            updated_rows.append(row)
+                yield json.dumps({"event": "progress", "phase": "rrc_query", "checked": 0, "total": len(unique_leases), "matched": matched}) + "\n"
 
-            if (i + 1) % 5 == 0:
-                yield json.dumps({"event": "progress", "phase": "db_lookup", "checked": i + 1, "total": total, "matched": matched}) + "\n"
+                try:
+                    individual_results = await fetch_individual_leases(unique_leases)
+                except Exception as e:
+                    logger.warning("Individual lease fetch failed: %s", e)
+                    individual_results = {}
 
-        # Final db_lookup progress
-        yield json.dumps({"event": "progress", "phase": "db_lookup", "checked": total, "total": total, "matched": matched}) + "\n"
+                yield json.dumps({"event": "progress", "phase": "rrc_query", "checked": len(unique_leases), "total": len(unique_leases), "matched": matched}) + "\n"
 
-        # Step 2: Individual RRC queries for missing leases
-        if missing_leases:
-            unique_leases = list({(d, ln, cc) for _, d, ln, cc in missing_leases})
-            logger.info("fetch-missing: querying RRC for %d individual leases", len(unique_leases))
+                from collections import defaultdict
+                row_lease_map: dict[int, list[tuple[str, str, str]]] = defaultdict(list)
+                for row_idx, d, ln, cc in missing_leases:
+                    row_lease_map[row_idx].append((d, ln, cc))
 
-            yield json.dumps({"event": "progress", "phase": "rrc_query", "checked": 0, "total": len(unique_leases), "matched": matched}) + "\n"
-
-            try:
-                individual_results = await fetch_individual_leases(unique_leases)
-            except Exception as e:
-                logger.warning("Individual lease fetch failed: %s", e)
-                individual_results = {}
-
-            yield json.dumps({"event": "progress", "phase": "rrc_query", "checked": len(unique_leases), "total": len(unique_leases), "matched": matched}) + "\n"
-
-            from collections import defaultdict
-            row_lease_map: dict[int, list[tuple[str, str, str]]] = defaultdict(list)
-            for row_idx, d, ln, cc in missing_leases:
-                row_lease_map[row_idx].append((d, ln, cc))
-
-            for row_idx, lease_parts in row_lease_map.items():
-                row = updated_rows[row_idx]
-                if len(lease_parts) == 1:
-                    d, ln, _cc = lease_parts[0]
-                    rrc_info = individual_results.get((d, ln))
-                    if rrc_info:
-                        _apply_rrc_info(row, rrc_info, WellType)
-                        row.fetch_status = "found"
-                        matched += 1
-                    else:
-                        row.fetch_status = "not_found"
-                else:
-                    sub_results = []
-                    first_found_info = None
-                    for d, ln, _cc in lease_parts:
+                for row_idx, lease_parts in row_lease_map.items():
+                    row = updated_rows[row_idx]
+                    if len(lease_parts) == 1:
+                        d, ln, _cc = lease_parts[0]
                         rrc_info = individual_results.get((d, ln))
                         if rrc_info:
-                            sub_results.append({"district": d, "lease_number": ln, "status": "found", "acres": rrc_info.get("acres")})
-                            if first_found_info is None:
-                                first_found_info = rrc_info
+                            _apply_rrc_info(row, rrc_info, WellType)
+                            row.fetch_status = "found"
+                            matched += 1
                         else:
-                            sub_results.append({"district": d, "lease_number": ln, "status": "not_found", "acres": None})
-                    row.sub_lease_results = sub_results
-                    if first_found_info:
-                        _apply_rrc_info(row, first_found_info, WellType)
-                        row.fetch_status = "split_lookup"
-                        matched += 1
+                            row.fetch_status = "not_found"
                     else:
-                        row.fetch_status = "not_found"
+                        sub_results = []
+                        first_found_info = None
+                        for d, ln, _cc in lease_parts:
+                            rrc_info = individual_results.get((d, ln))
+                            if rrc_info:
+                                sub_results.append({"district": d, "lease_number": ln, "status": "found", "acres": rrc_info.get("acres")})
+                                if first_found_info is None:
+                                    first_found_info = rrc_info
+                            else:
+                                sub_results.append({"district": d, "lease_number": ln, "status": "not_found", "acres": None})
+                        row.sub_lease_results = sub_results
+                        if first_found_info:
+                            _apply_rrc_info(row, first_found_info, WellType)
+                            row.fetch_status = "split_lookup"
+                            matched += 1
+                        else:
+                            row.fetch_status = "not_found"
 
-            # Background persist
-            if individual_results:
-                background_tasks.add_task(_background_persist_individual, individual_results)
+                # Background persist
+                if individual_results:
+                    background_tasks.add_task(_background_persist_individual, individual_results)
 
-        # Mark rows still missing
-        RRC_SEARCH_URL = "https://webapps2.rrc.texas.gov/EWA/oilProQueryAction.do"
-        for row in updated_rows:
-            if not row.rrc_acres and row.notes and "Not found" in row.notes:
-                d = row.district or ""
-                ln = row.lease_number or ""
-                row.notes = f"Not found in RRC|{RRC_SEARCH_URL}?district={d}&lease={ln}"
+            # Mark rows still missing
+            RRC_SEARCH_URL = "https://webapps2.rrc.texas.gov/EWA/oilProQueryAction.do"
+            for row in updated_rows:
+                if not row.rrc_acres and row.notes and "Not found" in row.notes:
+                    d = row.district or ""
+                    ln = row.lease_number or ""
+                    row.notes = f"Not found in RRC|{RRC_SEARCH_URL}?district={d}&lease={ln}"
 
-        logger.info("fetch-missing: matched %d of %d rows", matched, total)
+            logger.info("fetch-missing: matched %d of %d rows", matched, total)
 
-        # Background county download
-        county_set: set[str] = set()
-        for row in request.rows:
-            if row.county:
-                county_set.add(row.county.strip().upper().replace(" COUNTY", ""))
-        bg_counties = []
-        for name in county_set:
-            result = lookup_county(name)
-            if result:
-                county_code, district_code, canonical = result
-                bg_counties.append({"county_name": canonical, "county_code": county_code, "district": district_code})
-        if bg_counties:
-            background_tasks.add_task(_background_county_download, bg_counties)
+            # Background county download
+            county_set: set[str] = set()
+            for row in request.rows:
+                if row.county:
+                    county_set.add(row.county.strip().upper().replace(" COUNTY", ""))
+            bg_counties = []
+            for name in county_set:
+                result = lookup_county(name)
+                if result:
+                    county_code, district_code, canonical = result
+                    bg_counties.append({"county_name": canonical, "county_code": county_code, "district": district_code})
+            if bg_counties:
+                background_tasks.add_task(_background_county_download, bg_counties)
 
-        # Serialize updated rows via Pydantic
-        serialized_rows = [r.model_dump() for r in updated_rows]
+            # Serialize updated rows via Pydantic
+            serialized_rows = [r.model_dump() for r in updated_rows]
 
-        yield json.dumps({
-            "event": "complete",
-            "matched_count": matched,
-            "still_missing_count": total - matched,
-            "updated_rows": serialized_rows,
-        }) + "\n"
+            yield json.dumps({
+                "event": "complete",
+                "matched_count": matched,
+                "still_missing_count": total - matched,
+                "updated_rows": serialized_rows,
+            }) + "\n"
+
+        except Exception as e:
+            logger.exception("fetch-missing stream error: %s", e)
+            yield json.dumps({
+                "event": "error",
+                "message": f"RRC lookup failed: {e!s}",
+            }) + "\n"
 
     return StreamingResponse(_stream(), media_type="application/x-ndjson")
 

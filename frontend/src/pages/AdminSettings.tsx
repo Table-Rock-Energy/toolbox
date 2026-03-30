@@ -98,8 +98,9 @@ export default function AdminSettings() {
   const [batchSize, setBatchSize] = useState(25)
   const [batchMaxConcurrency, setBatchMaxConcurrency] = useState(2)
   const [batchMaxRetries, setBatchMaxRetries] = useState(1)
-  const [availableModels, setAvailableModels] = useState<{id: string}[]>([])
+  const [availableModels, setAvailableModels] = useState<{id: string; loaded?: boolean; source?: string}[]>([])
   const [lmStudioConnected, setLmStudioConnected] = useState(false)
+  const [modelsDirFound, setModelsDirFound] = useState(false)
   const [isSavingApiSettings, setIsSavingApiSettings] = useState(false)
   const [apiSettingsSuccess, setApiSettingsSuccess] = useState('')
   const [apiSettingsError, setApiSettingsError] = useState('')
@@ -250,8 +251,12 @@ export default function AdminSettings() {
         .then(data => {
           setAvailableModels(data.models || [])
           setLmStudioConnected(data.connected || false)
+          setModelsDirFound(data.models_dir_found || false)
         })
-        .catch(() => setLmStudioConnected(false))
+        .catch(() => {
+          setLmStudioConnected(false)
+          setModelsDirFound(false)
+        })
     }
   }, [aiEnabled, authHeaders])
 
@@ -763,7 +768,9 @@ export default function AdminSettings() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal bg-white"
                   >
                     {availableModels.map(m => (
-                      <option key={m.id} value={m.id}>{m.id}</option>
+                      <option key={m.id} value={m.id}>
+                        {m.id}{m.loaded ? ' (loaded)' : ''}
+                      </option>
                     ))}
                   </select>
                 ) : (
@@ -776,9 +783,11 @@ export default function AdminSettings() {
                   />
                 )}
                 <p className="text-xs text-gray-500 mt-1">
-                  {lmStudioConnected
-                    ? `Connected to LM Studio — ${availableModels.length} model(s) available`
-                    : 'Could not connect to LM Studio. Enter model name manually.'}
+                  {availableModels.length > 0
+                    ? `${availableModels.length} model(s) found${lmStudioConnected ? ' — LM Studio connected' : ''}`
+                    : modelsDirFound
+                      ? 'No models found in models directory.'
+                      : 'Models directory not found. Enter model name manually.'}
                 </p>
               </div>
             </div>

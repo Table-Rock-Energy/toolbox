@@ -16,6 +16,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -413,8 +414,8 @@ class RRCOilProration(Base):
     )
     data_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
-    # Composite unique constraint
     __table_args__ = (
+        UniqueConstraint("district", "lease_number", name="uq_rrc_oil_district_lease"),
         {"postgresql_ignore_search_path": True},
     )
 
@@ -454,6 +455,10 @@ class RRCGasProration(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     data_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("district", "lease_number", name="uq_rrc_gas_district_lease"),
+    )
 
     def __repr__(self) -> str:
         return f"<RRCGasProration {self.district}-{self.lease_number}>"

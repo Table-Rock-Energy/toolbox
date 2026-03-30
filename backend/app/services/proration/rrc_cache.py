@@ -47,13 +47,13 @@ def update_cache(key: tuple[str, str], value: dict | None) -> None:
 
 
 async def prewarm_rrc_cache() -> None:
-    """Pre-warm the RRC DataFrame at startup (PERF-02).
+    """Pre-warm the RRC cache at startup.
 
-    Loads the combined oil+gas lookup table in a background thread
-    so the first proration request doesn't pay the cold-start cost.
-    Does NOT populate the database-backed cache (too slow with 100K+ docs).
+    Loads from PostgreSQL first (via _load_lookup), falls back to CSV.
+    Populates the in-memory cache dict for O(1) lookups.
     """
     from app.services.proration.rrc_data_service import rrc_data_service
 
     lookup = await asyncio.to_thread(rrc_data_service._load_lookup)
-    logger.info("RRC DataFrame pre-warmed: %d entries", len(lookup))
+    populate_cache(lookup)
+    logger.info("RRC cache pre-warmed: %d entries", len(lookup))

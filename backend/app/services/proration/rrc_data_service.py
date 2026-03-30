@@ -86,6 +86,56 @@ def create_rrc_session() -> requests.Session:
     return session
 
 
+def _clean_district(d) -> str:
+    """Normalize district code: pad single digits with zero."""
+    d = str(d).strip()
+    if d and d[0].isdigit():
+        return d.zfill(2) if len(d) == 1 else d
+    return d
+
+
+def _csv_bytes_to_upsert_rows(csv_bytes: bytes, skip_rows: int = 2) -> list[dict]:
+    """Parse RRC CSV bytes into a list of dicts ready for bulk upsert.
+
+    Handles column mapping: District → district, Lease No. → lease_number, etc.
+    Stores all remaining columns in raw_data JSONB.
+    """
+    df = pd.read_csv(BytesIO(csv_bytes), skiprows=skip_rows, low_memory=False)
+    rows = []
+    known_cols = {"District", "Lease No.", "Operator Name", "Lease Name", "Field Name", "Acres"}
+
+    for _, row in df.iterrows():
+        district = _clean_district(row.get("District", ""))
+        lease_number = str(row.get("Lease No.", "")).strip()
+        if not district or not lease_number:
+            continue
+
+        # Build raw_data from all columns not in the known set
+        raw_data = {}
+        for col in df.columns:
+            if col not in known_cols and pd.notna(row.get(col)):
+                raw_data[col] = str(row[col])
+
+        try:
+            acres = float(row["Acres"]) if pd.notna(row.get("Acres")) else None
+        except (ValueError, TypeError):
+            acres = None
+
+        rows.append({
+            "district": district,
+            "lease_number": lease_number,
+            "operator_name": str(row.get("Operator Name", "")) if pd.notna(row.get("Operator Name")) else None,
+            "lease_name": str(row.get("Lease Name", "")) if pd.notna(row.get("Lease Name")) else None,
+            "field_name": str(row.get("Field Name", "")) if pd.notna(row.get("Field Name")) else None,
+            "county": str(row.get("County", "")) if pd.notna(row.get("County")) else None,
+            "unit_acres": acres,
+            "allowable": None,
+            "raw_data": raw_data or None,
+            "data_date": datetime.utcnow(),
+        })
+    return rows
+
+
 class RRCDataService:
     """Service for managing RRC proration data downloads and lookups."""
 
@@ -143,6 +193,29 @@ class RRCDataService:
             self._combined_lookup = None
             self._oil_df = None
 
+            # Bulk-upsert into PostgreSQL
+            try:
+                upsert_rows = _csv_bytes_to_upsert_rows(response.content)
+                if upsert_rows:
+                    import asyncio
+                    from app.core.database import async_session_maker
+                    from app.services import db_service
+
+                    async def _do_upsert():
+                        async with async_session_maker() as session:
+                            total, _ = await db_service.bulk_upsert_rrc_oil(session, upsert_rows)
+                            await session.commit()
+                            return total
+
+                    loop = asyncio.new_event_loop()
+                    try:
+                        db_count = loop.run_until_complete(_do_upsert())
+                        logger.info("Oil data: upserted %d records to PostgreSQL", db_count)
+                    finally:
+                        loop.close()
+            except Exception as db_err:
+                logger.warning("Oil DB upsert failed (CSV saved OK): %s", db_err)
+
             return True, f"Downloaded {row_count:,} oil proration records", row_count
 
         except Exception as e:
@@ -194,6 +267,29 @@ class RRCDataService:
             self._gas_lookup = None  # Clear cache
             self._combined_lookup = None
             self._gas_df = None
+
+            # Bulk-upsert into PostgreSQL
+            try:
+                upsert_rows = _csv_bytes_to_upsert_rows(response.content)
+                if upsert_rows:
+                    import asyncio
+                    from app.core.database import async_session_maker
+                    from app.services import db_service
+
+                    async def _do_upsert():
+                        async with async_session_maker() as session:
+                            total, _ = await db_service.bulk_upsert_rrc_gas(session, upsert_rows)
+                            await session.commit()
+                            return total
+
+                    loop = asyncio.new_event_loop()
+                    try:
+                        db_count = loop.run_until_complete(_do_upsert())
+                        logger.info("Gas data: upserted %d records to PostgreSQL", db_count)
+                    finally:
+                        loop.close()
+            except Exception as db_err:
+                logger.warning("Gas DB upsert failed (CSV saved OK): %s", db_err)
 
             return True, f"Downloaded {row_count:,} gas proration records", row_count
 
@@ -277,10 +373,90 @@ class RRCDataService:
             return None
 
     def _load_lookup(self) -> dict[tuple[str, str], dict]:
-        """Load and cache the combined lookup table."""
+        """Load and cache the combined lookup table.
+
+        Strategy: PostgreSQL first, CSV files as fallback if DB is empty.
+        """
         if self._combined_lookup is not None:
             return self._combined_lookup
 
+        # Try PostgreSQL first
+        lookup = self._load_lookup_from_db()
+        if lookup:
+            self._combined_lookup = lookup
+            logger.info("Loaded %d records from PostgreSQL", len(lookup))
+            return lookup
+
+        # Fallback: load from CSV files
+        logger.info("Database empty, falling back to CSV files")
+        lookup = self._load_lookup_from_csv()
+        self._combined_lookup = lookup
+        logger.info("Loaded %d records from CSV (database empty)", len(lookup))
+        return lookup
+
+    def _load_lookup_from_db(self) -> dict[tuple[str, str], dict]:
+        """Load lookup table from PostgreSQL (sync, for background thread compatibility)."""
+        try:
+            from app.core.database import get_sync_session
+
+            session = get_sync_session()
+            try:
+                from app.models.db_models import RRCGasProration, RRCOilProration
+
+                lookup: dict[tuple[str, str], dict] = {}
+
+                # Load oil records
+                for record in session.query(RRCOilProration).yield_per(5000):
+                    key = (record.district, record.lease_number)
+                    acres = record.unit_acres or 0.0
+                    if key in lookup:
+                        existing_acres = lookup[key].get("acres") or 0.0
+                        lookup[key]["acres"] = existing_acres + acres
+                        lookup[key]["row_count"] = lookup[key].get("row_count", 1) + 1
+                    else:
+                        lookup[key] = {
+                            "acres": acres if acres > 0 else None,
+                            "type": "oil",
+                            "lease_name": record.lease_name,
+                            "operator": record.operator_name,
+                            "field_name": record.field_name,
+                            "row_count": 1,
+                        }
+
+                oil_count = len(lookup)
+
+                # Load gas records
+                gas_added = 0
+                for record in session.query(RRCGasProration).yield_per(5000):
+                    key = (record.district, record.lease_number)
+                    acres = record.unit_acres or 0.0
+                    if key in lookup:
+                        existing_acres = lookup[key].get("acres") or 0.0
+                        lookup[key]["acres"] = existing_acres + acres
+                        lookup[key]["row_count"] = lookup[key].get("row_count", 1) + 1
+                        if lookup[key]["type"] == "oil":
+                            lookup[key]["type"] = "both"
+                    else:
+                        lookup[key] = {
+                            "acres": acres if acres > 0 else None,
+                            "type": "gas",
+                            "lease_name": record.lease_name,
+                            "operator": record.operator_name,
+                            "field_name": record.field_name,
+                            "row_count": 1,
+                        }
+                        gas_added += 1
+
+                logger.info("PostgreSQL lookup: %d oil + %d gas = %d entries", oil_count, gas_added, len(lookup))
+                return lookup
+            finally:
+                session.close()
+        except Exception as e:
+            logger.warning("Could not load from PostgreSQL: %s", e)
+            return {}
+
+    def _load_lookup_from_csv(self) -> dict[tuple[str, str], dict]:
+        """Load lookup table from CSV files (original path)."""
         lookup = {}
 
         def clean_district(d):
@@ -298,7 +474,6 @@ class RRCDataService:
                     try:
                         acres = float(row["Acres"]) if pd.notna(row["Acres"]) else 0.0
                         if key in lookup:
-                            # Sum acres for multiple rows with same lease number
                             existing_acres = lookup[key].get("acres") or 0.0
                             lookup[key]["acres"] = existing_acres + acres
                             lookup[key]["row_count"] = lookup[key].get("row_count", 1) + 1
@@ -313,9 +488,9 @@ class RRCDataService:
                             }
                     except (ValueError, TypeError):
                         pass
-                logger.info(f"Loaded {len(lookup):,} oil proration records")
+                logger.info(f"Loaded {len(lookup):,} oil proration records from CSV")
             except Exception as e:
-                logger.error(f"Error processing oil data: {e}")
+                logger.error(f"Error processing oil CSV data: {e}")
 
         # Load gas data - SUM acres when multiple rows exist for same lease
         gas_df = self._get_gas_df()
@@ -327,11 +502,9 @@ class RRCDataService:
                     try:
                         acres = float(row["Acres"]) if pd.notna(row["Acres"]) else 0.0
                         if key in lookup:
-                            # Sum acres for multiple rows with same lease number
                             existing_acres = lookup[key].get("acres") or 0.0
                             lookup[key]["acres"] = existing_acres + acres
                             lookup[key]["row_count"] = lookup[key].get("row_count", 1) + 1
-                            # Mark as both if mixing oil and gas
                             if lookup[key]["type"] == "oil":
                                 lookup[key]["type"] = "both"
                         else:
@@ -346,12 +519,11 @@ class RRCDataService:
                             gas_added += 1
                     except (ValueError, TypeError):
                         pass
-                logger.info(f"Added {gas_added:,} gas proration records")
+                logger.info(f"Added {gas_added:,} gas proration records from CSV")
             except Exception as e:
-                logger.error(f"Error processing gas data: {e}")
+                logger.error(f"Error processing gas CSV data: {e}")
 
-        self._combined_lookup = lookup
-        logger.info(f"Combined lookup table: {len(lookup):,} total entries")
+        logger.info(f"Combined CSV lookup table: {len(lookup):,} total entries")
         return lookup
 
     def lookup_acres(self, district: str, lease_number: str) -> dict | None:

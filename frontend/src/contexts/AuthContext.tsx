@@ -148,7 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     restore();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const signInWithEmail = async (email: string, password: string) => {
     const response = await fetch(`${API_BASE}/auth/login`, {

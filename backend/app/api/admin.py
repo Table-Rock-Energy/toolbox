@@ -471,30 +471,89 @@ async def update_ai_settings(request: AiSettingsRequest, user: dict = Depends(re
 
 @router.get("/settings/available-models")
 async def get_available_models(user: dict = Depends(require_admin)):
-    """Query LM Studio for loaded/available models."""
-    from app.core.config import settings as runtime_settings
+    """Discover available models from LM Studio API and server filesystem.
+
+    Scans the models directory (LLM_MODELS_DIR, default /mnt/array/lm-studio/models)
+    for all downloaded models, and queries the LM Studio /v1/models API for loaded ones.
+    Merges results so the dropdown shows all available models with loaded status.
+    """
+    from pathlib import Path
+
     import httpx
 
-    base_url = runtime_settings.llm_api_base or "http://host.docker.internal:1234/v1"
+    from app.core.config import settings as runtime_settings
 
+    base_url = runtime_settings.llm_api_base or "http://host.docker.internal:1234/v1"
+    models_dir = Path(runtime_settings.llm_models_dir)
+
+    # Step 1: Scan filesystem for all downloaded models
+    fs_models: list[dict] = []
+    if models_dir.is_dir():
+        for publisher_dir in sorted(models_dir.iterdir()):
+            if not publisher_dir.is_dir() or publisher_dir.name.startswith("."):
+                continue
+            for model_dir in sorted(publisher_dir.iterdir()):
+                if not model_dir.is_dir() or model_dir.name.startswith("."):
+                    continue
+                # Check for GGUF files (actual model weights)
+                gguf_files = list(model_dir.glob("*.gguf"))
+                if not gguf_files:
+                    continue
+                model_id = f"{publisher_dir.name}/{model_dir.name}"
+                fs_models.append({
+                    "id": model_id,
+                    "object": "model",
+                    "owned_by": publisher_dir.name,
+                    "source": "filesystem",
+                    "loaded": False,
+                    "files": [f.name for f in gguf_files],
+                })
+        logger.info("Found %d models on filesystem at %s", len(fs_models), models_dir)
+    else:
+        logger.debug("Models directory not found: %s", models_dir)
+
+    # Step 2: Query LM Studio API for loaded models
+    api_connected = False
+    loaded_ids: set[str] = set()
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(f"{base_url}/models")
             response.raise_for_status()
             data = response.json()
+            api_connected = True
 
-            models = []
             for model in data.get("data", []):
-                models.append({
-                    "id": model.get("id", ""),
-                    "object": model.get("object", "model"),
-                    "owned_by": model.get("owned_by", ""),
-                })
-
-            return {"models": models, "connected": True}
+                mid = model.get("id", "")
+                if mid:
+                    loaded_ids.add(mid)
     except Exception as e:
-        logger.warning(f"Could not connect to LM Studio: {e}")
-        return {"models": [], "connected": False, "error": str(e)}
+        logger.warning("Could not connect to LM Studio API: %s", e)
+
+    # Step 3: Merge — mark filesystem models as loaded if API reports them
+    for m in fs_models:
+        if m["id"] in loaded_ids:
+            m["loaded"] = True
+            loaded_ids.discard(m["id"])
+
+    # Add any API-only models not found on filesystem (e.g. different path)
+    for mid in loaded_ids:
+        fs_models.append({
+            "id": mid,
+            "object": "model",
+            "owned_by": mid.split("/")[0] if "/" in mid else "",
+            "source": "api",
+            "loaded": True,
+        })
+
+    # Sort: loaded first, then alphabetical
+    fs_models.sort(key=lambda m: (not m.get("loaded", False), m["id"]))
+
+    return {
+        "models": fs_models,
+        "connected": api_connected,
+        "models_dir": str(models_dir),
+        "models_dir_found": models_dir.is_dir(),
+    }
 
 
 @router.get("/settings/api-config", response_model=ApiSettingsResponse)

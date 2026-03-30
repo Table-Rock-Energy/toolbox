@@ -920,6 +920,145 @@ async def update_rrc_metadata_counts(
 
 
 # =============================================================================
+# RRC Bulk Upsert (ON CONFLICT)
+# =============================================================================
+
+
+async def bulk_upsert_rrc_oil(
+    db: AsyncSession,
+    rows: list[dict],
+    batch_size: int = 1000,
+) -> tuple[int, int]:
+    """Bulk upsert oil proration records using INSERT ON CONFLICT.
+
+    Args:
+        db: Async session (caller owns commit).
+        rows: List of dicts with keys: district, lease_number, operator_name,
+              lease_name, field_name, county, unit_acres, allowable, raw_data.
+        batch_size: Rows per INSERT statement.
+
+    Returns:
+        (total_processed, upserted_count) — PostgreSQL doesn't distinguish
+        insert vs update in bulk ON CONFLICT, so upserted_count == total.
+    """
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    total = 0
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i : i + batch_size]
+        stmt = pg_insert(RRCOilProration).values(batch)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_rrc_oil_district_lease",
+            set_={
+                "operator_name": stmt.excluded.operator_name,
+                "lease_name": stmt.excluded.lease_name,
+                "field_name": stmt.excluded.field_name,
+                "county": stmt.excluded.county,
+                "unit_acres": stmt.excluded.unit_acres,
+                "allowable": stmt.excluded.allowable,
+                "raw_data": stmt.excluded.raw_data,
+                "data_date": stmt.excluded.data_date,
+                "updated_at": func.now(),
+            },
+        )
+        await db.execute(stmt)
+        total += len(batch)
+
+    return total, total
+
+
+async def bulk_upsert_rrc_gas(
+    db: AsyncSession,
+    rows: list[dict],
+    batch_size: int = 1000,
+) -> tuple[int, int]:
+    """Bulk upsert gas proration records using INSERT ON CONFLICT.
+
+    Same interface as bulk_upsert_rrc_oil but targets rrc_gas_proration.
+    """
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    total = 0
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i : i + batch_size]
+        stmt = pg_insert(RRCGasProration).values(batch)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_rrc_gas_district_lease",
+            set_={
+                "operator_name": stmt.excluded.operator_name,
+                "lease_name": stmt.excluded.lease_name,
+                "field_name": stmt.excluded.field_name,
+                "county": stmt.excluded.county,
+                "unit_acres": stmt.excluded.unit_acres,
+                "allowable": stmt.excluded.allowable,
+                "raw_data": stmt.excluded.raw_data,
+                "data_date": stmt.excluded.data_date,
+                "updated_at": func.now(),
+            },
+        )
+        await db.execute(stmt)
+        total += len(batch)
+
+    return total, total
+
+
+async def load_rrc_lookup_from_db(db: AsyncSession) -> dict[tuple[str, str], dict]:
+    """Load combined oil+gas lookup table from PostgreSQL.
+
+    Returns dict keyed by (district, lease_number) with the same structure
+    as RRCDataService._load_lookup() so the in-memory cache is compatible.
+    """
+    lookup: dict[tuple[str, str], dict] = {}
+
+    # Load oil records
+    oil_result = await db.execute(select(RRCOilProration))
+    for record in oil_result.scalars():
+        key = (record.district, record.lease_number)
+        acres = record.unit_acres or 0.0
+        if key in lookup:
+            existing_acres = lookup[key].get("acres") or 0.0
+            lookup[key]["acres"] = existing_acres + acres
+            lookup[key]["row_count"] = lookup[key].get("row_count", 1) + 1
+        else:
+            lookup[key] = {
+                "acres": acres if acres > 0 else None,
+                "type": "oil",
+                "lease_name": record.lease_name,
+                "operator": record.operator_name,
+                "field_name": record.field_name,
+                "row_count": 1,
+            }
+
+    oil_count = len(lookup)
+
+    # Load gas records
+    gas_result = await db.execute(select(RRCGasProration))
+    gas_added = 0
+    for record in gas_result.scalars():
+        key = (record.district, record.lease_number)
+        acres = record.unit_acres or 0.0
+        if key in lookup:
+            existing_acres = lookup[key].get("acres") or 0.0
+            lookup[key]["acres"] = existing_acres + acres
+            lookup[key]["row_count"] = lookup[key].get("row_count", 1) + 1
+            if lookup[key]["type"] == "oil":
+                lookup[key]["type"] = "both"
+        else:
+            lookup[key] = {
+                "acres": acres if acres > 0 else None,
+                "type": "gas",
+                "lease_name": record.lease_name,
+                "operator": record.operator_name,
+                "field_name": record.field_name,
+                "row_count": 1,
+            }
+            gas_added += 1
+
+    logger.info("Loaded %d oil + %d gas = %d entries from PostgreSQL", oil_count, gas_added, len(lookup))
+    return lookup
+
+
+# =============================================================================
 # RRC County Status Operations
 # =============================================================================
 
