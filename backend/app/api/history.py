@@ -67,7 +67,10 @@ async def get_jobs(
     try:
         from app.models.db_models import ToolType
 
-        tool_enum = ToolType(tool) if tool else None
+        try:
+            tool_enum = ToolType(tool.replace("-", "_")) if tool else None
+        except ValueError:
+            return {"jobs": [], "count": 0}
 
         email = user.get("email", "")
         if is_user_admin(email):

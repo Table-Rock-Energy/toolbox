@@ -347,8 +347,8 @@ class RevenueRow(Base):
 
     # Sales info
     sales_date: Mapped[Optional[str]] = mapped_column(String(20))
-    product_code: Mapped[Optional[str]] = mapped_column(String(20))
-    product_description: Mapped[Optional[str]] = mapped_column(String(100))
+    product_code: Mapped[Optional[str]] = mapped_column(String(100))
+    product_description: Mapped[Optional[str]] = mapped_column(String(255))
 
     # Interest
     decimal_interest: Mapped[Optional[float]] = mapped_column(Float)
