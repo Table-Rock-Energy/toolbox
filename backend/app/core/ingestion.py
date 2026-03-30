@@ -135,16 +135,29 @@ async def persist_job_result(
     """
     try:
         from app.core.database import async_session_maker
-        from app.models.db_models import JobStatus, ToolType
+        from app.models.db_models import JobStatus, ToolType, User
         from app.services import db_service
+        from sqlalchemy import select
 
         async with async_session_maker() as session:
+            # Resolve email to user UUID if user_id looks like an email
+            resolved_user_id = user_id
+            if user_id and "@" in user_id:
+                result = await session.execute(
+                    select(User.id).where(User.email == user_id)
+                )
+                row = result.scalar_one_or_none()
+                if row:
+                    resolved_user_id = str(row)
+                else:
+                    resolved_user_id = None  # Don't fail on unknown user
+
             job = await db_service.create_job(
                 session,
                 tool=ToolType(tool),
                 source_filename=filename,
                 source_file_size=file_size,
-                user_id=user_id,
+                user_id=resolved_user_id,
                 options={},
             )
             job_id = job.id
