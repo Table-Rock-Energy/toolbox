@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: Post-Migration Fixes & AI Enrichment
-status: planning
-stopped_at: null
+status: ready_to_plan
+stopped_at: Phase 31 ready to plan
 last_updated: "2026-03-31"
 last_activity: 2026-03-31
 progress:
-  total_phases: 0
-  completed_phases: 0
+  total_phases: 3
+  completed_phases: 1
   total_plans: 0
   completed_plans: 0
-  percent: 0
+  percent: 33
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Defining requirements for v2.2
+**Current focus:** Phase 31 - Docker + LM Studio Connectivity
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-31 — Milestone v2.2 started
+Phase: 31 (Docker + LM Studio Connectivity) -- first active phase of v2.2
+Plan: --
+Status: Ready to plan
+Last activity: 2026-03-31 -- Roadmap created for v2.2, Phase 30 pre-completed
 
-Progress: [----------] 0%
+Progress: [###-------] 33% (1/3 phases)
 
 ## Accumulated Context
 
@@ -49,10 +49,10 @@ None.
 ### Blockers/Concerns
 
 - [v2.0]: JSON allowlist dual-path with PostgreSQL users table
-- [v2.2]: AI enrichment not working on server — needs troubleshooting
+- [v2.2]: AI enrichment not working on server -- `host.docker.internal` DNS resolution is the primary suspect
 
 ## Session Continuity
 
 Last session: 2026-03-31
-Stopped at: Milestone v2.2 initialization
+Stopped at: Roadmap created, Phase 30 complete, Phase 31 ready to plan
 Resume file: None

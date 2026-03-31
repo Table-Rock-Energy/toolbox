@@ -36,29 +36,29 @@ None deferred for this milestone.
 |---------|--------|
 | PostgreSQL connection pooling tuning | Not needed at current scale |
 | CI/CD pipeline for on-prem | Manual deploy via git pull + docker-compose is sufficient |
-| Frontend test suite | Deferred — backend stability is priority |
-| Rate limiting | Deferred — internal tool with small user base |
+| Frontend test suite | Deferred -- backend stability is priority |
+| Rate limiting | Deferred -- internal tool with small user base |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DOCKER-01 | — | Pending |
-| DOCKER-02 | — | Pending |
-| DOCKER-03 | — | Pending |
-| NGINX-01 | — | Pending |
-| NGINX-02 | — | Pending |
-| BUGFIX-01 | — | Complete |
-| BUGFIX-02 | — | Complete |
-| BUGFIX-03 | — | Complete |
-| BUGFIX-04 | — | Complete |
-| BUGFIX-05 | — | Complete |
+| BUGFIX-01 | Phase 30 | Complete |
+| BUGFIX-02 | Phase 30 | Complete |
+| BUGFIX-03 | Phase 30 | Complete |
+| BUGFIX-04 | Phase 30 | Complete |
+| BUGFIX-05 | Phase 30 | Complete |
+| DOCKER-01 | Phase 31 | Pending |
+| DOCKER-02 | Phase 31 | Pending |
+| DOCKER-03 | Phase 31 | Pending |
+| NGINX-01 | Phase 32 | Pending |
+| NGINX-02 | Phase 32 | Pending |
 
 **Coverage:**
 - v2.2 requirements: 10 total
-- Mapped to phases: 0
-- Unmapped: 5 (bug fixes already complete, 5 active) ⚠️
+- Mapped to phases: 10/10
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-31*
-*Last updated: 2026-03-31 after initial definition*
+*Last updated: 2026-03-31 after roadmap creation*

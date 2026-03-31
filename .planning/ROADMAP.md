@@ -108,3 +108,53 @@ See: `.planning/milestones/v2.0-ROADMAP.md` for full details
 See: `.planning/milestones/v2.1-ROADMAP.md` for full details
 
 </details>
+
+### v2.2 Post-Migration Fixes & AI Enrichment (In Progress)
+
+**Milestone Goal:** Stabilize the on-prem migration by consolidating ad-hoc bug fixes and getting AI enrichment working end-to-end with LM Studio on the server.
+
+- [x] **Phase 30: Bug Fix Consolidation** - Retroactively track 5 ad-hoc production fixes shipped during migration
+- [ ] **Phase 31: Docker + LM Studio Connectivity** - Backend can reach LM Studio from inside Docker container and run AI inference
+- [ ] **Phase 32: Nginx Proxy Configuration** - Reverse proxy handles long-running AI and streaming requests without timeouts
+
+## Phase Details
+
+### Phase 30: Bug Fix Consolidation
+**Goal**: All ad-hoc production fixes from the v2.0 migration are tracked and accounted for
+**Depends on**: Nothing (retroactive bookkeeping)
+**Requirements**: BUGFIX-01, BUGFIX-02, BUGFIX-03, BUGFIX-04, BUGFIX-05
+**Success Criteria** (what must be TRUE):
+  1. Revenue check_amount values persist correctly as floats in PostgreSQL (no Decimal serialization errors)
+  2. Admin user creation succeeds without import errors on password hashing
+  3. Job records store the user's UUID (not email string) as the owner reference
+  4. GHL-prep tool filtering produces correct filtered results
+  5. RRC proration data is queryable from PostgreSQL with model filesystem discovery working
+**Plans**: 0 (all fixes already shipped)
+**Status**: Complete (pre-shipped as ad-hoc fixes)
+
+### Phase 31: Docker + LM Studio Connectivity
+**Goal**: AI enrichment pipeline works end-to-end from inside the Docker container using LM Studio running on the host
+**Depends on**: Phase 30
+**Requirements**: DOCKER-01, DOCKER-02, DOCKER-03
+**Success Criteria** (what must be TRUE):
+  1. Backend container can reach LM Studio at `host.docker.internal:1234` via `--add-host` flag in docker-compose
+  2. Backend verifies the configured model ID exists in LM Studio's `/v1/models` response before making inference calls
+  3. User can upload a file, click Enrich, and receive AI-processed results on the server (full pipeline: upload -> enrich -> results)
+**Plans**: TBD
+
+### Phase 32: Nginx Proxy Configuration
+**Goal**: Nginx reverse proxy correctly handles long-running AI inference and streaming responses
+**Depends on**: Phase 31
+**Requirements**: NGINX-01, NGINX-02
+**Success Criteria** (what must be TRUE):
+  1. AI enrichment requests to `/api/pipeline/` complete without 504 timeout (600s proxy timeout configured)
+  2. Revenue NDJSON streaming responses to `/api/revenue/` deliver progress updates in real-time (proxy buffering disabled)
+**Plans**: TBD
+
+## Progress
+
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 30. Bug Fix Consolidation | v2.2 | 0/0 | Complete | 2026-03-31 |
+| 31. Docker + LM Studio Connectivity | v2.2 | 0/? | Not started | - |
+| 32. Nginx Proxy Configuration | v2.2 | 0/? | Not started | - |
