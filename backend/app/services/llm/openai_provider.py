@@ -66,6 +66,7 @@ class OpenAIProvider:
 
     def __init__(self) -> None:
         self._client: AsyncOpenAI | None = None
+        self._model_verified: bool = False
 
     def _get_client(self) -> AsyncOpenAI:
         """Lazy-initialize the AsyncOpenAI client."""
@@ -82,6 +83,35 @@ class OpenAIProvider:
     def is_available(self) -> bool:
         """Check if the OpenAI-compatible provider is configured."""
         return settings.ai_provider == "lmstudio"
+
+    async def verify_model(self) -> tuple[bool, str]:
+        """Check if the configured model is available in LM Studio.
+
+        Returns (is_valid, error_message). Uses httpx directly (not the
+        openai client) since /v1/models is a simple GET.
+        """
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(f"{settings.llm_api_base}/models")
+                response.raise_for_status()
+                data = response.json()
+                loaded_ids = {m.get("id", "") for m in data.get("data", [])}
+
+                if settings.llm_model in loaded_ids:
+                    return True, ""
+
+                if loaded_ids:
+                    return False, (
+                        f"Model '{settings.llm_model}' not found in LM Studio. "
+                        f"Available: {', '.join(sorted(loaded_ids))}"
+                    )
+                return False, "LM Studio connected but no models loaded."
+        except httpx.ConnectError:
+            return False, f"Cannot connect to LM Studio at {settings.llm_api_base}"
+        except Exception as e:
+            return False, f"LM Studio check failed: {e}"
 
     async def cleanup_entries(
         self,
@@ -100,6 +130,14 @@ class OpenAIProvider:
         """
         batch_size = getattr(settings, "batch_size", 25)
         client = self._get_client()
+
+        if not self._model_verified:
+            valid, error = await self.verify_model()
+            if not valid:
+                logger.error("Model verification failed: %s", error)
+                return []
+            self._model_verified = True
+
         total_batches = (len(entries) + batch_size - 1) // batch_size
         all_suggestions: list[AiSuggestion] = []
 
@@ -202,6 +240,17 @@ class OpenAIProvider:
 
         batch_size = getattr(settings, "batch_size", 25)
         client = self._get_client()
+
+        if not self._model_verified:
+            valid, error = await self.verify_model()
+            if not valid:
+                logger.error("Model verification failed: %s", error)
+                return AiValidationResult(
+                    success=False,
+                    error_message=f"Model verification failed: {error}",
+                )
+            self._model_verified = True
+
         total_batches = (len(entries) + batch_size - 1) // batch_size
         all_suggestions: list[AiSuggestion] = []
 
@@ -290,6 +339,16 @@ class OpenAIProvider:
                 success=False,
                 error_message="AI validation is not enabled.",
             )
+
+        if not self._model_verified:
+            valid, error = await self.verify_model()
+            if not valid:
+                logger.error("Model verification failed: %s", error)
+                return AiValidationResult(
+                    success=False,
+                    error_message=f"Model verification failed: {error}",
+                )
+            self._model_verified = True
 
         # Build context string
         context_str = ""

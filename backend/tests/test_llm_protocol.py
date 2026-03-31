@@ -134,6 +134,7 @@ class TestOpenAIProviderCleanup:
 
         provider = OpenAIProvider()
         provider._client = mock_client
+        provider._model_verified = True
 
         with patch("app.services.llm.openai_provider.settings") as mock_settings:
             mock_settings.llm_model = "test-model"
