@@ -102,7 +102,14 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 
 ### Active
 
-<!-- No active requirements — define next milestone -->
+<!-- v2.2 Post-Migration Fixes & AI Enrichment -->
+- AI enrichment pipeline working end-to-end with LM Studio on server
+- Revenue Decimal-to-float coercion for DB persistence
+- Admin password hashing import fix
+- Job record user email-to-UUID resolution
+- GHL-prep tool filter fix
+- RRC data PostgreSQL migration + model filesystem discovery
+- Nginx reverse proxy configuration
 
 ### Out of Scope
 
@@ -115,6 +122,15 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 - Frontend test suite — defer
 - Rate limiting — defer
 - Structured logging / request tracing — defer
+
+## Current Milestone: v2.2 Post-Migration Fixes & AI Enrichment
+
+**Goal:** Stabilize the on-prem migration by fixing bugs surfaced in production and getting AI enrichment working end-to-end with LM Studio.
+
+**Target features:**
+- AI enrichment pipeline debugging (LM Studio connectivity, prompt formatting, response parsing on server)
+- Retroactively track recent ad-hoc fixes (revenue Decimal coercion, admin password hashing, job record user resolution, GHL-prep filter, RRC PostgreSQL migration)
+- Nginx reverse proxy configuration validation
 
 ## Current State
 
@@ -175,5 +191,22 @@ The tools must reliably process uploaded documents (PDFs, CSVs, Excel) and retur
 | CSP allows unsafe-inline for style-src | React injects inline styles that would be blocked otherwise | ✓ Good — v2.1 |
 | Admin email as Pydantic Settings field (not module constant) | Configurable via DEFAULT_ADMIN_EMAIL env var with sensible fallback | ✓ Good — v2.1 |
 
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd:transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd:complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
+
 ---
-*Last updated: 2026-03-27 after v2.1 milestone*
+*Last updated: 2026-03-31 after v2.2 milestone start*

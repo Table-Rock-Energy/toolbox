@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.3
-milestone_name: milestone
-status: verifying
-stopped_at: Completed 29-01-PLAN.md
-last_updated: "2026-03-27T13:49:56.412Z"
-last_activity: 2026-03-27
+milestone: v2.2
+milestone_name: Post-Migration Fixes & AI Enrichment
+status: planning
+stopped_at: null
+last_updated: "2026-03-31"
+last_activity: 2026-03-31
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 2
-  completed_plans: 2
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
   percent: 0
 ---
 
@@ -18,17 +18,17 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-27)
+See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** The tools must reliably process uploaded documents and return accurate, exportable results.
-**Current focus:** Phase 29 — Firebase & Config Cleanup
+**Current focus:** Defining requirements for v2.2
 
 ## Current Position
 
-Phase: 29
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-03-27
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-31 — Milestone v2.2 started
 
 Progress: [----------] 0%
 
@@ -36,7 +36,7 @@ Progress: [----------] 0%
 
 ### Decisions
 
-(for v2.1)
+(carried from v2.1)
 
 - [Phase 28]: Middleware registered before CORS (LIFO ordering ensures headers applied after CORS processing)
 - [Phase 28]: CSP allows unsafe-inline for style-src (React injects inline styles)
@@ -49,9 +49,10 @@ None.
 ### Blockers/Concerns
 
 - [v2.0]: JSON allowlist dual-path with PostgreSQL users table
+- [v2.2]: AI enrichment not working on server — needs troubleshooting
 
 ## Session Continuity
 
-Last session: 2026-03-27T13:43:30.666Z
-Stopped at: Completed 29-01-PLAN.md
+Last session: 2026-03-31
+Stopped at: Milestone v2.2 initialization
 Resume file: None
