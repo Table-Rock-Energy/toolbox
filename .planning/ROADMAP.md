@@ -140,7 +140,10 @@ See: `.planning/milestones/v2.1-ROADMAP.md` for full details
   1. Backend container can reach LM Studio at `host.docker.internal:1234` via `--add-host` flag in docker-compose
   2. Backend verifies the configured model ID exists in LM Studio's `/v1/models` response before making inference calls
   3. User can upload a file, click Enrich, and receive AI-processed results on the server (full pipeline: upload -> enrich -> results)
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 31-01-PLAN.md -- Docker Compose config + OpenAIProvider model verification
+- [ ] 31-02-PLAN.md -- E2E pipeline verification checkpoint
 
 ### Phase 32: Nginx Proxy Configuration
 **Goal**: Nginx reverse proxy correctly handles long-running AI inference and streaming responses
@@ -156,5 +159,5 @@ See: `.planning/milestones/v2.1-ROADMAP.md` for full details
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 30. Bug Fix Consolidation | v2.2 | 0/0 | Complete | 2026-03-31 |
-| 31. Docker + LM Studio Connectivity | v2.2 | 0/? | Not started | - |
+| 31. Docker + LM Studio Connectivity | v2.2 | 0/2 | In progress | - |
 | 32. Nginx Proxy Configuration | v2.2 | 0/? | Not started | - |
