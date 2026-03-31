@@ -23,15 +23,22 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./backend/app:/app/app
       - ./backend/data:/app/data
+      - /mnt/array/lm-studio/models:/mnt/array/lm-studio/models:ro
     environment:
       - ENVIRONMENT=development
       - DEBUG=true
       - PORT=8000
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/toolbox
       - DATABASE_ENABLED=true
+      - AI_PROVIDER=lmstudio
+      - LLM_API_BASE=http://host.docker.internal:1234/v1
+      - LLM_MODEL=qwen3.5-35b-a3b
+      - LLM_MODELS_DIR=/mnt/array/lm-studio/models
     depends_on:
       db:
         condition: service_healthy
