@@ -1,230 +1,157 @@
 # Feature Landscape
 
-**Domain:** On-prem migration of existing cloud-hosted FastAPI + React app (Firebase Auth -> local JWT, Firestore -> PostgreSQL, Gemini -> LM Studio, GCS -> local filesystem)
-**Researched:** 2026-03-25
-**Milestone:** v2.0 Full On-Prem Migration
+**Domain:** AI enrichment pipeline debugging + LM Studio integration for on-prem deployment
+**Researched:** 2026-03-31
+**Milestone:** v2.2 Post-Migration Fixes & AI Enrichment
 
 ## Table Stakes
 
-Features users expect from the migration. Missing = broken app or degraded experience.
+Features required for AI enrichment to be considered "working." Without these, the pipeline is non-functional on the server.
 
-### AUTH: Local JWT Authentication
+| Feature | Why Expected | Complexity | Dependencies | Notes |
+|---------|--------------|------------|--------------|-------|
+| LM Studio network connectivity from Docker | Pipeline calls `host.docker.internal:1234/v1` -- must resolve and connect | Low | LM Studio server running, `--add-host` on Linux | Linux Docker does NOT auto-resolve `host.docker.internal`; needs `--add-host host.docker.internal:host-gateway` in docker-compose or use `172.17.0.1` directly |
+| LM Studio "Serve on Network" enabled | Default binds to `127.0.0.1` only; Docker container is a different network namespace | Low | LM Studio UI toggle | Must bind to `0.0.0.0` in LM Studio Developer tab settings, not just localhost |
+| Model loaded in LM Studio before API call | `/v1/chat/completions` returns 500 or empty if no model loaded | Low | Sufficient VRAM/RAM for model | LM Studio does NOT auto-load; model must be explicitly loaded in the UI or via API |
+| Correct model ID in `llm_model` config | Model ID must match what `/v1/models` returns (includes quantization suffix) | Low | Model discovery endpoint working | Current default `qwen3.5-35b-a3b` may not match the actual loaded model ID format |
+| Valid JSON responses from LLM | Pipeline expects `{"suggestions": [...]}` format | Med | Model capability, prompt quality | Local models are less reliable at structured JSON than cloud APIs; `parse_json_response` handles markdown fences and preamble but cannot fix malformed JSON |
+| Timeout handling for slow inference | Local inference on 35B model can take 60-300s per batch | Low | Already set to 300s | 5-minute timeout is reasonable but batches of 25 entries with complex prompts may still hit it on underpowered hardware |
+| `AI_PROVIDER=lmstudio` in production env | Config defaults to `"none"` -- must be explicitly set | Low | Environment variable in Docker/systemd | Without this, `get_llm_provider()` returns `None` and all AI steps are silently skipped |
+| Nginx proxy handles pipeline endpoints | Pipeline responses can be large (all entries returned) and slow (AI inference) | Low | Nginx config for `/api/pipeline/*` | Need `proxy_read_timeout`, `proxy_buffering off` for streaming NDJSON responses |
+| All ad-hoc fixes tracked in milestone | 5 commits landed between v2.1 and v2.2 start | Low | Already shipped | Revenue Decimal coercion, RRC PostgreSQL migration, GHL-prep filter, AI enrichment fixes, admin password hashing |
 
-| Feature | Why Expected | Complexity | Existing Code Dependency |
-|---------|--------------|------------|--------------------------|
-| Email + password login form | Current app has email/password login via Firebase | Low | `Login.tsx`, `AuthContext.tsx` -- replace Firebase calls with `/api/auth/login` |
-| JWT access token in Authorization header | Every API call already sends `Bearer <token>` | Low | `api.ts` `setAuthToken()` already handles this -- no change needed |
-| Backend token verification middleware | Current `require_auth` / `require_admin` dependencies | Med | `auth.py` -- replace `verify_firebase_token()` with `jose.jwt.decode()` |
-| Token expiry + automatic refresh | Firebase auto-refreshes tokens; users expect seamless sessions | Med | `AuthContext.tsx` has `setUnauthorizedHandler` that retries on 401 -- reuse pattern with `/api/auth/refresh` |
-| Logout (clear token) | Current `signOut` clears Firebase state | Low | Frontend already calls `api.clearAuthToken()` -- just skip Firebase signOut |
-| Admin-only user creation | Current allowlist model -- admin adds users, no self-registration | Low | `admin.py` already has user CRUD -- add password hashing |
-| CLI script to seed initial admin user | No Firebase console available on-prem | Low | New `create_admin.py` script -- runs once at deploy |
-| Allowlist check preserved | Current `is_user_allowed()` checks email against list | Low | Merge allowlist into PostgreSQL `users` table -- `is_active` column replaces allowlist |
-| Role/scope/tools permissions preserved | AllowedUser model has role, scope, tools fields | Low | Already in `auth.py` -- move to `users` table columns |
-| Cron secret bypass preserved | `CRON_SECRET` token for scheduled jobs | Low | Keep as-is in new JWT verification -- check cron secret before JWT decode |
+## Already Shipped (Track in v2.2)
 
-**Login flow behavior (user-facing):**
-1. User enters email + password on Login page
-2. Frontend POSTs to `/api/auth/login` -- receives `{ access_token, refresh_token, user }`
-3. Frontend stores access token in memory (AuthContext state), refresh token in localStorage
-4. On 401, frontend calls `/api/auth/refresh` with refresh token to get new access token
-5. On refresh failure, redirect to login with "session expired" message
+These fixes landed between v2.1 and v2.2 milestone start. They need retroactive tracking.
 
-**Token expiry expectations:**
-- Access token: 30-60 minute expiry (short-lived, stored in memory only)
-- Refresh token: 7-30 day expiry (long-lived, stored in localStorage)
-- Silent refresh: user never sees expiry unless inactive for days
-- The existing `setUnauthorizedHandler` in `api.ts` already implements retry-on-401 -- just swap Firebase `getIdToken(true)` for `/api/auth/refresh` call
-
-**Session management:**
-- Stateless JWT -- no server-side session storage needed
-- Deactivating a user in DB blocks them on next token verification (allowlist check)
-- No token blacklist needed -- short access token expiry handles logout lag
-- Multiple tabs/windows share the same token via AuthContext (already works this way)
-
-### DB: PostgreSQL as Only Database
-
-| Feature | Why Expected | Complexity | Existing Code Dependency |
-|---------|--------------|------------|--------------------------|
-| All Firestore collections in PostgreSQL | App persists jobs, entries, RRC data, config, preferences | High | `firestore_service.py` has 13 collections, ~40 functions -- each needs PostgreSQL equivalent |
-| Schema creation on first run | Firestore auto-creates collections; PostgreSQL needs DDL | Low | `database.py` already has `init_db()` using `Base.metadata.create_all` |
-| Alembic migrations for schema versioning | Production DB needs safe schema changes over time | Med | `alembic>=1.13.0` in requirements.txt, no alembic.ini yet -- needs async template init |
-| One-time Firestore-to-PostgreSQL data migration | Existing production data must transfer | Med | New script -- read all Firestore collections, insert into PostgreSQL tables |
-| Batch insert performance | Firestore batches at 500 docs; PostgreSQL needs similar throughput | Low | SQLAlchemy `session.add_all()` + `commit()` handles bulk inserts natively |
-| Job history with user scoping | Non-admin sees own jobs; admin sees all | Low | Already in `firestore_service.py` `get_user_jobs()` -- port query logic to SQLAlchemy |
-| App config storage | Currently in `app_config` Firestore collection (GHL keys, settings) | Low | New `app_config` table: `key VARCHAR PRIMARY KEY, data JSONB, updated_at TIMESTAMP` |
-| User preferences storage | Currently in `user_preferences` Firestore collection | Low | New `user_preferences` table: `user_id FK, data JSONB` |
-| RRC data lookup performance | Currently pandas in-memory cache from CSV + Firestore | Med | Keep pandas in-memory cache -- load from PostgreSQL on startup instead of Firestore |
-
-**Firestore collection to PostgreSQL table mapping:**
-
-| Firestore Collection | PostgreSQL Table | SQLAlchemy Model Status |
-|---------------------|------------------|------------------------|
-| `users` | `users` | EXISTS -- needs `password_hash`, `role`, `scope`, `tools` columns |
-| `jobs` | `jobs` | EXISTS -- ready |
-| `extract_entries` | `extract_entries` | EXISTS -- ready |
-| `title_entries` | `title_entries` | EXISTS -- ready |
-| `proration_rows` | `proration_rows` | EXISTS -- ready |
-| `revenue_statements` | `revenue_statements` + `revenue_rows` | EXISTS -- ready |
-| `rrc_oil_proration` | `rrc_oil_proration` | EXISTS -- ready |
-| `rrc_gas_proration` | `rrc_gas_proration` | EXISTS -- ready |
-| `rrc_data_syncs` | `rrc_data_syncs` | EXISTS -- ready |
-| `rrc_county_status` | `rrc_county_status` | MISSING -- new model needed |
-| `audit_logs` | `audit_logs` | EXISTS -- ready |
-| `app_config` | `app_config` | MISSING -- new model needed (key/JSONB) |
-| `user_preferences` | `user_preferences` | MISSING -- new model needed (user_id FK/JSONB) |
-
-10 of 13 tables already have SQLAlchemy models. 3 need new models. Users table needs 4 new columns.
-
-**Migration approach:**
-- Alembic async template with `env.py` reading `database.py` engine
-- Initial migration auto-generates from `db_models.py`
-- Add missing tables as new models before initial migration generation
-- Forward-only migrations (no downgrade support)
-- `alembic upgrade head` in app startup hook for automatic migration application
-
-### AI: LM Studio Provider via OpenAI-Compatible API
-
-| Feature | Why Expected | Complexity | Existing Code Dependency |
-|---------|--------------|------------|--------------------------|
-| OpenAI-compatible chat completions | LM Studio serves at `http://localhost:1234/v1/chat/completions` | Med | New `openai_provider.py` implementing existing `LLMProvider` protocol |
-| No API key required | LM Studio needs no authentication | Low | Pass `api_key="lm-studio"` (dummy value) to OpenAI client |
-| Model selection via config | User picks which local model to use | Low | New env vars: `AI_PROVIDER`, `LLM_API_BASE`, `LLM_MODEL` |
-| Provider routing in factory | `get_llm_provider()` returns correct provider based on config | Low | `llm/__init__.py` factory already exists -- add OpenAI branch |
-| JSON response parsing without structured output | LM Studio models may not support `response_mime_type` | Med | Parse JSON from text response (regex `{...}` extraction) instead of Gemini's native JSON mode |
-| Timeout handling for local inference | Local models can be 30s+ for large batches | Low | OpenAI client `timeout` parameter -- set 120s default |
-| Rate limiting skipped for local | No API rate limits for self-hosted inference | Low | Skip `_check_rate_limit()` when provider is LM Studio |
-| Existing Gemini preserved as dual option | Gemini still works if API key provided | Low | Keep `gemini_service.py` and `GeminiProvider` -- factory selects based on config |
-| Batch processing compatibility | Pipeline sends 25-entry batches through `cleanup_entries()` | Low | `LLMProvider` protocol unchanged -- new provider implements same interface |
-
-**LM Studio specifics:**
-- Default endpoint: `http://localhost:1234/v1`
-- Supports: `/v1/chat/completions`, `/v1/models`, `/v1/completions`, `/v1/embeddings`
-- No API key needed -- pass any string (convention: `"lm-studio"`)
-- JSON mode: Some models support `response_format: {"type": "json_object"}` but model-dependent. Safer to prompt for JSON and parse from text.
-- Tool/function calling: Supported for fine-tuned models only. Do not depend on it.
-- Model names: Listed via `GET /v1/models` -- user configures via `LLM_MODEL` env var
-
-**Provider switching behavior:**
-- `AI_PROVIDER=gemini` (default): Uses existing `GeminiProvider`, requires `GEMINI_API_KEY`
-- `AI_PROVIDER=lm_studio` or `AI_PROVIDER=openai_compatible`: Uses new `OpenAICompatibleProvider`, requires `LLM_API_BASE`
-- Factory in `llm/__init__.py` reads `settings.ai_provider` and returns correct provider
-- Budget/rate-limit tracking only applies to Gemini (pay-per-token); LM Studio has no cost tracking
-
-**Response parsing difference:**
-- Gemini: `response_mime_type="application/json"` + `response_json_schema=SCHEMA` -- guaranteed JSON
-- LM Studio: Prompt instructs "return JSON", response may include markdown fencing or preamble text -- need robust extraction (`json.loads()` on first `{...}` block found in response text)
-
-### STOR: Local Filesystem Storage (No GCS Warnings)
-
-| Feature | Why Expected | Complexity | Existing Code Dependency |
-|---------|--------------|------------|--------------------------|
-| Silent local-only operation | No "GCS not available" warnings in logs | Low | `storage_service.py` -- change `logger.info()` to `logger.debug()` when `gcs_bucket_name` is empty |
-| Default to no GCS | `gcs_bucket_name` should default to `None` | Low | `config.py` line 32 -- change from `"table-rock-tools-storage"` to `None` |
-| All storage paths work locally | RRC data, uploads, profiles all use local filesystem | Low | Already works -- `StorageService` falls back to local. Just need clean defaults. |
-| No GCS Python package required | `google-cloud-storage` import fully optional | Low | Already handled -- `try/except ImportError` in `storage_service.py` |
-
-**What "no GCS warnings" means in practice:**
-- `GCS_BUCKET_NAME` unset/empty: `use_gcs` returns `False`
-- `StorageService._init_client()` skips GCS init entirely -- no log messages at all
-- All operations go straight to local filesystem via `data/` directory
-- `get_signed_url()` returns `None` (already handled -- profile images use `/api/admin/profile-image/` proxy)
-- RRC CSV data: `data/rrc-data/`
-- User uploads: `data/uploads/`
-- Profile images: `data/profiles/`
-
-**Config default changes needed:**
-- `gcs_bucket_name`: `"table-rock-tools-storage"` -> `None`
-- `gcs_project_id`: `"tablerockenergy"` -> `None`
-- `firestore_enabled`: `True` -> `False`
-- `database_enabled`: `False` -> `True`
+| Fix | Commit | What It Solved |
+|-----|--------|---------------|
+| Revenue Decimal-to-float coercion | `596b7d3` | `check_amount` column failed DB persistence as Python Decimal |
+| RRC data PostgreSQL migration + model discovery | `c76a6db` | RRC data now persists to PostgreSQL, LM Studio models discovered from filesystem |
+| GHL-prep filter fix + revenue column widening | `0c8b06a` | Filter dropdown worked incorrectly, revenue table columns too narrow |
+| AI enrichment fixes + LM Studio model discovery | `986ea31` | Provider factory improvements, model listing from `llm_models_dir` |
+| Admin password hashing import fix | `9ed6270` | Wrong import path for bcrypt hashing in user creation |
 
 ## Differentiators
 
-Features that improve the on-prem experience beyond "it works." Not expected, but valuable.
+Features that improve AI enrichment quality and reliability beyond basic connectivity.
 
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Password change UI in Settings | Admin resets passwords without CLI | Low | New form in AdminSettings, calls `PUT /api/admin/users/{email}/password` |
-| Health endpoint includes DB + AI status | Dashboard shows system health at a glance | Low | Extend `/api/health` to report PostgreSQL and AI provider connectivity |
-| Docker Compose with PostgreSQL + app | One `docker-compose up` to run everything | Low | Existing `docker-compose.yml` already has PostgreSQL service |
-| Alembic auto-migration on startup | App checks for pending migrations and applies | Med | `alembic upgrade head` in FastAPI lifespan -- prevents manual migration steps |
-| AI provider status in admin settings | Shows active provider, model name, connectivity | Low | Extend existing admin settings page |
-| Graceful AI unavailability | Enrichment pipeline works without AI (skip cleanup step) | Low | Already handled -- `get_llm_provider()` returns `None` when unavailable |
+| Feature | Value Proposition | Complexity | Dependencies | Notes |
+|---------|-------------------|------------|--------------|-------|
+| Structured output via `response_format` | LM Studio supports OpenAI-compatible `response_format: { type: "json_schema", json_schema: {...} }` which guarantees valid JSON | Med | LM Studio 0.3+, model support for structured output | Currently relying on prompt-only JSON enforcement + regex fallback parsing; structured output would eliminate JSON parse failures entirely. `CLEANUP_RESPONSE_SCHEMA` already defined in `prompts.py` but unused |
+| Health check before pipeline run | Ping `/v1/models` before starting batch to fail fast with clear error | Low | None | Currently pipeline starts, sends first batch, then fails on connection error -- user sees "LLM cleanup error for batch 0" in logs with no UI feedback |
+| Model warm-up / keep-alive | First inference after model load is 3-5x slower (loading into GPU memory) | Low | LM Studio config | LM Studio has a "keep model loaded" setting; without it, model unloads after timeout and first request is slow |
+| Smaller default batch size for local inference | 25 entries per batch may overwhelm context window on smaller models | Low | Configurable via admin settings (already exists) | Consider defaulting to 10 for local inference; 25 entries as JSON can be 5-10K tokens input + large system prompt |
+| Revenue-specific AI verification | `verify_revenue_entries()` exists but pipeline only calls `cleanup_entries()` for the "names" step | Med | Pipeline wiring in `data_enrichment_pipeline.py` | The revenue verify prompt does math checking and gap-filling -- valuable but not wired into the unified enrichment flow |
+| Retry with smaller batch on failure | If a batch fails (timeout, malformed JSON), retry with half the batch size | Med | None | Current behavior: log error, skip batch, continue. Lost suggestions are never recovered |
+| Admin UI showing LM Studio connection status | Model discovery endpoint exists but connection status not surfaced in enrichment UI | Low | Frontend work | User has no way to know if LM Studio is reachable before clicking "Enrich" |
+| LM Studio model switching via admin UI | Change models without restarting server | Low | Model list endpoint already exists at `GET /api/admin/settings/available-models` | Frontend dropdown to select from discovered models |
 
 ## Anti-Features
 
-Features to explicitly NOT build during this migration.
+Features to explicitly NOT build for this milestone.
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| Google Sign-In (OAuth) | No Google Cloud dependency on-prem | Email + password only. Remove `googleProvider` entirely. |
-| Self-registration | Internal tool -- admin controls access | Admin creates accounts via admin settings page or CLI |
-| Session storage in Redis | Adds infrastructure for small team | Stateless JWT tokens -- no session store needed |
-| Token blacklist/revocation | Complex for small user base | Short access token expiry (30 min). Admin deactivates user in DB. |
-| Alembic downgrade support | Rollbacks risky in production | PostgreSQL backup before migrations. Forward-only. |
-| Multi-tenant database | Single team, single instance | One database, shared by all users |
-| Local model fine-tuning | Out of scope for document processing | Use pre-trained models from LM Studio model library |
-| Firebase-to-PostgreSQL live sync | One-time migration only | Run migration script once during cutover |
-| GCS-to-local file sync | One-time copy only | `gsutil cp -r gs://bucket/path ./data/` once |
-| Password complexity rules | Small internal team, admin-created accounts | Minimum 8 characters, no complexity regex |
-| MFA/2FA | Overkill for internal tool behind VPN/LAN | Defer indefinitely |
+| Address validation via LLM | LLMs cannot authoritatively validate addresses -- they hallucinate ZIP codes and street numbers. Research confirms: "You should not use generative AI tools to validate your addresses." | Keep Google Maps API for address validation (already separate pipeline step). LLM only standardizes format. |
+| Auto-loading models via LM Studio API | LM Studio API model loading is fragile and version-dependent | Require model to be manually loaded in LM Studio UI; surface clear error if no model loaded |
+| Multiple concurrent LLM providers | Only one server (LM Studio) exists on-prem; Gemini already removed in v2.0 | Keep single-provider factory pattern. Adding Ollama/vLLM support is future scope |
+| Automatic prompt tuning per model | Different models respond differently to same prompt; tempting to add model-specific prompt variants | Use one prompt set. If model struggles with JSON output, use `response_format` structured output instead |
+| Streaming LLM token responses to UI | LM Studio supports SSE streaming but parsing partial JSON mid-stream adds complexity | Keep batch request/response pattern. Progress already tracked at batch level via OperationContext |
+| Caching LLM responses | Deterministic data cleanup on same input is appealing but entries change between runs | Skip caching -- data changes each upload. Not worth cache invalidation complexity |
+| Retry/fallback to cloud AI | Defeats purpose of on-prem migration | Fix local connectivity instead |
+| Automated AI model downloading | Over-engineering for single-server setup | Use LM Studio's built-in model browser |
 
 ## Feature Dependencies
 
 ```
-AUTH-04 (seed admin) -> AUTH-01 (users table with password_hash)
-AUTH-01 (users table) -> DB-02 (extend SQLAlchemy models)
-AUTH-02 (login endpoint) -> AUTH-01 (users table)
-AUTH-03 (JWT middleware) -> AUTH-02 (login returns JWT)
-AUTH-05 (frontend auth context) -> AUTH-02 + AUTH-03 (backend endpoints exist)
-AUTH-06 (remove Firebase) -> AUTH-05 (new auth context works)
+LM Studio running + network accessible (0.0.0.0 binding)
+  -> Docker container can reach host (--add-host or direct IP)
+    -> Model loaded in LM Studio
+      -> AI_PROVIDER=lmstudio in env
+        -> get_llm_provider() returns OpenAIProvider
+          -> cleanup_entries() / validate_entries() called in pipeline
+            -> JSON parsed from response via parse_json_response()
+              -> ProposedChange / AiSuggestion objects applied to entries
 
-DB-02 (extend models) -> DB-01 (PostgreSQL is primary)
-DB-03 (schema creation) -> DB-02 (models complete)
-DB-04 (data migration) -> DB-03 (schema exists in production)
-DB-05 (port all services) -> DB-02 (models available)
+Nginx config for pipeline endpoints
+  -> proxy_read_timeout >= 300s for AI inference
+  -> proxy_buffering off for NDJSON streaming (enrich_entries)
+  -> Both /api/pipeline/* and streaming enrichment endpoints covered
 
-AI-02 (provider routing) -> AI-01 (OpenAI provider exists)
-AI-03 (env vars) -> AI-02 (factory reads config)
-
-STOR-01 -> independent (config default change only)
+Model discovery endpoint (admin GET /settings/available-models)
+  -> Filesystem scan (llm_models_dir = /mnt/array/lm-studio/models)
+  -> LM Studio /v1/models API query
+  -> Merged model list with loaded status
 ```
 
 ## MVP Recommendation
 
-**Phase 1 -- Database foundation:**
-1. DB-02: Extend SQLAlchemy models (add 3 missing tables + auth columns to `users`)
-2. DB-03: Alembic init + initial migration
-3. DB-01: Flip defaults (`DATABASE_ENABLED=true`, `FIRESTORE_ENABLED=false`)
-4. DB-05: Port `firestore_service.py` functions to `db_service.py` using SQLAlchemy
+Priority order for getting AI enrichment working end-to-end:
 
-**Phase 2 -- Auth swap:**
-1. AUTH-01 + AUTH-02: Login/refresh endpoints with bcrypt + python-jose
-2. AUTH-03: Replace Firebase verification middleware with JWT decode
-3. AUTH-04: CLI admin seed script
-4. AUTH-05: Frontend AuthContext rewrite (remove Firebase SDK)
-5. AUTH-06: Remove all Firebase imports and packages
+1. **Network connectivity** -- Verify `host.docker.internal` resolves from Docker container on the Linux server. If not, switch `llm_api_base` to use the host's LAN IP or `172.17.0.1`. Ensure LM Studio binds to `0.0.0.0` (not default `127.0.0.1`).
+2. **Environment config** -- Set `AI_PROVIDER=lmstudio`, `LLM_API_BASE`, and `LLM_MODEL` in production environment. Model ID must match `/v1/models` response exactly (use model discovery endpoint to find the right ID).
+3. **Nginx pipeline timeout** -- Add `proxy_read_timeout 300s` and `proxy_buffering off` for `/api/pipeline/` location block.
+4. **Health check before pipeline** -- Add a fast `/v1/models` ping at the start of `cleanup_entries()` to fail fast with a user-visible error instead of timing out after 300s.
+5. **Structured output** -- Add `response_format` parameter to `chat.completions.create()` calls using `CLEANUP_RESPONSE_SCHEMA` already defined in `prompts.py`. Single highest-impact reliability improvement.
 
-**Phase 3 -- AI + Storage cleanup:**
-1. AI-01: OpenAI-compatible provider implementing `LLMProvider` protocol
-2. AI-02 + AI-03: Factory routing with new env vars
-3. STOR-01: Default config changes + log level cleanup
+Defer: Revenue AI verification wiring, retry with smaller batches, admin connection status UI, model switching UI.
 
-**Defer to production cutover:** DB-04 (Firestore migration script) -- only needed once when moving prod data.
+## Common LM Studio Failure Modes (Reference)
 
-**Rationale:** Database first because auth needs the users table with `password_hash`. Auth second because every endpoint depends on it. AI + Storage last because they're independent and the app already degrades gracefully without them.
+Specific failure scenarios to investigate when debugging on the server.
+
+| Failure | Symptom | Root Cause | Fix |
+|---------|---------|------------|-----|
+| Connection refused | `openai.APIConnectionError` in logs | LM Studio not running, bound to localhost only, or Docker can't reach host | Bind LM Studio to `0.0.0.0`, add `--add-host host.docker.internal:host-gateway` to docker-compose, or use host LAN IP |
+| 500 from `/v1/chat/completions` | HTTP 500 in OpenAI SDK | No model loaded, or model ID mismatch in request | Load model in LM Studio UI, match `llm_model` config to actual model ID from `/v1/models` |
+| Timeout (300s) | `openai.APITimeoutError` | Model too large for hardware, or batch too big (25 entries = 5-10K tokens) | Reduce batch size to 10, use smaller/quantized model, increase timeout |
+| Malformed JSON response | `ValueError: Could not extract JSON from LLM response` | Model not following JSON instructions reliably | Use `response_format` structured output (guarantees valid JSON), or switch to model with better instruction following |
+| Empty suggestions array | Pipeline completes with 0 changes applied | Model returns `{"suggestions": []}` for everything | Check with known-bad data (ALL CAPS names); if still empty, model may not understand domain. Try different model or smaller batch |
+| `stream: false` rejection | Socket closed with no response, no error | Some older LM Studio versions reject explicit `stream: false` | Update LM Studio to 0.3+; OpenAI SDK sends `stream: false` by default |
+| Model unloaded between requests | First batch succeeds, later batches get 500 | LM Studio auto-unloaded model due to inactivity timeout | Enable "Keep model loaded" in LM Studio settings |
+| Nginx timeout on pipeline | 504 Gateway Timeout in browser | Nginx default `proxy_read_timeout` is 60s, AI inference takes 60-300s | Set `proxy_read_timeout 300s` in pipeline location block |
+
+## End-to-End AI Enrichment Flow (Expected Behavior)
+
+When working correctly:
+
+1. User uploads document, gets parsed entries displayed in table
+2. User clicks "Enrich" button -> opens enrichment modal (unified, single-button from v1.6)
+3. OperationContext manages batch-aware pipeline (25-entry batches from v1.7)
+4. Pipeline runs steps sequentially via `enrich_entries()` or `/api/pipeline/cleanup`:
+   - Address validation (Google Maps) -- skips if not configured
+   - Places lookup (Google Places) -- skips if not configured
+   - Contact enrichment (PDL/SearchBug) -- skips if not configured
+   - **AI Cleanup** (LM Studio) -- `get_llm_provider()` -> `OpenAIProvider` -> `cleanup_entries()`
+   - Name splitting (programmatic)
+5. AI Cleanup step detail:
+   - System prompt from `CLEANUP_PROMPTS[tool]` (tool-specific: extract, title, proration, revenue, ecf)
+   - Entries serialized as JSON with index fields
+   - Sent to LM Studio `/v1/chat/completions` with `temperature=0.1`
+   - Response parsed via `parse_json_response()` (tries: direct JSON, markdown fence, first `{...}` block)
+   - Suggestions filtered to high/medium confidence
+   - Entity type re-detection runs after AI name corrections
+   - Progress events streamed per batch
+6. Frontend highlights changed cells in green with click-to-reveal original values (v1.8 key-based tracking)
+7. User can undo all enrichment changes with global undo button
+8. Export includes enrichment changes applied to preview state (v1.5 preview-as-source-of-truth)
 
 ## Sources
 
-- [FastAPI OAuth2 JWT Tutorial](https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/) -- official docs for password hashing + JWT
-- [LM Studio OpenAI Compatibility Endpoints](https://lmstudio.ai/docs/developer/openai-compat) -- `/v1/chat/completions`, no API key needed
-- [LM Studio API Server](https://lmstudio.ai/docs/developer/core/server) -- default port 1234, model listing
-- Codebase: `backend/app/core/auth.py` -- Firebase auth (13 Firestore-touching functions to replace)
-- Codebase: `backend/app/services/llm/protocol.py` -- `LLMProvider` protocol (2 methods: `cleanup_entries`, `is_available`)
-- Codebase: `backend/app/services/llm/__init__.py` -- provider factory (add OpenAI branch)
-- Codebase: `backend/app/models/db_models.py` -- 10 of 13 SQLAlchemy models already exist
-- Codebase: `backend/app/services/firestore_service.py` -- 13 collections, ~40 functions to port
-- Codebase: `backend/app/services/storage_service.py` -- local fallback already functional
-- Codebase: `frontend/src/contexts/AuthContext.tsx` -- 401 retry pattern reusable for JWT refresh
-- Codebase: `frontend/src/utils/api.ts` -- `setAuthToken`/`clearAuthToken`/`setUnauthorizedHandler` already abstracted
+- [LM Studio OpenAI Compatibility Docs](https://lmstudio.ai/docs/developer/openai-compat)
+- [LM Studio Structured Output](https://lmstudio.ai/docs/developer/openai-compat/structured-output)
+- [LM Studio Server Settings](https://lmstudio.ai/docs/developer/core/server/settings)
+- [LM Studio Serve on Network](https://lmstudio.ai/docs/developer/core/server/serve-on-network)
+- [LM Studio CORS issue with host.docker.internal](https://github.com/lmstudio-ai/lms/issues/189)
+- [Docker host.docker.internal on Linux](https://forums.docker.com/t/connection-refused-on-host-docker-internal/136925)
+- [LM Studio model ID mismatch issue](https://github.com/cline/cline/issues/8030)
+- [LM Studio stream:false bug](https://github.com/langchain4j/langchain4j/issues/2882)
+- [AI address validation limitations](https://www.smarty.com/articles/llm-ai-address-validation)
+- [Pydantic for validating LLM outputs](https://machinelearningmastery.com/the-complete-guide-to-using-pydantic-for-validating-llm-outputs/)
+- Codebase: `backend/app/services/llm/openai_provider.py` -- OpenAI provider with `parse_json_response()` fallback chain
+- Codebase: `backend/app/services/llm/prompts.py` -- all prompt constants + unused `CLEANUP_RESPONSE_SCHEMA`
+- Codebase: `backend/app/services/data_enrichment_pipeline.py` -- 5-step enrichment pipeline (AI is step 4)
+- Codebase: `backend/app/api/pipeline.py` -- pipeline API endpoints (cleanup/validate/enrich)
+- Codebase: `backend/app/api/admin.py` lines 472-556 -- model discovery endpoint
+- Codebase: `backend/app/core/config.py` lines 44-49 -- LM Studio config defaults

@@ -1,171 +1,175 @@
-# Technology Stack: v2.0 On-Prem Migration
+# Technology Stack
 
-**Project:** Table Rock Tools
-**Researched:** 2026-03-25
-**Scope:** NEW infrastructure only (JWT auth, PostgreSQL-only, local storage, LM Studio AI)
+**Project:** Table Rock Tools v2.2 - Post-Migration Fixes & AI Enrichment
+**Researched:** 2026-03-31
+**Scope:** LM Studio debugging, nginx reverse proxy, on-prem Docker stabilization
 
-## Recommended Stack Changes
+## What's Already In Place (DO NOT CHANGE)
 
-### Authentication (Firebase Auth -> Local JWT)
+These are validated and working. Listed for reference only.
 
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| PyJWT | >=2.12.0 | JWT token creation/verification | FastAPI official docs switched from python-jose to PyJWT. python-jose is abandoned (no release in 3+ years). PyJWT is actively maintained, simpler API, HS256 is sufficient for internal app. |
-| pwdlib[bcrypt] | >=0.2.0 | Password hashing | FastAPI official docs switched from passlib to pwdlib. passlib is unmaintained and broken with bcrypt>=5.0 and Python>=3.13. pwdlib is from the FastAPI-Users author, supports bcrypt natively. Use `[bcrypt]` extra, not `[argon2]` -- bcrypt is simpler to deploy (no system deps) and sufficient for small internal team. |
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| React | 19.x | SPA frontend |
+| FastAPI | 0.109+ | Async Python API |
+| PostgreSQL | 16 | Primary database (migrated from Firestore in v2.0) |
+| SQLAlchemy | 2.0+ | Async ORM |
+| Alembic | 1.13+ | Schema migrations |
+| PyJWT | 2.8+ | Local JWT auth (replaced Firebase in v2.0) |
+| pwdlib[bcrypt] | 0.2+ | Password hashing |
+| openai SDK | 2.0+ | LM Studio client via OpenAI-compatible API |
+| Docker | latest | Production container runtime |
+| nginx | system | Reverse proxy + SSL termination |
 
-**NOT python-jose:** Abandoned, last release 2021. FastAPI PR #11589 formally replaced it.
-**NOT passlib:** Unmaintained since 2020, broken with bcrypt 5.0+, incompatible with Python 3.13+.
-**NOT argon2:** Requires system-level `argon2-cffi` build dependencies. Bcrypt is universally available and sufficient for <20 users.
+## Stack Additions Needed
 
-### Database (Firestore -> PostgreSQL-only)
+### None.
 
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| SQLAlchemy[asyncio] | >=2.0.0 | ORM + async database access | Already in requirements.txt and used in `database.py` + `db_models.py`. Models exist for all entity types. Just needs to become the primary path. |
-| asyncpg | >=0.29.0 | Async PostgreSQL driver | Already in requirements.txt. Used by SQLAlchemy async engine. |
-| Alembic | >=1.18.0 | Schema migrations | Already in requirements.txt. Required now because PostgreSQL becomes the sole database -- schema changes need proper migration tracking. Use `alembic init --template async` for async engine compat. |
-| psycopg2-binary | >=2.9.0 | Sync PostgreSQL driver (Alembic) | Already in requirements.txt. Alembic migrations run synchronously even with async engine. Needed for `env.py` offline mode. |
+No new libraries or dependencies are required for v2.2. The existing stack covers everything. The work is debugging and configuration, not adding technology.
 
-**Key finding:** The existing codebase already has full SQLAlchemy models in `db_models.py` covering Users, Jobs, ExtractEntry, TitleEntry, ProrationRow, RevenueStatement, RevenueRow, RRC data, and AuditLog. The `database.py` module has async engine, session factory, and `init_db()`. This is not a greenfield migration -- it is activating and extending code that already exists.
+## Configuration Changes Required
 
-**Missing models to add:**
-- `AppConfig` -- replaces Firestore `app_config` collection (allowlist, settings)
-- `UserPreference` -- replaces Firestore `user_preferences` collection
-- `RRCCountyStatus` -- replaces Firestore `rrc_county_status` collection
-- `password_hash` column on existing `User` model
-- `role`, `scope`, `tools` columns on existing `User` model (currently in JSON allowlist)
+### 1. LM Studio OpenAI-Compatible API
 
-**Alembic vs create_all:** Use Alembic. The existing `init_db()` uses `Base.metadata.create_all` which is fine for initial setup but cannot handle schema evolution. With PostgreSQL as sole DB, Alembic is mandatory for adding columns, indexes, etc. without data loss.
-
-### AI Provider (Gemini -> LM Studio via OpenAI SDK)
-
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| openai | >=1.60.0 | OpenAI-compatible API client | LM Studio exposes `/v1/chat/completions` endpoint that is 100% OpenAI SDK compatible. Set `base_url="http://localhost:1234/v1"` and `api_key="not-needed"`. Zero code changes to prompt logic, just client initialization. |
-
-**NOT google-genai for LM Studio:** LM Studio does not speak Gemini protocol. The OpenAI-compatible endpoint is the standard for local LLMs.
-**NOT litellm:** Adds unnecessary abstraction. The openai SDK already handles routing to any OpenAI-compatible endpoint via `base_url`.
-**NOT lmstudio SDK:** Exists but is less mature. OpenAI SDK is battle-tested and lets you switch between LM Studio, Ollama, vLLM, or actual OpenAI with zero code changes.
-
-**Integration pattern:**
+**Current config** (in `config.py`):
 ```python
-# Current Gemini code in gemini_service.py:
-from google import genai
-client = genai.Client(api_key=settings.gemini_api_key)
-response = client.models.generate_content(model=..., contents=..., config=...)
-
-# New OpenAI-compatible code:
-from openai import OpenAI
-client = OpenAI(base_url=settings.llm_api_base, api_key=settings.llm_api_key or "not-needed")
-response = client.chat.completions.create(model=settings.llm_model, messages=[...], response_format={"type": "json_object"})
+ai_provider: str = "none"
+llm_api_base: str = "http://host.docker.internal:1234/v1"
+llm_model: str = "qwen3.5-35b-a3b"
+llm_api_key: Optional[str] = None
+llm_models_dir: str = "/mnt/array/lm-studio/models"
 ```
 
-**LM Studio JSON mode:** LM Studio supports `response_format: {"type": "json_object"}` which replaces Gemini's `response_mime_type="application/json"` + `response_json_schema`. The schema enforcement is less strict -- validation moves to the application layer (Pydantic parsing of response).
+**Key facts** (HIGH confidence, verified via LM Studio docs):
+- LM Studio 0.4.x serves OpenAI-compatible endpoints at `/v1/chat/completions`, `/v1/models`, `/v1/completions`, `/v1/embeddings`
+- The `model` field in API requests must match the exact model ID returned by `GET /v1/models` -- this includes quantization suffixes (e.g., `qwen3.5-35b-a3b` might need to be `lmstudio-community/qwen3.5-35b-a3b-GGUF`)
+- API key is ignored on localhost but the openai SDK requires a non-empty string -- current `"not-needed"` fallback is correct
+- Streaming is fully supported with SSE
+- No rate limiting on local inference -- the existing `asyncio.Semaphore` concurrency control in the pipeline is sufficient
 
-### Storage (GCS -> Local Filesystem)
+**Debugging checklist for AI enrichment on server:**
+1. Verify `AI_PROVIDER=lmstudio` is set in production `.env`
+2. Verify `LLM_API_BASE` resolves from inside Docker container (`host.docker.internal` works on Docker Desktop but requires `--add-host=host.docker.internal:host-gateway` on Linux Docker)
+3. Verify model ID matches `GET /v1/models` output exactly
+4. Verify LM Studio server is running and listening on port 1234
+5. Test connectivity: `curl http://host.docker.internal:1234/v1/models` from inside container
 
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| (none new) | - | Local filesystem storage | `StorageService` already has local fallback. Change: make local the default when `GCS_BUCKET_NAME` is empty/unset, suppress GCS warnings. No new dependencies needed. |
+**Critical Linux Docker gotcha:** `host.docker.internal` does NOT resolve by default on Linux. Docker Desktop (Mac/Windows) adds it automatically, but on Ubuntu server you must add `--add-host=host.docker.internal:host-gateway` to the `docker run` command or add `extra_hosts` in docker-compose. This is the most likely reason AI enrichment fails on the server.
 
-**What changes:** Default `gcs_bucket_name` from `"table-rock-tools-storage"` to `None` in config.py. When `None`, `use_gcs` returns `False` and all storage silently uses `data_dir`. Remove log warnings about GCS unavailability.
+### 2. Nginx Reverse Proxy for FastAPI
 
-### Frontend Auth (Firebase SDK -> fetch-based JWT)
+**Current config** (`nginx/default.conf`) has three location blocks:
+- `/api/proration/` -- 300s timeout, buffering off (for RRC streaming)
+- `/api/ghl/send/` -- 600s timeout, buffering off (for SSE progress)
+- `/` -- 120s timeout, default buffering (catch-all)
 
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| (none new) | - | JWT auth via fetch API | Remove `firebase` npm package (12.9.0). Replace `AuthContext.tsx` with local auth context that stores JWT in localStorage, sends as Bearer token. Login page calls `POST /api/auth/login` instead of Firebase `signInWithEmailAndPassword`. No new npm dependencies needed. |
+**Missing: Pipeline/enrichment endpoints.** The AI enrichment pipeline (`/api/pipeline/*`) makes LM Studio calls that can take 30-60+ seconds per batch (local inference on 35B parameter models is slow). The default 120s timeout may be tight for multi-batch operations, and buffering will delay NDJSON streaming responses.
 
-**What gets removed from frontend:**
-- `firebase` npm package (~600KB gzipped)
-- `frontend/src/lib/firebase.ts`
-- All `firebase/auth` imports in `AuthContext.tsx`
-- Google Sign-In provider (replaced by email/password only)
-- Firebase config env vars (`VITE_FIREBASE_*`)
+**Required nginx additions:**
 
-## New Environment Variables
+```nginx
+# AI pipeline endpoints (long-running LM Studio inference)
+location /api/pipeline/ {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `JWT_SECRET_KEY` | Yes (production) | auto-generated in dev | HMAC secret for JWT signing. Generate with `openssl rand -hex 32`. |
-| `JWT_ALGORITHM` | No | `HS256` | JWT signing algorithm |
-| `JWT_EXPIRE_MINUTES` | No | `1440` (24h) | Token expiry. 24h is fine for internal tool with small team. |
-| `AI_PROVIDER` | No | `none` | `gemini`, `openai`, or `none`. Controls which AI backend is used. |
-| `LLM_API_BASE` | No | `http://localhost:1234/v1` | Base URL for OpenAI-compatible API (LM Studio default). |
-| `LLM_MODEL` | No | `local-model` | Model name to request from LM Studio. |
-| `LLM_API_KEY` | No | `not-needed` | API key for LLM provider. LM Studio ignores this. |
-| `DATABASE_URL` | Yes | `postgresql+asyncpg://postgres:postgres@localhost:5432/toolbox` | Already exists. Becomes mandatory. |
-| `DATABASE_ENABLED` | Removed | - | No longer needed. PostgreSQL is always on. |
-| `FIRESTORE_ENABLED` | Removed | - | Firestore removed entirely. |
-| `GCS_BUCKET_NAME` | No | `None` | Default changes to None (was `table-rock-tools-storage`). |
+    # LM Studio inference is slow on large models -- 10 min timeout
+    proxy_read_timeout 600s;
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 600s;
 
-## Alternatives Considered
+    # Disable buffering for streaming responses
+    proxy_buffering off;
+    proxy_cache off;
+}
 
-| Category | Recommended | Alternative | Why Not |
-|----------|-------------|-------------|---------|
-| JWT | PyJWT | python-jose | Abandoned, no releases since 2021, FastAPI dropped it |
-| JWT | PyJWT | Authlib | Heavier, full OAuth2 framework -- overkill for internal JWT |
-| Password hashing | pwdlib[bcrypt] | passlib[bcrypt] | Unmaintained, broken with bcrypt>=5.0, Python>=3.13 incompatible |
-| Password hashing | pwdlib[bcrypt] | bcrypt (direct) | No verify/hash helpers, pwdlib wraps it cleanly |
-| Password hashing | pwdlib[bcrypt] | pwdlib[argon2] | argon2 needs system deps (libargon2), bcrypt is simpler |
-| AI client | openai SDK | litellm | Unnecessary abstraction layer, openai SDK handles base_url natively |
-| AI client | openai SDK | httpx (raw) | Reinventing the wheel, openai SDK handles retries/streaming/types |
-| AI client | openai SDK | lmstudio-python | Less mature, smaller ecosystem, openai SDK is universal |
-| Migrations | Alembic | create_all | Can't evolve schema without data loss |
-| Migrations | Alembic | manual SQL | Error-prone, no rollback tracking |
+# Revenue upload (multi-PDF NDJSON streaming)
+location /api/revenue/ {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
 
-## Installation
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+    proxy_buffering off;
+    proxy_cache off;
+}
+```
 
+**SSE-specific note** (MEDIUM confidence): FastAPI's SSE implementation (via `sse-starlette`) already sends `X-Accel-Buffering: no` header which tells nginx to disable response buffering for that request. However, the `proxy_buffering off` directive in the location block is belt-and-suspenders -- it ensures buffering is disabled even if the header is missed. Keep both.
+
+**Connection header for SSE:** Add `proxy_set_header Connection '';` to SSE location blocks. HTTP/1.1 keepalive requires clearing the Connection header to prevent nginx from closing the connection prematurely.
+
+### 3. Docker Production Configuration for On-Prem
+
+**Current Dockerfile** is fine. The key issues are runtime configuration:
+
+| Setting | Current | Required for On-Prem |
+|---------|---------|---------------------|
+| `--add-host` | Not set | `host.docker.internal:host-gateway` (Linux) |
+| `DATABASE_URL` | localhost | `postgresql+asyncpg://user:pass@host.docker.internal:5432/toolbox` or host network |
+| `AI_PROVIDER` | `none` | `lmstudio` |
+| `LLM_API_BASE` | `host.docker.internal:1234/v1` | Correct if `--add-host` is set |
+
+**PostgreSQL access from Docker:** Two approaches:
+1. **`--add-host` + `host.docker.internal`** -- container talks to host's PostgreSQL via special hostname
+2. **`--network=host`** -- container shares host network stack, `localhost` works directly. Simpler but gives container full network access.
+
+Recommendation: Use `--add-host=host.docker.internal:host-gateway` for both PostgreSQL and LM Studio access. It's explicit and doesn't open the entire host network.
+
+**Updated `docker run` for production:**
 ```bash
-# New backend dependencies (add to requirements.txt)
-pip install PyJWT>=2.12.0
-pip install "pwdlib[bcrypt]>=0.2.0"
-pip install "openai>=1.60.0"
-
-# Already in requirements.txt (no changes needed)
-# sqlalchemy[asyncio]>=2.0.0
-# asyncpg>=0.29.0
-# psycopg2-binary>=2.9.0
-# alembic>=1.13.0
-
-# Frontend: REMOVE firebase
-cd frontend && npm uninstall firebase
+sudo docker run -d \
+    --name tablerock-tools \
+    --restart unless-stopped \
+    --env-file /opt/tablerock/.env \
+    --add-host=host.docker.internal:host-gateway \
+    -p 127.0.0.1:8080:8080 \
+    -v /opt/tablerock/data:/app/data \
+    tablerock-tools:latest
 ```
 
-## Dependencies to REMOVE
+## What NOT to Add
 
-```bash
-# Backend (requirements.txt)
-# REMOVE these lines:
-# google-cloud-storage>=2.14.0
-# google-cloud-firestore>=2.14.0
-# firebase-admin>=6.2.0
-# google-genai>=1.0.0   (keep if dual-provider support desired)
+| Technology | Why Not |
+|------------|---------|
+| Ollama | LM Studio is already integrated and working. No reason to switch inference servers. |
+| vLLM | Production-grade but overkill for a single-user internal tool. LM Studio's GUI model management is a feature here. |
+| Redis | No caching layer needed. In-memory pandas cache + PostgreSQL is sufficient for this user count. |
+| Celery / task queue | The pipeline already handles batch processing with asyncio. Background thread pattern works for RRC downloads. |
+| Prometheus / Grafana | Over-engineered for a small internal team. The healthcheck.sh + docker logs pattern is adequate. |
+| Traefik / Caddy | nginx is already configured and working. No reason to switch reverse proxies. |
+| pgBouncer | Single-digit concurrent users. Connection pooling is unnecessary. |
 
-# Frontend (package.json)
-# REMOVE:
-# "firebase": "^12.9.0"
-```
+## Version Pinning Notes
+
+| Package | Current Pin | Recommendation |
+|---------|-------------|----------------|
+| `openai` | `>=2.0.0` | Keep loose. The SDK is stable for basic chat completions. LM Studio compatibility doesn't depend on specific minor versions. |
+| `nginx` | system package | Use Ubuntu's default `apt` package. No need for nginx-plus or custom builds. |
+| `PostgreSQL` | 16-alpine (Docker) | Keep. No features from PG 17 are needed. |
 
 ## Confidence Assessment
 
-| Decision | Confidence | Basis |
-|----------|------------|-------|
-| PyJWT over python-jose | HIGH | FastAPI official docs PR #11589, python-jose abandoned |
-| pwdlib over passlib | HIGH | FastAPI official docs, passlib broken with bcrypt 5.0+ |
-| openai SDK for LM Studio | HIGH | LM Studio official docs confirm full OpenAI API compat |
-| Alembic for migrations | HIGH | Already in requirements.txt, standard SQLAlchemy practice |
-| No new frontend deps | HIGH | JWT auth is just fetch + localStorage, no library needed |
-| bcrypt over argon2 | MEDIUM | Both work, bcrypt avoids system deps, argon2 is theoretically stronger but irrelevant for <20 users |
+| Area | Confidence | Reason |
+|------|------------|--------|
+| LM Studio API compat | HIGH | Verified via official LM Studio docs -- standard OpenAI SDK works with base_url swap |
+| `host.docker.internal` Linux issue | HIGH | Well-documented Docker limitation on Linux vs Desktop, confirmed in Docker docs |
+| nginx SSE buffering | HIGH | Multiple sources confirm `proxy_buffering off` + `X-Accel-Buffering: no` pattern |
+| Pipeline timeout needs | MEDIUM | 600s is estimated from 35B model inference times -- may need tuning based on actual server GPU |
+| No new dependencies needed | HIGH | Codebase review confirms all required libraries are present |
 
 ## Sources
 
-- [FastAPI JWT Tutorial (official)](https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/) -- PyJWT + pwdlib
-- [FastAPI PR #11589: Replace python-jose with PyJWT](https://github.com/fastapi/fastapi/pull/11589)
-- [FastAPI Discussion #11345: Abandon python-jose](https://github.com/fastapi/fastapi/discussions/11345)
-- [FastAPI Discussion #11773: passlib unmaintained](https://github.com/fastapi/fastapi/discussions/11773)
-- [LM Studio OpenAI Compatibility Docs](https://lmstudio.ai/docs/developer/openai-compat)
-- [PyJWT PyPI](https://pypi.org/project/PyJWT/) -- v2.12.1
-- [OpenAI Python SDK PyPI](https://pypi.org/project/openai/) -- v2.29.0
-- [pwdlib PyPI](https://pypi.org/project/pwdlib/)
-- [Alembic Documentation](https://alembic.sqlalchemy.org/en/latest/) -- v1.18.4
+- [LM Studio OpenAI Compatibility Docs](https://lmstudio.ai/docs/developer/openai-compat) -- endpoint list, model ID format, streaming support
+- [LM Studio Developer Docs](https://lmstudio.ai/docs/developer) -- native API vs compat layer
+- [FastAPI SSE Tutorial](https://fastapi.tiangolo.com/tutorial/server-sent-events/) -- X-Accel-Buffering header behavior
+- [Nginx SSE Configuration Guide](https://oneuptime.com/blog/post/2025-12-16-server-sent-events-nginx/view) -- proxy_buffering, timeout settings
+- [Nginx Reverse Proxy Guide (2026)](https://eastondev.com/blog/en/posts/dev/20260330-nginx-reverse-proxy-guide/) -- upstream buffering patterns
