@@ -211,6 +211,172 @@ class TestPipelineModels:
         assert resp.error is None
 
 
+class TestVerifyModel:
+    """Test OpenAIProvider.verify_model() model verification."""
+
+    @pytest.mark.asyncio
+    async def test_verify_model_success(self):
+        """verify_model returns (True, '') when configured model is loaded."""
+        from app.services.llm.openai_provider import OpenAIProvider
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"data": [{"id": "qwen3.5-35b-a3b"}]}
+
+        with patch("app.services.llm.openai_provider.settings") as mock_settings:
+            mock_settings.llm_api_base = "http://localhost:1234/v1"
+            mock_settings.llm_model = "qwen3.5-35b-a3b"
+
+            provider = OpenAIProvider()
+
+            with patch("httpx.AsyncClient") as MockClient:
+                mock_client_instance = AsyncMock()
+                mock_client_instance.get = AsyncMock(return_value=mock_response)
+                mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+                mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+                MockClient.return_value = mock_client_instance
+
+                valid, error = await provider.verify_model()
+
+        assert valid is True
+        assert error == ""
+
+    @pytest.mark.asyncio
+    async def test_verify_model_wrong_model(self):
+        """verify_model returns (False, ...) when configured model is not available."""
+        from app.services.llm.openai_provider import OpenAIProvider
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"data": [{"id": "other-model"}]}
+
+        with patch("app.services.llm.openai_provider.settings") as mock_settings:
+            mock_settings.llm_api_base = "http://localhost:1234/v1"
+            mock_settings.llm_model = "qwen3.5-35b-a3b"
+
+            provider = OpenAIProvider()
+
+            with patch("httpx.AsyncClient") as MockClient:
+                mock_client_instance = AsyncMock()
+                mock_client_instance.get = AsyncMock(return_value=mock_response)
+                mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+                mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+                MockClient.return_value = mock_client_instance
+
+                valid, error = await provider.verify_model()
+
+        assert valid is False
+        assert "not found" in error
+        assert "other-model" in error
+
+    @pytest.mark.asyncio
+    async def test_verify_model_no_models_loaded(self):
+        """verify_model returns (False, ...) when no models are loaded."""
+        from app.services.llm.openai_provider import OpenAIProvider
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"data": []}
+
+        with patch("app.services.llm.openai_provider.settings") as mock_settings:
+            mock_settings.llm_api_base = "http://localhost:1234/v1"
+            mock_settings.llm_model = "qwen3.5-35b-a3b"
+
+            provider = OpenAIProvider()
+
+            with patch("httpx.AsyncClient") as MockClient:
+                mock_client_instance = AsyncMock()
+                mock_client_instance.get = AsyncMock(return_value=mock_response)
+                mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+                mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+                MockClient.return_value = mock_client_instance
+
+                valid, error = await provider.verify_model()
+
+        assert valid is False
+        assert "no models loaded" in error
+
+    @pytest.mark.asyncio
+    async def test_verify_model_connection_error(self):
+        """verify_model returns (False, ...) when LM Studio is unreachable."""
+        import httpx
+        from app.services.llm.openai_provider import OpenAIProvider
+
+        with patch("app.services.llm.openai_provider.settings") as mock_settings:
+            mock_settings.llm_api_base = "http://localhost:1234/v1"
+            mock_settings.llm_model = "qwen3.5-35b-a3b"
+
+            provider = OpenAIProvider()
+
+            with patch("httpx.AsyncClient") as MockClient:
+                mock_client_instance = AsyncMock()
+                mock_client_instance.get = AsyncMock(
+                    side_effect=httpx.ConnectError("Connection refused")
+                )
+                mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+                mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+                MockClient.return_value = mock_client_instance
+
+                valid, error = await provider.verify_model()
+
+        assert valid is False
+        assert "Cannot connect" in error
+
+    @pytest.mark.asyncio
+    async def test_cleanup_skips_when_verify_fails(self):
+        """cleanup_entries returns [] when verify_model fails."""
+        from app.services.llm.openai_provider import OpenAIProvider
+
+        provider = OpenAIProvider()
+        provider._model_verified = False
+
+        with patch.object(provider, "verify_model", new_callable=AsyncMock) as mock_verify:
+            mock_verify.return_value = (False, "Cannot connect to LM Studio")
+
+            with patch("app.services.llm.openai_provider.settings") as mock_settings:
+                mock_settings.batch_size = 25
+                mock_settings.llm_model = "test-model"
+                mock_settings.ai_provider = "lmstudio"
+                mock_settings.llm_api_base = "http://localhost:1234/v1"
+                mock_settings.llm_api_key = None
+
+                result = await provider.cleanup_entries("extract", [{"name": "test"}])
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_cleanup_caches_verification(self):
+        """cleanup_entries calls verify_model only once across multiple calls."""
+        from app.services.llm.openai_provider import OpenAIProvider
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = json.dumps({"suggestions": []})
+
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        provider = OpenAIProvider()
+        provider._client = mock_client
+        provider._model_verified = False
+
+        with patch.object(provider, "verify_model", new_callable=AsyncMock) as mock_verify:
+            mock_verify.return_value = (True, "")
+
+            with patch("app.services.llm.openai_provider.settings") as mock_settings:
+                mock_settings.batch_size = 25
+                mock_settings.llm_model = "test-model"
+                mock_settings.ai_provider = "lmstudio"
+
+                await provider.cleanup_entries("extract", [{"name": "test"}])
+                await provider.cleanup_entries("extract", [{"name": "test2"}])
+
+        assert mock_verify.call_count == 1
+
+
 class TestCleanupPrompts:
     """Test cleanup prompt constants."""
 
