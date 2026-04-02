@@ -298,7 +298,7 @@ class TestVerifyModel:
                 valid, error = await provider.verify_model()
 
         assert valid is False
-        assert "no models loaded" in error
+        assert "no models available" in error
 
     @pytest.mark.asyncio
     async def test_verify_model_connection_error(self):
