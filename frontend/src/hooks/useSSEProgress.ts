@@ -83,9 +83,9 @@ export function useSSEProgress(jobId: string | null, authToken?: string | null):
         setProgress({
           processed: data.processed,
           total: data.total,
-          created: data.created,
-          updated: data.updated,
-          failed: data.failed,
+          created: data.created_count ?? data.created,
+          updated: data.updated_count ?? data.updated,
+          failed: data.failed_count ?? data.failed,
         })
       })
 
@@ -98,15 +98,15 @@ export function useSSEProgress(jobId: string | null, authToken?: string | null):
         setProgress({
           processed: data.total || data.processed,
           total: data.total,
-          created: data.created,
-          updated: data.updated,
-          failed: data.failed,
+          created: data.created_count ?? data.created,
+          updated: data.updated_count ?? data.updated,
+          failed: data.failed_count ?? data.failed,
         })
         setCompletionData({
           status: data.status,
-          created: data.created,
-          updated: data.updated,
-          failed: data.failed,
+          created: data.created_count ?? data.created,
+          updated: data.updated_count ?? data.updated,
+          failed: data.failed_count ?? data.failed,
           failed_contacts: data.failed_contacts || [],
           updated_contacts: data.updated_contacts || [],
           dailyLimitHit: data.status === 'daily_limit_hit',
