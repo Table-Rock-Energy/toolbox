@@ -249,9 +249,29 @@ export default function AdminSettings() {
       fetch('/api/admin/settings/available-models', { headers: authHeaders() })
         .then(r => r.json())
         .then(data => {
-          setAvailableModels(data.models || [])
+          const models = data.models || []
+          setAvailableModels(models)
           setLmStudioConnected(data.connected || false)
           setModelsDirFound(data.models_dir_found || false)
+
+          // Auto-resolve model name to a matching dropdown option.
+          // Saved value may differ from dropdown IDs in several ways:
+          //   - Missing publisher prefix: "qwen3.5-35b-a3b" vs "lmstudio-community/Qwen3.5-35B-A3B-GGUF"
+          //   - Case differences: "qwen" vs "Qwen"
+          //   - GGUF suffix: model dir has "-GGUF" but saved name doesn't
+          if (models.length > 0) {
+            const normalize = (s: string) => s.toLowerCase().replace(/-gguf$/i, '').replace(/[^a-z0-9]/g, '')
+            setAiModel(prev => {
+              if (models.some((m: {id: string}) => m.id === prev)) return prev
+              const prevNorm = normalize(prev)
+              const match = models.find((m: {id: string}) => {
+                // Check the full ID and just the model part (after last /)
+                const modelPart = m.id.includes('/') ? m.id.split('/').pop()! : m.id
+                return normalize(m.id) === prevNorm || normalize(modelPart) === prevNorm
+              })
+              return match ? match.id : prev
+            })
+          }
         })
         .catch(() => {
           setLmStudioConnected(false)
@@ -767,6 +787,11 @@ export default function AdminSettings() {
                     onChange={(e) => setAiModel(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal bg-white"
                   >
+                    {!availableModels.some(m => m.id === aiModel) && (
+                      <option value={aiModel} disabled>
+                        {aiModel} (not found — select a model)
+                      </option>
+                    )}
                     {availableModels.map(m => (
                       <option key={m.id} value={m.id}>
                         {m.id}{m.loaded ? ' (loaded)' : ''}
