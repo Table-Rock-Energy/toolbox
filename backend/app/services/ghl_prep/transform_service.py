@@ -111,10 +111,10 @@ def transform_csv(file_bytes: bytes, filename: str) -> TransformResult:
 
     # Read CSV with encoding fallback
     try:
-        df = pd.read_csv(io.BytesIO(file_bytes), encoding="utf-8")
+        df = pd.read_csv(io.BytesIO(file_bytes), encoding="utf-8", dtype=str)
     except UnicodeDecodeError:
         logger.warning("UTF-8 decoding failed, trying latin-1 encoding")
-        df = pd.read_csv(io.BytesIO(file_bytes), encoding="latin-1")
+        df = pd.read_csv(io.BytesIO(file_bytes), encoding="latin-1", dtype=str)
 
     if df.empty:
         warnings.append("CSV file is empty")
