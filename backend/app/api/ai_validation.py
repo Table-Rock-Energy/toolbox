@@ -59,7 +59,7 @@ async def ai_validate(request: AiValidationRequest) -> AiValidationResult:
         if provider is None:
             return AiValidationResult(
                 success=False,
-                error_message="AI validation is not enabled. Set AI_PROVIDER=lmstudio.",
+                error_message="AI validation is not enabled. Set AI_PROVIDER=ollama.",
             )
         result = await provider.validate_entries(request.tool, request.entries)
         return result

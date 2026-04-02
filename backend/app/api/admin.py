@@ -157,7 +157,7 @@ def _apply_settings_to_runtime(settings_data: dict) -> None:
     # --- AI provider section ---
     ai = settings_data.get("ai", {})
     if ai.get("enabled"):
-        runtime_settings.ai_provider = "lmstudio"
+        runtime_settings.ai_provider = "ollama"
     elif "enabled" in ai:
         runtime_settings.ai_provider = "none"
     if "model" in ai:
@@ -220,7 +220,7 @@ class ApiSettingsRequest(BaseModel):
     """Request to update unified API settings (AI, Maps, batch config)."""
     api_key: Optional[str] = None
     ai_enabled: bool = False
-    ai_model: str = "qwen3.5-35b-a3b"
+    ai_model: str = "qwen3.5-9b"
     maps_enabled: bool = False
     places_enabled: bool = False
     batch_size: int = 25
@@ -243,7 +243,7 @@ class ApiSettingsResponse(BaseModel):
 class AiSettingsRequest(BaseModel):
     """Request to update AI provider settings."""
     enabled: bool = False
-    model: str = "qwen3.5-35b-a3b"
+    model: str = "qwen3.5-9b"
 
 
 class AiSettingsResponse(BaseModel):
@@ -458,7 +458,7 @@ async def update_ai_settings(request: AiSettingsRequest, user: dict = Depends(re
 
     # Update runtime config
     from app.core.config import settings as runtime_settings
-    runtime_settings.ai_provider = "lmstudio" if request.enabled else "none"
+    runtime_settings.ai_provider = "ollama" if request.enabled else "none"
     runtime_settings.llm_model = request.model
 
     logger.info("AI provider settings updated")
@@ -471,52 +471,25 @@ async def update_ai_settings(request: AiSettingsRequest, user: dict = Depends(re
 
 @router.get("/settings/available-models")
 async def get_available_models(user: dict = Depends(require_admin)):
-    """Discover available models from LM Studio API and server filesystem.
+    """Discover available models from Ollama's OpenAI-compatible API.
 
-    Scans the models directory (LLM_MODELS_DIR, default /mnt/array/lm-studio/models)
-    for all downloaded models, and queries the LM Studio /v1/models API for loaded ones.
-    Merges results so the dropdown shows all available models with loaded status.
+    Queries the Ollama /v1/models endpoint (or /api/tags as fallback)
+    to list all pulled models available for inference.
     """
-    from pathlib import Path
-
     import httpx
 
     from app.core.config import settings as runtime_settings
 
-    base_url = runtime_settings.llm_api_base or "http://host.docker.internal:1234/v1"
-    models_dir = Path(runtime_settings.llm_models_dir)
+    base_url = runtime_settings.llm_api_base or "http://host.docker.internal:11434/v1"
+    # Derive Ollama native API base from the OpenAI-compat base URL
+    ollama_base = base_url.rsplit("/v1", 1)[0]
 
-    # Step 1: Scan filesystem for all downloaded models
-    fs_models: list[dict] = []
-    if models_dir.is_dir():
-        for publisher_dir in sorted(models_dir.iterdir()):
-            if not publisher_dir.is_dir() or publisher_dir.name.startswith("."):
-                continue
-            for model_dir in sorted(publisher_dir.iterdir()):
-                if not model_dir.is_dir() or model_dir.name.startswith("."):
-                    continue
-                # Check for GGUF files (actual model weights)
-                gguf_files = list(model_dir.glob("*.gguf"))
-                if not gguf_files:
-                    continue
-                model_id = f"{publisher_dir.name}/{model_dir.name}"
-                fs_models.append({
-                    "id": model_id,
-                    "object": "model",
-                    "owned_by": publisher_dir.name,
-                    "source": "filesystem",
-                    "loaded": False,
-                    "files": [f.name for f in gguf_files],
-                })
-        logger.info("Found %d models on filesystem at %s", len(fs_models), models_dir)
-    else:
-        logger.debug("Models directory not found: %s", models_dir)
-
-    # Step 2: Query LM Studio API for loaded models
+    models: list[dict] = []
     api_connected = False
-    loaded_ids: set[str] = set()
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
+            # Try OpenAI-compatible endpoint first
             response = await client.get(f"{base_url}/models")
             response.raise_for_status()
             data = response.json()
@@ -525,34 +498,41 @@ async def get_available_models(user: dict = Depends(require_admin)):
             for model in data.get("data", []):
                 mid = model.get("id", "")
                 if mid:
-                    loaded_ids.add(mid)
-    except Exception as e:
-        logger.warning("Could not connect to LM Studio API: %s", e)
+                    models.append({
+                        "id": mid,
+                        "object": "model",
+                        "owned_by": mid.split(":")[0] if ":" in mid else mid.split("/")[0] if "/" in mid else "",
+                        "source": "api",
+                        "loaded": True,
+                    })
+    except Exception:
+        # Fallback: try Ollama native /api/tags endpoint
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(f"{ollama_base}/api/tags")
+                response.raise_for_status()
+                data = response.json()
+                api_connected = True
 
-    # Step 3: Merge — mark filesystem models as loaded if API reports them
-    for m in fs_models:
-        if m["id"] in loaded_ids:
-            m["loaded"] = True
-            loaded_ids.discard(m["id"])
+                for model in data.get("models", []):
+                    name = model.get("name", "")
+                    if name:
+                        models.append({
+                            "id": name,
+                            "object": "model",
+                            "owned_by": name.split(":")[0] if ":" in name else "",
+                            "source": "api",
+                            "loaded": True,
+                        })
+        except Exception as e:
+            logger.warning("Could not connect to Ollama API: %s", e)
 
-    # Add any API-only models not found on filesystem (e.g. different path)
-    for mid in loaded_ids:
-        fs_models.append({
-            "id": mid,
-            "object": "model",
-            "owned_by": mid.split("/")[0] if "/" in mid else "",
-            "source": "api",
-            "loaded": True,
-        })
-
-    # Sort: loaded first, then alphabetical
-    fs_models.sort(key=lambda m: (not m.get("loaded", False), m["id"]))
+    # Sort alphabetically
+    models.sort(key=lambda m: m["id"])
 
     return {
-        "models": fs_models,
+        "models": models,
         "connected": api_connected,
-        "models_dir": str(models_dir),
-        "models_dir_found": models_dir.is_dir(),
     }
 
 
@@ -612,7 +592,7 @@ async def update_api_settings(
     if request.api_key is not None:
         runtime_settings.google_api_key = request.api_key
         runtime_settings.google_maps_api_key = request.api_key
-    runtime_settings.ai_provider = "lmstudio" if request.ai_enabled else "none"
+    runtime_settings.ai_provider = "ollama" if request.ai_enabled else "none"
     runtime_settings.llm_model = request.ai_model
     runtime_settings.google_maps_enabled = request.maps_enabled
     runtime_settings.places_enabled = request.places_enabled

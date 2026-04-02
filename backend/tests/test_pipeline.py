@@ -503,7 +503,7 @@ class TestBatchConfig:
         resp = ApiSettingsResponse(
             has_key=True,
             ai_enabled=True,
-            ai_model="qwen3.5-35b-a3b",
+            ai_model="qwen3.5-9b",
             maps_enabled=False,
             places_enabled=False,
             batch_size=50,

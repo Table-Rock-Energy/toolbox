@@ -23,11 +23,11 @@ class TestLLMProtocol:
         assert isinstance(provider, LLMProvider)
 
     @patch("app.services.llm.openai_provider.settings")
-    def test_is_available_returns_true_when_lmstudio(self, mock_settings):
-        """is_available() returns True when ai_provider='lmstudio'."""
+    def test_is_available_returns_true_when_ollama(self, mock_settings):
+        """is_available() returns True when ai_provider='ollama'."""
         from app.services.llm.openai_provider import OpenAIProvider
 
-        mock_settings.ai_provider = "lmstudio"
+        mock_settings.ai_provider = "ollama"
         provider = OpenAIProvider()
         assert provider.is_available() is True
 
@@ -79,14 +79,14 @@ class TestJsonParsing:
 class TestProviderFactory:
     """Test get_llm_provider factory routing."""
 
-    def test_factory_returns_openai_when_lmstudio(self):
-        """get_llm_provider returns OpenAIProvider when ai_provider='lmstudio'."""
+    def test_factory_returns_openai_when_ollama(self):
+        """get_llm_provider returns OpenAIProvider when ai_provider='ollama'."""
         from app.services.llm.openai_provider import OpenAIProvider
 
         with patch("app.services.llm.settings") as mock_factory_settings, \
              patch("app.services.llm.openai_provider.settings") as mock_provider_settings:
-            mock_factory_settings.ai_provider = "lmstudio"
-            mock_provider_settings.ai_provider = "lmstudio"
+            mock_factory_settings.ai_provider = "ollama"
+            mock_provider_settings.ai_provider = "ollama"
 
             from app.services.llm import get_llm_provider
 
@@ -138,7 +138,7 @@ class TestOpenAIProviderCleanup:
 
         with patch("app.services.llm.openai_provider.settings") as mock_settings:
             mock_settings.llm_model = "test-model"
-            mock_settings.ai_provider = "lmstudio"
+            mock_settings.ai_provider = "ollama"
             result = await provider.cleanup_entries(
                 "extract", [{"name": "JOHN SMITH"}]
             )
@@ -223,11 +223,11 @@ class TestVerifyModel:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {"data": [{"id": "qwen3.5-35b-a3b"}]}
+        mock_response.json.return_value = {"data": [{"id": "qwen3.5-9b"}]}
 
         with patch("app.services.llm.openai_provider.settings") as mock_settings:
-            mock_settings.llm_api_base = "http://localhost:1234/v1"
-            mock_settings.llm_model = "qwen3.5-35b-a3b"
+            mock_settings.llm_api_base = "http://localhost:11434/v1"
+            mock_settings.llm_model = "qwen3.5-9b"
 
             provider = OpenAIProvider()
 
@@ -254,8 +254,8 @@ class TestVerifyModel:
         mock_response.json.return_value = {"data": [{"id": "other-model"}]}
 
         with patch("app.services.llm.openai_provider.settings") as mock_settings:
-            mock_settings.llm_api_base = "http://localhost:1234/v1"
-            mock_settings.llm_model = "qwen3.5-35b-a3b"
+            mock_settings.llm_api_base = "http://localhost:11434/v1"
+            mock_settings.llm_model = "qwen3.5-9b"
 
             provider = OpenAIProvider()
 
@@ -283,8 +283,8 @@ class TestVerifyModel:
         mock_response.json.return_value = {"data": []}
 
         with patch("app.services.llm.openai_provider.settings") as mock_settings:
-            mock_settings.llm_api_base = "http://localhost:1234/v1"
-            mock_settings.llm_model = "qwen3.5-35b-a3b"
+            mock_settings.llm_api_base = "http://localhost:11434/v1"
+            mock_settings.llm_model = "qwen3.5-9b"
 
             provider = OpenAIProvider()
 
@@ -302,13 +302,13 @@ class TestVerifyModel:
 
     @pytest.mark.asyncio
     async def test_verify_model_connection_error(self):
-        """verify_model returns (False, ...) when LM Studio is unreachable."""
+        """verify_model returns (False, ...) when Ollama is unreachable."""
         import httpx
         from app.services.llm.openai_provider import OpenAIProvider
 
         with patch("app.services.llm.openai_provider.settings") as mock_settings:
-            mock_settings.llm_api_base = "http://localhost:1234/v1"
-            mock_settings.llm_model = "qwen3.5-35b-a3b"
+            mock_settings.llm_api_base = "http://localhost:11434/v1"
+            mock_settings.llm_model = "qwen3.5-9b"
 
             provider = OpenAIProvider()
 
@@ -335,13 +335,13 @@ class TestVerifyModel:
         provider._model_verified = False
 
         with patch.object(provider, "verify_model", new_callable=AsyncMock) as mock_verify:
-            mock_verify.return_value = (False, "Cannot connect to LM Studio")
+            mock_verify.return_value = (False, "Cannot connect to Ollama")
 
             with patch("app.services.llm.openai_provider.settings") as mock_settings:
                 mock_settings.batch_size = 25
                 mock_settings.llm_model = "test-model"
-                mock_settings.ai_provider = "lmstudio"
-                mock_settings.llm_api_base = "http://localhost:1234/v1"
+                mock_settings.ai_provider = "ollama"
+                mock_settings.llm_api_base = "http://localhost:11434/v1"
                 mock_settings.llm_api_key = None
 
                 result = await provider.cleanup_entries("extract", [{"name": "test"}])
@@ -370,7 +370,7 @@ class TestVerifyModel:
             with patch("app.services.llm.openai_provider.settings") as mock_settings:
                 mock_settings.batch_size = 25
                 mock_settings.llm_model = "test-model"
-                mock_settings.ai_provider = "lmstudio"
+                mock_settings.ai_provider = "ollama"
 
                 await provider.cleanup_entries("extract", [{"name": "test"}])
                 await provider.cleanup_entries("extract", [{"name": "test2"}])

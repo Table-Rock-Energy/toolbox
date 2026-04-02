@@ -105,7 +105,7 @@ async def pipeline_cleanup(request: Request, body: PipelineRequest) -> PipelineR
     if provider is None:
         return PipelineResponse(
             success=False,
-            error="AI cleanup not configured. Set AI_PROVIDER=lmstudio in settings.",
+            error="AI cleanup not configured. Set AI_PROVIDER=ollama in settings.",
         )
 
     try:

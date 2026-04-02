@@ -86,21 +86,20 @@ export default function AdminSettings() {
 
   // API settings state
   const [apiSettings, setApiSettings] = useState<ApiSettings>({
-    has_key: false, ai_enabled: false, ai_model: 'qwen3.5-35b-a3b',
+    has_key: false, ai_enabled: false, ai_model: 'qwen3.5-9b',
     maps_enabled: false, places_enabled: false,
     batch_size: 25, batch_max_concurrency: 2, batch_max_retries: 1,
   })
   const [apiSettingsApiKey, setApiSettingsApiKey] = useState('')
   const [aiEnabled, setAiEnabled] = useState(false)
-  const [aiModel, setAiModel] = useState('qwen3.5-35b-a3b')
+  const [aiModel, setAiModel] = useState('qwen3.5-9b')
   const [mapsEnabled, setMapsEnabled] = useState(false)
   const [placesEnabled, setPlacesEnabled] = useState(false)
   const [batchSize, setBatchSize] = useState(25)
   const [batchMaxConcurrency, setBatchMaxConcurrency] = useState(2)
   const [batchMaxRetries, setBatchMaxRetries] = useState(1)
   const [availableModels, setAvailableModels] = useState<{id: string; loaded?: boolean; source?: string}[]>([])
-  const [lmStudioConnected, setLmStudioConnected] = useState(false)
-  const [modelsDirFound, setModelsDirFound] = useState(false)
+  const [ollamaConnected, setOllamaConnected] = useState(false)
   const [isSavingApiSettings, setIsSavingApiSettings] = useState(false)
   const [apiSettingsSuccess, setApiSettingsSuccess] = useState('')
   const [apiSettingsError, setApiSettingsError] = useState('')
@@ -243,7 +242,7 @@ export default function AdminSettings() {
     fetchConnections()
   }, [fetchUsers, fetchOptions, fetchApiSettings])
 
-  // Fetch available LM Studio models when AI is enabled
+  // Fetch available Ollama models when AI is enabled
   useEffect(() => {
     if (aiEnabled) {
       fetch('/api/admin/settings/available-models', { headers: authHeaders() })
@@ -251,31 +250,25 @@ export default function AdminSettings() {
         .then(data => {
           const models = data.models || []
           setAvailableModels(models)
-          setLmStudioConnected(data.connected || false)
-          setModelsDirFound(data.models_dir_found || false)
+          setOllamaConnected(data.connected || false)
 
           // Auto-resolve model name to a matching dropdown option.
-          // Saved value may differ from dropdown IDs in several ways:
-          //   - Missing publisher prefix: "qwen3.5-35b-a3b" vs "lmstudio-community/Qwen3.5-35B-A3B-GGUF"
-          //   - Case differences: "qwen" vs "Qwen"
-          //   - GGUF suffix: model dir has "-GGUF" but saved name doesn't
+          // Ollama model IDs may include ":latest" tag suffix
           if (models.length > 0) {
-            const normalize = (s: string) => s.toLowerCase().replace(/-gguf$/i, '').replace(/[^a-z0-9]/g, '')
+            const normalize = (s: string) => s.toLowerCase().replace(/:latest$/i, '').replace(/[^a-z0-9]/g, '')
             setAiModel(prev => {
               if (models.some((m: {id: string}) => m.id === prev)) return prev
               const prevNorm = normalize(prev)
               const match = models.find((m: {id: string}) => {
-                // Check the full ID and just the model part (after last /)
-                const modelPart = m.id.includes('/') ? m.id.split('/').pop()! : m.id
-                return normalize(m.id) === prevNorm || normalize(modelPart) === prevNorm
+                const base = m.id.includes(':') ? m.id.split(':')[0] : m.id
+                return normalize(m.id) === prevNorm || normalize(base) === prevNorm
               })
               return match ? match.id : prev
             })
           }
         })
         .catch(() => {
-          setLmStudioConnected(false)
-          setModelsDirFound(false)
+          setOllamaConnected(false)
         })
     }
   }, [aiEnabled, authHeaders])
@@ -715,8 +708,8 @@ export default function AdminSettings() {
               {/* AI Provider toggle */}
               <div className="flex items-center justify-between px-4 py-3">
                 <div>
-                  <p className="font-medium text-gray-900 text-sm">AI Provider (LM Studio)</p>
-                  <p className="text-xs text-gray-500">AI-powered data validation via local LM Studio</p>
+                  <p className="font-medium text-gray-900 text-sm">AI Provider (Ollama)</p>
+                  <p className="text-xs text-gray-500">AI-powered data validation via local Ollama</p>
                 </div>
                 <button
                   onClick={() => setAiEnabled(!aiEnabled)}
@@ -803,16 +796,16 @@ export default function AdminSettings() {
                     type="text"
                     value={aiModel}
                     onChange={(e) => setAiModel(e.target.value)}
-                    placeholder="qwen3.5-35b-a3b"
+                    placeholder="qwen3.5-9b"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-tre-teal/50 focus:border-tre-teal"
                   />
                 )}
                 <p className="text-xs text-gray-500 mt-1">
                   {availableModels.length > 0
-                    ? `${availableModels.length} model(s) found${lmStudioConnected ? ' — LM Studio connected' : ''}`
-                    : modelsDirFound
-                      ? 'No models found in models directory.'
-                      : 'Models directory not found. Enter model name manually.'}
+                    ? `${availableModels.length} model(s) found${ollamaConnected ? ' — Ollama connected' : ''}`
+                    : ollamaConnected
+                      ? 'Ollama connected but no models pulled. Run: ollama pull <model>'
+                      : 'Cannot connect to Ollama. Enter model name manually.'}
                 </p>
               </div>
             </div>

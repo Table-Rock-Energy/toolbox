@@ -14,10 +14,10 @@ def get_llm_provider() -> LLMProvider | None:
     """Factory function to get the active LLM provider.
 
     Routes based on ai_provider config:
-    - "lmstudio": Returns OpenAIProvider (OpenAI-compatible local inference)
+    - "ollama": Returns OpenAIProvider (OpenAI-compatible local inference via Ollama)
     - "none" (or anything else): Returns None (AI disabled)
     """
-    if settings.ai_provider == "lmstudio":
+    if settings.ai_provider == "ollama":
         from app.services.llm.openai_provider import OpenAIProvider
 
         provider = OpenAIProvider()

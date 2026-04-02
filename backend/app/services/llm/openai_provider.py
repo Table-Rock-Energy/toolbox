@@ -1,4 +1,4 @@
-"""OpenAI-compatible LLM provider for LM Studio."""
+"""OpenAI-compatible LLM provider for Ollama."""
 
 from __future__ import annotations
 
@@ -58,10 +58,10 @@ def parse_json_response(text: str) -> dict:
 
 
 class OpenAIProvider:
-    """LLM provider backed by AsyncOpenAI client (LM Studio compatible).
+    """LLM provider backed by AsyncOpenAI client (Ollama compatible).
 
     Satisfies the LLMProvider protocol. Uses the openai SDK configured
-    to point at a local LM Studio server.
+    to point at a local Ollama server's OpenAI-compatible endpoint.
     """
 
     def __init__(self) -> None:
@@ -82,10 +82,10 @@ class OpenAIProvider:
 
     def is_available(self) -> bool:
         """Check if the OpenAI-compatible provider is configured."""
-        return settings.ai_provider == "lmstudio"
+        return settings.ai_provider == "ollama"
 
     async def verify_model(self) -> tuple[bool, str]:
-        """Check if the configured model is available in LM Studio.
+        """Check if the configured model is available in Ollama.
 
         Returns (is_valid, error_message). Uses httpx directly (not the
         openai client) since /v1/models is a simple GET.
@@ -102,16 +102,22 @@ class OpenAIProvider:
                 if settings.llm_model in loaded_ids:
                     return True, ""
 
+                # Ollama may return model IDs with ":latest" suffix — try without
+                base_model = settings.llm_model.split(":")[0]
+                for mid in loaded_ids:
+                    if mid.split(":")[0] == base_model:
+                        return True, ""
+
                 if loaded_ids:
                     return False, (
-                        f"Model '{settings.llm_model}' not found in LM Studio. "
+                        f"Model '{settings.llm_model}' not found in Ollama. "
                         f"Available: {', '.join(sorted(loaded_ids))}"
                     )
-                return False, "LM Studio connected but no models loaded."
+                return False, "Ollama connected but no models available."
         except httpx.ConnectError:
-            return False, f"Cannot connect to LM Studio at {settings.llm_api_base}"
+            return False, f"Cannot connect to Ollama at {settings.llm_api_base}"
         except Exception as e:
-            return False, f"LM Studio check failed: {e}"
+            return False, f"Ollama check failed: {e}"
 
     async def cleanup_entries(
         self,
@@ -235,7 +241,7 @@ class OpenAIProvider:
         if not self.is_available():
             return AiValidationResult(
                 success=False,
-                error_message="AI validation is not enabled. Set AI_PROVIDER=lmstudio.",
+                error_message="AI validation is not enabled. Set AI_PROVIDER=ollama.",
             )
 
         batch_size = getattr(settings, "batch_size", 25)

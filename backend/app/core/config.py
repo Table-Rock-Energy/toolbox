@@ -41,12 +41,11 @@ class Settings(BaseSettings):
     # Unified Google Cloud API key (Places, Geocoding/Maps)
     google_api_key: Optional[str] = None
 
-    # AI provider settings (lmstudio or none)
+    # AI provider settings (ollama or none)
     ai_provider: str = "none"
-    llm_api_base: str = "http://host.docker.internal:1234/v1"
-    llm_model: str = "qwen3.5-35b-a3b"
+    llm_api_base: str = "http://host.docker.internal:11434/v1"
+    llm_model: str = "qwen3.5-9b"
     llm_api_key: Optional[str] = None
-    llm_models_dir: str = "/mnt/array/lm-studio/models"
 
     # Batch processing settings
     batch_size: int = 25
