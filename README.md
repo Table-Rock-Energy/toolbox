@@ -70,6 +70,13 @@ Dell PowerEdge R570 running Ubuntu 24.04 on-prem. VPN access only, plus the
 server hosts local LLM inference (Ollama + LM Studio on two NVIDIA L4 GPUs)
 that the backend talks to via `host.docker.internal`.
 
+**Full operational reference: [`docs/SERVER_SETUP.md`](./docs/SERVER_SETUP.md)**
+— hardware specs, directory layout, env vars, compose stack, HTTPS cutover
+procedure, backups, monitoring, troubleshooting. Start there when touching
+anything on the server.
+
+Quick summary below:
+
 **Repo layout on the server is two-level** (only `app/` is in git; the outer
 `toolbox/` layer is hand-maintained on the box):
 
