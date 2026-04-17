@@ -467,7 +467,11 @@ All endpoints prefixed with `/api`. Full Swagger docs at `/docs`.
 
 ## Deployment
 
-Production is deployed to Google Cloud Run via GitHub Actions on push to `main`.
+The app runs in **two parallel deployments**: public Cloud Run + on-prem staging.
+
+### 1. Cloud Run (public)
+
+Auto-deployed via GitHub Actions on push to `main`. Currently serves `tools.tablerocktx.com`.
 
 - **GCP Project:** tablerockenergy
 - **Service:** table-rock-tools
@@ -477,7 +481,7 @@ Production is deployed to Google Cloud Run via GitHub Actions on push to `main`.
 - **Container:** Multi-stage Docker (Node 20 build → Python 3.11 runtime on port 8080)
 - **Health check:** `curl -f http://localhost:8080/api/health` (30s interval)
 
-### Manual Deploy
+Manual deploy:
 ```bash
 cd toolbox
 make deploy
@@ -486,6 +490,28 @@ make deploy
 This runs:
 1. `npm run build` (frontend to `dist/`)
 2. `gcloud run deploy table-rock-tools --source . --project tablerockenergy --region us-central1 --allow-unauthenticated`
+
+### 2. On-prem — `tre-serv-ai` (10.0.2.3)
+
+Ubuntu 24.04 on Dell PowerEdge R570 with dual NVIDIA L4 GPUs for local LLM inference. VPN/SSH access only.
+
+Stack runs via `docker-compose.prod.yml` in a two-level layout on the server:
+- Outer `/mnt/array/projects/toolbox/` — hand-maintained infra (compose, outer `nginx/`, `.env`). **Not in git.**
+- Inner `/mnt/array/projects/toolbox/app/` — this repo. **Edit `app/nginx/default.conf` here**, then sync to outer `nginx/default.conf`.
+
+Container topology (docker bridge `toolbox_default`):
+- `toolbox-app` (built from `app/Dockerfile`, exposes `:8080` internally)
+- `toolbox-nginx` (publishes `:80`/`:443`; `proxy_pass http://app:8080` via docker DNS)
+- `toolbox-db` (PostgreSQL 16, `pgdata` volume)
+- `toolbox-certbot` (runs on demand)
+
+Important quirks:
+- Docker data-root is on the RAID at `/mnt/array/docker`, not NVMe root.
+- HTTPS is not yet enabled on this box (no cert, since DNS for `tools.tablerocktx.com` points at Cloud Run). `app/nginx/default.conf` ships HTTP-only with the HTTPS server block commented out and the ACME challenge path in place.
+- nginx config must use `proxy_pass http://app:8080` (service name), never `127.0.0.1:8080` — inside the nginx container `127.0.0.1` is itself.
+- Access for testing: `ssh -L 8080:localhost:80 table-rock-admin@10.0.2.3` then `http://localhost:8080`.
+
+See `README.md` for full on-prem setup notes including per-location nginx timeouts and the rebuild/reload workflow.
 
 ## Branding
 
@@ -512,7 +538,6 @@ Colors are defined in `frontend/tailwind.config.js` and used via Tailwind utilit
 - **AI router prefix:** The AI validation router is mounted at `/api/ai` (not `/api/ai-validation`) — use `POST /api/ai/review`.
 - **Firestore batching:** Firestore batch operations commit every 500 documents (Firestore limit). See `firestore_service.py`.
 - **Vite proxy:** The frontend Vite dev server proxies `/api` requests to `http://localhost:8000` — no CORS issues in dev
-- **Legacy tools:** Archived in `legacy/` — `toolbox/` is the active consolidated version
 - **Docker port mapping:** Docker Compose maps backend to 8000, frontend to 5173. Production Dockerfile uses 8080 (Cloud Run default).
 - **Auth allowlist:** Default admin is `james@tablerocktx.com`. Allowlist stored in `backend/data/allowed_users.json`.
 - **Test data:** `test-data/` is gitignored — copy test fixtures locally, not committed to repo
