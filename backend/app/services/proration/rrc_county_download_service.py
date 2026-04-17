@@ -6,6 +6,7 @@ to work around RRC record limits on bulk district downloads.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from datetime import datetime, timezone
@@ -145,21 +146,53 @@ async def _download_county_oil(
 ) -> tuple[bool, str, int]:
     """Download oil proration data for one county, chunked by well type.
 
+    The RRC HTTP + CSV parse work is synchronous and can take minutes per
+    county; offload to a thread executor so the FastAPI event loop stays
+    responsive to other requests (health checks, unrelated endpoints) while
+    the download runs.
+
     Returns:
         (success, message, total_records)
     """
     _trace("=== Downloading %s County (district=%s, code=%s) ===", county_name, district, county_code)
 
+    loop = asyncio.get_running_loop()
+    combined = await loop.run_in_executor(
+        None,
+        _sync_download_county_oil_data,
+        district, county_code, county_name,
+    )
+
+    if combined is None or combined.empty:
+        logger.info("No oil data found for %s County", county_name)
+        return True, "No records found", 0
+
+    total_records = len(combined)
+    logger.info("Downloaded %d oil records for %s County", total_records, county_name)
+
+    upserted = await _upsert_county_records(combined)
+
+    return True, f"Downloaded {total_records} records, upserted {upserted}", total_records
+
+
+def _sync_download_county_oil_data(
+    district: str,
+    county_code: str,
+    county_name: str,
+) -> pd.DataFrame | None:
+    """Synchronous inner: warm session + iterate well types + return combined DF.
+
+    Runs in a thread executor — safe to use blocking `requests` + `time.sleep`
+    + `pd.read_csv` here without stalling the asyncio loop.
+    """
     session = create_rrc_session()
     _warm_rrc_session(session)
     _human_delay(1.5, 3.0)
 
     all_dfs: list[pd.DataFrame] = []
-    well_types_downloaded: list[str] = []
     county_start = time.monotonic()
 
     for well_type in WELL_TYPE_CODES:
-        # Bail if county budget exceeded (RRC is unresponsive)
         elapsed = time.monotonic() - county_start
         if elapsed > COUNTY_BUDGET_SECONDS:
             _trace("%s County: budget exceeded (%.0fs), stopping well type iteration", county_name, elapsed)
@@ -174,7 +207,6 @@ async def _download_county_oil(
             df = pd.read_csv(BytesIO(content), skiprows=2, low_memory=False)
             if len(df) > 0:
                 all_dfs.append(df)
-                well_types_downloaded.append(well_type)
                 logger.debug(
                     "  %s/%s well_type=%s: %d rows",
                     county_name, county_code, well_type, len(df),
@@ -186,17 +218,8 @@ async def _download_county_oil(
             )
 
     if not all_dfs:
-        logger.info("No oil data found for %s County", county_name)
-        return True, "No records found", 0
-
-    combined = pd.concat(all_dfs, ignore_index=True)
-    total_records = len(combined)
-    logger.info("Downloaded %d oil records for %s County", total_records, county_name)
-
-    # Upsert to database
-    upserted = await _upsert_county_records(combined)
-
-    return True, f"Downloaded {total_records} records, upserted {upserted}", total_records
+        return None
+    return pd.concat(all_dfs, ignore_index=True)
 
 
 def _download_well_type_chunk(
